@@ -4,6 +4,12 @@ use App\Http\Controllers\Auth\MicrosoftController;
 use App\Http\Controllers\Auth\OtpController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Ems\EventController;
+use App\Http\Controllers\EventSessionController;
+use App\Http\Controllers\MeridianHR\EmployeeController;
+use App\Http\Controllers\MeridianHR\EmployeeLeaveRequestController;
+use App\Http\Controllers\MeridianHR\EventController as MeridianEventController;
+use App\Http\Controllers\MeridianHR\LeaveTypeController;
+use App\Http\Controllers\MeridianHR\VenueController as MeridianVenueController;
 use App\Http\Controllers\Ems\FunctionalAreaController;
 use App\Http\Controllers\Ems\VenueController;
 use App\Http\Controllers\GlobalStatusController;
@@ -55,13 +61,12 @@ Route::get('password/confirmed', function () {
 Route::middleware('auth')->group(function () {
 
     Route::get('/', function () {
-        return Inertia::render('Mypage', [
-            'canLogin' => Route::has('login'),
-            'canRegister' => Route::has('register'),
-            'laravelVersion' => Application::VERSION,
-            'phpVersion' => PHP_VERSION,
-        ]);
+        return redirect()->route('hr.dashboard');
     })->name('home');
+
+    // Event Session Management
+    Route::post('/event/select', [EventSessionController::class, 'setEvent'])->name('event.select');
+    Route::post('/event/clear', [EventSessionController::class, 'clearEvent'])->name('event.clear');
 
     Route::get('/users/export', [UserExportController::class, 'export'])->name('users.export');
     Route::get('/statuses', [GlobalStatusController::class, 'getStatuses'])->name('global.statuses.get');
@@ -144,6 +149,51 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+Route::prefix('hr')->name('hr.')->middleware('auth')->group(function () {
+    Route::get('/dashboard',         [EmployeeController::class, 'dashboard'])->name('dashboard');
+    Route::get('/leave',             [EmployeeController::class, 'leave'])->name('leave');
+    Route::post('/leave',            [EmployeeController::class, 'storeLeave'])->name('leave.store');
+    Route::get('/timesheet',         [EmployeeController::class, 'timesheet'])->name('timesheet');
+    Route::post('/timesheet/submit', [EmployeeController::class, 'submitTimesheet'])->name('timesheet.submit');
+    Route::get('/documents',         [EmployeeController::class, 'documents'])->name('documents');
+    Route::get('/payslips',          [EmployeeController::class, 'payslips'])->name('payslips');
+    Route::get('/employee',          [EmployeeController::class, 'employee'])->name('employee');
+    Route::post('/employee',         [EmployeeController::class, 'store'])->name('employee.store');
+    Route::get('/employee/{id}/edit',[EmployeeController::class, 'edit'])->name('employee.edit');
+    Route::put('/employee/{id}',     [EmployeeController::class, 'update'])->name('employee.update');
+    Route::delete('/employee/{id}',  [EmployeeController::class, 'destroy'])->name('employee.destroy');
+    Route::get('/employee/template/download', [EmployeeController::class, 'downloadTemplate'])->name('employee.template');
+    Route::post('/employee/import',  [EmployeeController::class, 'import'])->name('employee.import');
+    Route::get('/employee/export-failed', [EmployeeController::class, 'exportFailedRows'])->name('employee.export.failed');
+    Route::get('/profile',           [EmployeeController::class, 'profile'])->name('profile');
+    Route::get('/approvals/leave',   [EmployeeController::class, 'approvalsLeave'])->name('approvals.leave');
+    Route::get('/approvals/time',    [EmployeeController::class, 'approvalsTime'])->name('approvals.time');
+    
+    // Leave Type Management (Settings)
+    Route::get('/leave-types',       [LeaveTypeController::class, 'index'])->name('leave-types');
+    Route::post('/leave-types',      [LeaveTypeController::class, 'store'])->name('leave-types.store');
+    Route::put('/leave-types/{id}',  [LeaveTypeController::class, 'update'])->name('leave-types.update');
+    Route::delete('/leave-types/{id}',[LeaveTypeController::class, 'destroy'])->name('leave-types.destroy');
+    
+    // Leave Request Management
+    Route::get('/leave-requests',       [EmployeeLeaveRequestController::class, 'index'])->name('leave-requests');
+    Route::post('/leave-requests',      [EmployeeLeaveRequestController::class, 'store'])->name('leave-requests.store');
+    Route::put('/leave-requests/{id}',  [EmployeeLeaveRequestController::class, 'update'])->name('leave-requests.update');
+    Route::delete('/leave-requests/{id}',[EmployeeLeaveRequestController::class, 'destroy'])->name('leave-requests.destroy');
+    
+    // Event Management (Settings)
+    Route::get('/events',       [MeridianEventController::class, 'index'])->name('events');
+    Route::post('/events',      [MeridianEventController::class, 'store'])->name('events.store');
+    Route::put('/events/{event}',  [MeridianEventController::class, 'update'])->name('events.update');
+    Route::delete('/events/{event}',[MeridianEventController::class, 'destroy'])->name('events.destroy');
+    
+    // Venue Management (Settings)
+    Route::get('/venues',       [MeridianVenueController::class, 'index'])->name('venues');
+    Route::post('/venues',      [MeridianVenueController::class, 'store'])->name('venues.store');
+    Route::put('/venues/{venue}',  [MeridianVenueController::class, 'update'])->name('venues.update');
+    Route::delete('/venues/{venue}',[MeridianVenueController::class, 'destroy'])->name('venues.destroy');
 });
 
 require __DIR__ . '/auth.php';

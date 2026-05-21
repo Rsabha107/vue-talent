@@ -31,7 +31,7 @@ class Event extends Model
         return true;
     }
 
-    public function active_status()
+    public function activeStatus()
     {
         return $this->belongsTo(GlobalStatus::class, 'active_flag');
     }

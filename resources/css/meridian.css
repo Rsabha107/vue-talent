@@ -1,0 +1,832 @@
+/* ─── Meridian HR Design Tokens ─────────────────────────────────── */
+.meridian-app {
+  /* Greens */
+  --green-50:  #f3f7f3;
+  --green-100: #e6efe6;
+  --green-200: #cde0cd;
+  --green-300: #a8c8a8;
+  --green-400: #7aab7a;
+  --green-500: #4f8a55;
+  --green-600: #3b6f43;
+  --green-700: #2d5836;
+  --green-800: #1f3f27;
+  --green-900: #14291a;
+
+  /* Surface neutrals */
+  --mhr-bg:        #f6f5f1;
+  --mhr-surface:   #ffffff;
+  --mhr-surface-2: #fbfaf6;
+  --mhr-line:      #e8e6df;
+  --mhr-line-2:    #efedea;
+  --mhr-ink:       #1a1c19;
+  --mhr-ink-2:     #4a4d49;
+  --mhr-ink-3:     #6f7269;
+  --mhr-ink-4:     #9a9d92;
+
+  /* Accent */
+  --mhr-accent:      var(--green-600);
+  --mhr-accent-soft: var(--green-100);
+  --mhr-accent-ink:  var(--green-800);
+  --mhr-accent-fg:   #ffffff;
+
+  --mhr-warn:     #b6772b;
+  --mhr-warn-bg:  #fbf1df;
+  --mhr-danger:   #a8413a;
+  --mhr-danger-bg:#f7e3e1;
+  --mhr-info:     #3a6c8c;
+  --mhr-info-bg:  #e3edf3;
+
+  --mhr-r-sm: 6px;
+  --mhr-r:    10px;
+  --mhr-r-lg: 14px;
+  --mhr-r-xl: 20px;
+
+  --mhr-pad: 14px;
+  --mhr-pad-y: 10px;
+  --mhr-row-h: 44px;
+  --mhr-gap: 12px;
+
+  --mhr-font-display: "Fraunces", "Source Serif Pro", Georgia, serif;
+  --mhr-font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mhr-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --mhr-shadow-1: 0 1px 2px rgba(20,41,26,0.04), 0 1px 1px rgba(20,41,26,0.03);
+  --mhr-shadow-2: 0 1px 3px rgba(20,41,26,0.05), 0 8px 24px rgba(20,41,26,0.06);
+  --mhr-shadow-3: 0 4px 12px rgba(20,41,26,0.08), 0 24px 60px rgba(20,41,26,0.12);
+
+  --mhr-sidebar-w: 240px;
+}
+
+/* ─── Dark theme ─────────────────────────────────────────────────── */
+.meridian-app[data-theme="dark"] {
+  --mhr-bg:        #11140f;
+  --mhr-surface:   #181c15;
+  --mhr-surface-2: #1f231b;
+  --mhr-line:      #2b3025;
+  --mhr-line-2:    #232820;
+  --mhr-ink:       #ecede7;
+  --mhr-ink-2:     #c2c5b9;
+  --mhr-ink-3:     #8b8e83;
+  --mhr-ink-4:     #61645a;
+  --green-100: #1c2c20;
+  --green-200: #284033;
+  --mhr-accent-soft: #1c2c20;
+  --mhr-accent-ink:  #b9d8be;
+  --mhr-accent:      #7aab7a;
+  --mhr-accent-fg:   #0d120e;
+  --mhr-warn-bg: #38291a;
+  --mhr-warn:    #d59a4a;
+  --mhr-danger-bg:#381e1c;
+  --mhr-danger:  #d2756c;
+  --mhr-info-bg: #1d2e38;
+  --mhr-info:    #79a8c2;
+}
+
+/* ─── Reset (scoped) ──────────────────────────────────────────────── */
+.meridian-app *,
+.meridian-app *::before,
+.meridian-app *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+.meridian-app {
+  font-family: var(--mhr-font-body);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--mhr-ink);
+  background: var(--mhr-bg);
+  -webkit-font-smoothing: antialiased;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: var(--mhr-sidebar-w) 1fr;
+  overflow: hidden;
+  transition: grid-template-columns 0.22s ease;
+}
+.meridian-app[data-collapsed="1"] { --mhr-sidebar-w: 64px; }
+
+.meridian-app button { font: inherit; color: inherit; cursor: pointer; }
+.meridian-app input,
+.meridian-app select,
+.meridian-app textarea { font: inherit; color: inherit; }
+.meridian-app a { color: inherit; text-decoration: none; }
+
+/* ─── Sidebar ─────────────────────────────────────────────────────── */
+.meridian-app .mhr-sidebar {
+  background: var(--mhr-bg);
+  border-right: 1px solid var(--mhr-line);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px;
+  overflow: hidden;
+  min-width: 0;
+}
+.meridian-app .mhr-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 18px;
+}
+.meridian-app .mhr-sidebar__brand-mark {
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--green-600), var(--green-800));
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-family: var(--mhr-font-display);
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+}
+.meridian-app .mhr-sidebar__brand-name {
+  font-family: var(--mhr-font-display);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--mhr-ink);
+  white-space: nowrap;
+}
+.meridian-app .mhr-sidebar__brand-name em {
+  font-style: italic;
+  color: var(--green-700);
+}
+.meridian-app .mhr-sidebar__group {
+  padding: 14px 8px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mhr-ink-4);
+  white-space: nowrap;
+}
+.meridian-app .mhr-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.meridian-app .mhr-sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--mhr-ink-2);
+  font-size: 13.5px;
+  font-weight: 450;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  position: relative;
+}
+.meridian-app .mhr-sidebar__item:hover {
+  background: var(--mhr-accent-soft);
+  color: var(--mhr-accent-ink);
+}
+.meridian-app .mhr-sidebar__item[aria-current="page"] {
+  background: var(--mhr-surface);
+  color: var(--mhr-ink);
+  box-shadow: var(--mhr-shadow-1);
+  font-weight: 500;
+}
+.meridian-app .mhr-sidebar__item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: -12px; top: 8px; bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--mhr-accent);
+}
+.meridian-app .mhr-sidebar__icon {
+  width: 18px; height: 18px;
+  flex-shrink: 0;
+  stroke-width: 1.6;
+}
+.meridian-app .mhr-sidebar__badge {
+  margin-left: auto;
+  background: var(--mhr-accent);
+  color: var(--mhr-accent-fg);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  min-width: 18px;
+  text-align: center;
+}
+.meridian-app .mhr-sidebar__footer {
+  margin-top: auto;
+  padding: 12px 6px 4px;
+  border-top: 1px solid var(--mhr-line);
+}
+.meridian-app .mhr-sidebar__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.meridian-app .mhr-sidebar__user:hover { background: var(--mhr-accent-soft); }
+.meridian-app .mhr-sidebar__user-meta { line-height: 1.2; min-width: 0; }
+.meridian-app .mhr-sidebar__user-name { font-size: 13px; font-weight: 500; color: var(--mhr-ink); }
+.meridian-app .mhr-sidebar__user-role { font-size: 11px; color: var(--mhr-ink-3); }
+
+.meridian-app[data-collapsed="1"] .mhr-sidebar__brand-name,
+.meridian-app[data-collapsed="1"] .mhr-sidebar__group,
+.meridian-app[data-collapsed="1"] .mhr-sidebar__item span:not(.mhr-sidebar__badge),
+.meridian-app[data-collapsed="1"] .mhr-sidebar__user-meta,
+.meridian-app[data-collapsed="1"] .mhr-sidebar__badge { display: none; }
+.meridian-app[data-collapsed="1"] .mhr-sidebar__item { justify-content: center; padding: 9px; }
+.meridian-app[data-collapsed="1"] .mhr-sidebar__group { height: 8px; padding: 8px 0 0; }
+
+/* ─── Main ──────────────────────────────────────────────────────── */
+.meridian-app .mhr-main { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+.meridian-app .mhr-topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--mhr-line);
+  background: var(--mhr-bg);
+  min-height: 56px;
+  position: relative;
+}
+.meridian-app .mhr-topbar__crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--mhr-ink-3);
+}
+.meridian-app .mhr-topbar__crumbs strong { font-weight: 500; color: var(--mhr-ink); }
+.meridian-app .mhr-topbar__crumbs svg { width: 12px; height: 12px; opacity: 0.5; }
+.meridian-app .mhr-topbar__spacer { flex: 1; }
+.meridian-app .mhr-topbar__search {
+  flex: 1;
+  max-width: 360px;
+  position: relative;
+}
+.meridian-app .mhr-topbar__search input {
+  width: 100%;
+  height: 34px;
+  background: var(--mhr-surface);
+  border: 1px solid var(--mhr-line);
+  border-radius: 9px;
+  padding: 0 10px 0 32px;
+  font-size: 13px;
+  outline: none;
+}
+.meridian-app .mhr-topbar__search input:focus {
+  border-color: var(--green-400);
+  box-shadow: 0 0 0 3px var(--mhr-accent-soft);
+}
+.meridian-app .mhr-topbar__search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--mhr-ink-3);
+}
+.meridian-app .mhr-topbar__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meridian-app .mhr-icon-btn {
+  width: 34px; height: 34px;
+  border: 1px solid var(--mhr-line);
+  background: var(--mhr-surface);
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: var(--mhr-ink-2);
+  position: relative;
+}
+.meridian-app .mhr-icon-btn:hover {
+  background: var(--mhr-accent-soft);
+  color: var(--mhr-accent-ink);
+  border-color: var(--green-200);
+}
+.meridian-app .mhr-icon-btn svg { width: 16px; height: 16px; }
+.meridian-app .mhr-icon-btn__dot {
+  position: absolute;
+  top: 7px; right: 7px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green-500);
+  border: 2px solid var(--mhr-surface);
+  box-sizing: content-box;
+}
+
+.meridian-app .mhr-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 32px 48px;
+}
+
+/* ─── Page header ────────────────────────────────────────────────── */
+.meridian-app .mhr-page-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.meridian-app .mhr-page-head__title {
+  font-family: var(--mhr-font-display);
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--mhr-ink);
+  margin: 0 0 4px;
+  line-height: 1.1;
+}
+.meridian-app .mhr-page-head__title em {
+  font-style: italic;
+  color: var(--green-700);
+  font-weight: 400;
+}
+.meridian-app .mhr-page-head__sub { font-size: 14px; color: var(--mhr-ink-3); margin: 0; }
+.meridian-app .mhr-page-head__actions { margin-left: auto; display: flex; gap: 8px; }
+
+/* ─── Buttons ────────────────────────────────────────────────────── */
+.meridian-app .mhr-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  background: var(--mhr-surface);
+  color: var(--mhr-ink);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.meridian-app .mhr-btn:hover { background: var(--mhr-accent-soft); }
+.meridian-app .mhr-btn--primary {
+  background: var(--green-700);
+  color: #fff;
+  border-color: var(--green-800);
+  box-shadow: var(--mhr-shadow-1);
+}
+.meridian-app .mhr-btn--primary:hover { background: var(--green-800); }
+.meridian-app .mhr-btn--ghost { background: transparent; }
+.meridian-app .mhr-btn--ghost:hover { background: var(--mhr-accent-soft); }
+.meridian-app .mhr-btn--outline { border-color: var(--mhr-line); }
+.meridian-app .mhr-btn--outline:hover { border-color: var(--green-300); background: var(--mhr-accent-soft); }
+.meridian-app .mhr-btn--danger { color: var(--mhr-danger); }
+.meridian-app .mhr-btn--danger:hover { background: var(--mhr-danger-bg); }
+.meridian-app .mhr-btn svg { width: 14px; height: 14px; }
+.meridian-app .mhr-btn--sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 7px; }
+
+/* ─── Cards ──────────────────────────────────────────────────────── */
+.meridian-app .mhr-card {
+  background: var(--mhr-surface);
+  border: 1px solid var(--mhr-line);
+  border-radius: var(--mhr-r-lg);
+  box-shadow: var(--mhr-shadow-1);
+}
+.meridian-app .mhr-card__hd {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--mhr-line-2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.meridian-app .mhr-card__title { font-size: 14px; font-weight: 600; color: var(--mhr-ink); margin: 0; }
+.meridian-app .mhr-card__sub { font-size: 12.5px; color: var(--mhr-ink-3); margin: 0; }
+.meridian-app .mhr-card__hd-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.meridian-app .mhr-card__body { padding: 20px; }
+
+/* ─── Stat tile ──────────────────────────────────────────────────── */
+.meridian-app .mhr-stat {
+  background: var(--mhr-surface);
+  border: 1px solid var(--mhr-line);
+  border-radius: var(--mhr-r-lg);
+  padding: 20px 22px;
+  position: relative;
+  overflow: hidden;
+}
+.meridian-app .mhr-stat__label {
+  font-size: 12px;
+  color: var(--mhr-ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+.meridian-app .mhr-stat__value {
+  font-family: var(--mhr-font-display);
+  font-size: 36px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--mhr-ink);
+  line-height: 1;
+}
+.meridian-app .mhr-stat__value em { font-style: italic; color: var(--green-700); }
+.meridian-app .mhr-stat__unit { font-size: 14px; color: var(--mhr-ink-3); font-family: var(--mhr-font-body); margin-left: 4px; }
+.meridian-app .mhr-stat__delta {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--mhr-ink-3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.meridian-app .mhr-stat__delta--up { color: var(--green-600); }
+.meridian-app .mhr-stat__delta--down { color: var(--mhr-danger); }
+
+/* ─── Table ──────────────────────────────────────────────────────── */
+.meridian-app .mhr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.meridian-app .mhr-table th {
+  text-align: left;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mhr-ink-3);
+  font-weight: 600;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--mhr-line);
+  background: var(--mhr-surface-2);
+  white-space: nowrap;
+}
+.meridian-app .mhr-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--mhr-line-2);
+  color: var(--mhr-ink);
+  vertical-align: middle;
+}
+.meridian-app .mhr-table tr:last-child td { border-bottom: none; }
+.meridian-app .mhr-table tbody tr:hover { background: var(--mhr-surface-2); }
+.meridian-app .mhr-table tbody tr[data-selected="1"] { background: var(--mhr-accent-soft); }
+
+/* ─── Badge / Pill ───────────────────────────────────────────────── */
+.meridian-app .mhr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 999px;
+  background: var(--mhr-surface-2);
+  color: var(--mhr-ink-2);
+  border: 1px solid var(--mhr-line);
+  white-space: nowrap;
+}
+.meridian-app .mhr-pill--success { background: var(--mhr-accent-soft); color: var(--mhr-accent-ink); border-color: transparent; }
+.meridian-app .mhr-pill--warn { background: var(--mhr-warn-bg); color: var(--mhr-warn); border-color: transparent; }
+.meridian-app .mhr-pill--danger { background: var(--mhr-danger-bg); color: var(--mhr-danger); border-color: transparent; }
+.meridian-app .mhr-pill--info { background: var(--mhr-info-bg); color: var(--mhr-info); border-color: transparent; }
+.meridian-app .mhr-pill::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
+.meridian-app .mhr-pill--plain::before { display: none; }
+
+/* ─── Badge ──────────────────────────────────────────────────────── */
+.meridian-app .mhr-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 5px;
+  background: var(--mhr-line);
+  color: var(--mhr-ink-2);
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+.meridian-app .mhr-badge--success { background: var(--mhr-accent-soft); color: var(--mhr-accent-ink); }
+.meridian-app .mhr-badge--neutral { background: var(--mhr-line);        color: var(--mhr-ink-3);      }
+.meridian-app .mhr-badge--warn    { background: var(--mhr-warn-bg);     color: var(--mhr-warn);       }
+.meridian-app .mhr-badge--danger  { background: var(--mhr-danger-bg);   color: var(--mhr-danger);     }
+.meridian-app .mhr-badge--info    { background: var(--mhr-info-bg);     color: var(--mhr-info);       }
+
+/* ─── Avatar ─────────────────────────────────────────────────────── */
+.meridian-app .mhr-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--green-600);
+  flex-shrink: 0;
+  user-select: none;
+}
+.meridian-app .mhr-avatar--lg { width: 40px; height: 40px; font-size: 14px; }
+.meridian-app .mhr-avatar--xl { width: 64px; height: 64px; font-size: 22px; font-family: var(--mhr-font-display); font-weight: 400; }
+.meridian-app .mhr-avatar[data-c="0"] { background: #4f8a55; }
+.meridian-app .mhr-avatar[data-c="1"] { background: #b6772b; }
+.meridian-app .mhr-avatar[data-c="2"] { background: #3a6c8c; }
+.meridian-app .mhr-avatar[data-c="3"] { background: #8a5b9c; }
+.meridian-app .mhr-avatar[data-c="4"] { background: #a8413a; }
+.meridian-app .mhr-avatar[data-c="5"] { background: #2d5836; }
+.meridian-app .mhr-avatar[data-c="6"] { background: #5e6b3b; }
+
+/* ─── Form fields ────────────────────────────────────────────────── */
+.meridian-app .mhr-field { display: flex; flex-direction: column; gap: 6px; }
+.meridian-app .mhr-field__label { font-size: 12.5px; font-weight: 500; color: var(--mhr-ink-2); }
+.meridian-app .mhr-field__hint { font-size: 11.5px; color: var(--mhr-ink-3); }
+.meridian-app .mhr-input,
+.meridian-app .mhr-select,
+.meridian-app .mhr-textarea {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--mhr-line);
+  border-radius: 9px;
+  background: var(--mhr-surface);
+  font-size: 13.5px;
+  color: var(--mhr-ink);
+  outline: none;
+  transition: border-color 0.1s, box-shadow 0.1s;
+  width: 100%;
+}
+.meridian-app .mhr-textarea { height: auto; min-height: 80px; padding: 10px 12px; resize: vertical; line-height: 1.5; }
+.meridian-app .mhr-input:focus,
+.meridian-app .mhr-select:focus,
+.meridian-app .mhr-textarea:focus {
+  border-color: var(--green-500);
+  box-shadow: 0 0 0 3px var(--mhr-accent-soft);
+}
+
+/* ─── Modal ──────────────────────────────────────────────────────── */
+.meridian-app .mhr-modal__scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(20,41,26,0.32);
+  backdrop-filter: blur(2px);
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 40px 20px;
+  animation: mhrScrimIn 0.18s ease;
+}
+@keyframes mhrScrimIn { from { opacity: 0; } to { opacity: 1; } }
+.meridian-app .mhr-modal {
+  background: var(--mhr-surface);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 520px;
+  box-shadow: var(--mhr-shadow-3);
+  border: 1px solid var(--mhr-line);
+  overflow: hidden;
+  animation: mhrModalIn 0.22s cubic-bezier(.2,.7,.3,1);
+}
+.meridian-app .mhr-modal--lg { max-width: 720px; }
+@keyframes mhrModalIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+.meridian-app .mhr-modal__hd { padding: 20px 24px 16px; border-bottom: 1px solid var(--mhr-line-2); }
+.meridian-app .mhr-modal__title {
+  font-family: var(--mhr-font-display);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+}
+.meridian-app .mhr-modal__sub { font-size: 13px; color: var(--mhr-ink-3); margin: 0; }
+.meridian-app .mhr-modal__body {
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+.meridian-app .mhr-modal__ft {
+  padding: 14px 24px;
+  border-top: 1px solid var(--mhr-line-2);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  background: var(--mhr-surface-2);
+}
+
+/* ─── Toast ──────────────────────────────────────────────────────── */
+.meridian-app .mhr-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--mhr-ink);
+  color: #fff;
+  padding: 10px 16px 10px 12px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  box-shadow: var(--mhr-shadow-3);
+  z-index: 300;
+  animation: mhrToastIn 0.22s ease;
+  white-space: nowrap;
+}
+@keyframes mhrToastIn { from { opacity: 0; transform: translate(-50%, 8px); } }
+.meridian-app .mhr-toast svg { width: 16px; height: 16px; color: var(--green-300); }
+
+/* ─── Event Selector (lmsx style) ───────────────────────────────── */
+.meridian-app .event-selector { 
+  position: relative; 
+  flex: 1; 
+  max-width: 260px;
+}
+
+.meridian-app .event-selector-btn {
+  display: inline-flex; 
+  align-items: center; 
+  gap: 7px;
+  background: var(--mhr-surface-2); 
+  border: 1px solid var(--mhr-line);
+  border-radius: 8px; 
+  padding: 5px 10px;
+  cursor: pointer; 
+  color: var(--mhr-ink); 
+  font-size: 13px; 
+  font-weight: 600;
+  transition: border-color .15s, background .15s;
+  width: 100%;
+}
+.meridian-app .event-selector-btn:hover { 
+  border-color: var(--mhr-accent); 
+  background: var(--mhr-accent-soft); 
+}
+.meridian-app .event-selector-label { 
+  flex: 1; 
+  text-align: left; 
+  white-space: nowrap; 
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+}
+.meridian-app .event-selector-chevron { 
+  color: var(--mhr-ink-3); 
+  flex-shrink: 0; 
+  transition: transform .15s; 
+}
+.meridian-app .event-selector-chevron.rotated { 
+  transform: rotate(180deg); 
+}
+
+.meridian-app .event-dropdown {
+  position: absolute; 
+  top: calc(100% + 6px); 
+  left: 0;
+  min-width: 240px; 
+  max-width: 320px;
+  background: var(--mhr-surface); 
+  border: 1px solid var(--mhr-line);
+  border-radius: 10px; 
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  z-index: 200; 
+  overflow: hidden;
+}
+.meridian-app .event-dropdown-header {
+  padding: 8px 12px 6px;
+  font-size: 10px; 
+  font-weight: 700; 
+  text-transform: uppercase;
+  letter-spacing: .06em; 
+  color: var(--mhr-ink-4);
+  border-bottom: 1px solid var(--mhr-line-2);
+}
+.meridian-app .event-dropdown-item {
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  gap: 8px;
+  width: 100%; 
+  padding: 9px 12px; 
+  background: none; 
+  border: none;
+  cursor: pointer; 
+  color: var(--mhr-ink-2); 
+  font-size: 13px; 
+  text-align: left;
+  transition: background .12s;
+}
+.meridian-app .event-dropdown-item:hover { 
+  background: var(--mhr-surface-2); 
+  color: var(--mhr-ink); 
+}
+.meridian-app .event-dropdown-item--active { 
+  color: var(--mhr-accent); 
+  font-weight: 600; 
+}
+.meridian-app .event-dropdown-name { 
+  flex: 1; 
+  white-space: nowrap; 
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+}
+.meridian-app .event-dropdown-empty { 
+  padding: 10px 12px; 
+  font-size: 12px; 
+  color: var(--mhr-ink-4); 
+}
+
+.meridian-app .dropdown-enter-active, 
+.meridian-app .dropdown-leave-active { 
+  transition: opacity .15s, transform .15s; 
+}
+.meridian-app .dropdown-enter-from, 
+.meridian-app .dropdown-leave-to { 
+  opacity: 0; 
+  transform: translateY(-6px); 
+}
+
+/* ─── Utilities ──────────────────────────────────────────────────── */
+.meridian-app .mhr-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mhr-gap); }
+.meridian-app .mhr-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--mhr-gap); }
+.meridian-app .mhr-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--mhr-gap); }
+.meridian-app .mhr-mono { font-family: var(--mhr-font-mono); font-size: 12.5px; }
+.meridian-app .mhr-muted { color: var(--mhr-ink-3); }
+.meridian-app .mhr-divider { height: 1px; background: var(--mhr-line-2); margin: 16px 0; }
+
+@media (max-width: 1100px) {
+  .meridian-app .mhr-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .meridian-app .mhr-grid-3 { grid-template-columns: 1fr 1fr; }
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────── */
+.meridian-app *::-webkit-scrollbar { width: 8px; height: 8px; }
+.meridian-app *::-webkit-scrollbar-track { background: transparent; }
+.meridian-app *::-webkit-scrollbar-thumb {
+  background: var(--mhr-line);
+  border-radius: 999px;
+  border: 2px solid var(--mhr-bg);
+  background-clip: padding-box;
+}
+.meridian-app *::-webkit-scrollbar-thumb:hover {
+  background: var(--mhr-ink-4);
+  border: 2px solid var(--mhr-bg);
+  background-clip: padding-box;
+}
+
+/* ─── Notification popover ───────────────────────────────────────── */
+.meridian-app .mhr-notif-pop {
+  position: absolute;
+  top: 56px; right: 8px;
+  z-index: 50;
+  width: 360px;
+  background: var(--mhr-surface);
+  border: 1px solid var(--mhr-line);
+  border-radius: 12px;
+  box-shadow: var(--mhr-shadow-3);
+  overflow: hidden;
+}
+
+/* ─── Timesheet grid ─────────────────────────────────────────────── */
+.meridian-app .mhr-ts-day {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: default;
+}
+.meridian-app .mhr-ts-day--worked { background: var(--mhr-accent-soft); color: var(--mhr-accent-ink); }
+.meridian-app .mhr-ts-day--leave  { background: var(--mhr-info-bg);     color: var(--mhr-info);     }
+.meridian-app .mhr-ts-day--unpaid { background: var(--mhr-warn-bg);     color: var(--mhr-warn);     }
+.meridian-app .mhr-ts-day--weekend{ background: var(--mhr-surface-2);   color: var(--mhr-ink-4);    }
+.meridian-app .mhr-ts-day--future { background: transparent;             color: var(--mhr-ink-4); border: 1px dashed var(--mhr-line); }
+.meridian-app .mhr-ts-day--holiday{ background: var(--mhr-danger-bg);   color: var(--mhr-danger);   }
+
+/* ─── Checkbox ───────────────────────────────────────────────────── */
+.meridian-app .mhr-checkbox {
+  width: 16px; height: 16px;
+  border: 1.5px solid var(--mhr-ink-4);
+  border-radius: 4px;
+  background: var(--mhr-surface);
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  transition: background 0.1s, border-color 0.1s;
+}
+.meridian-app .mhr-checkbox[data-checked="1"] { background: var(--green-700); border-color: var(--green-700); }
+.meridian-app .mhr-checkbox[data-checked="1"]::after {
+  content: "";
+  width: 9px; height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) translate(1px, -1px);
+}

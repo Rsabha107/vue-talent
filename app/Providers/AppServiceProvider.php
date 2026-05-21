@@ -30,24 +30,18 @@ class AppServiceProvider extends ServiceProvider
     {
         Vite::prefetch(concurrency: 3);
 
-        // if (app()->runningInConsole()) {
-        //     return;
-        // }
-
-        // try {
-        //     if (Schema::hasTable('settings')) {
-
-        //         // Cache for 24 hours (adjust as needed)
-        //         $settings = Cache::remember('app_settings', now()->addHours(24), function () {
-        //             return Setting::pluck('value', 'key')->toArray();
-        //         });
-
-        //         config(['settings' => $settings]);
-        //     }
-        // } catch (\Throwable $e) {
-        //     // Avoid crashing if DB not ready
-        //     // optional: Log::warning('Settings not loaded: '.$e->getMessage());
-        // }
+        if (! app()->runningInConsole()) {
+            try {
+                if (Schema::hasTable('settings')) {
+                    $settings = Cache::remember('app_settings', now()->addHours(24), function () {
+                        return Setting::pluck('value', 'key')->toArray();
+                    });
+                    config(['settings' => $settings]);
+                }
+            } catch (\Throwable $e) {
+                // Avoid crashing if DB is not ready yet
+            }
+        }
 
         Event::listen(SocialiteWasCalled::class, function (SocialiteWasCalled $event) {
             // $event->extendSocialite('google', \SocialiteProviders\Google\Provider::class);

@@ -36,4 +36,14 @@ class User extends Authenticatable
     {
         return $this->belongsTo(GlobalStatus::class, 'status_id');
     }
+
+    public function leaveRequests()
+    {
+        return $this->hasMany(EmployeeLeaveRequest::class, 'user_id');
+    }
+
+    public function performedLeaveActions()
+    {
+        return $this->hasMany(EmployeeLeaveRequest::class, 'performer_id');
+    }
 }

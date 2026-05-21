@@ -21,7 +21,7 @@ class AuthenticatedSessionController extends Controller
      */
     public function create(): Response
     {
-        return Inertia::render('MyAuth/Login', [
+        return Inertia::render('MeridianHR/Login', [
             'canResetPassword' => Route::has('password.request'),
             'status' => session('status'),
         ]);

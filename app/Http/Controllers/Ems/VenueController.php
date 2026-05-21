@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Ems;
 
 use App\Http\Controllers\Controller;
 use App\Models\Ems\Venue;
+use App\Models\GlobalStatus;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -11,7 +12,30 @@ class VenueController extends Controller
 {
     public function index()
     {
-        return Inertia::render('Venues/Index');
+        $venues = Venue::leftJoin('global_statuses', 'venues.active_flag', '=', 'global_statuses.id')
+            ->select([
+                'venues.id',
+                'venues.title',
+                'venues.active_flag',
+                'venues.created_at',
+                'global_statuses.name  as statusName',
+                'global_statuses.color as statusColor',
+            ])
+            ->orderBy('venues.id', 'desc')
+            ->get()
+            ->map(fn($v) => [
+                'id'          => $v->id,
+                'title'       => $v->title,
+                'activeFlag'  => $v->active_flag,
+                'statusName'  => $v->statusName  ?? '',
+                'statusColor' => $v->statusColor ?? '',
+                'createdAt'   => $v->created_at?->format('Y-m-d'),
+            ]);
+
+        return Inertia::render('Venues/Index', [
+            'venues'   => $venues,
+            'statuses' => GlobalStatus::where('is_active', 1)->orderBy('name')->get(['id', 'name as title', 'color']),
+        ]);
     }
 
     /** Bootstrap Table endpoint – GET /api/venues */

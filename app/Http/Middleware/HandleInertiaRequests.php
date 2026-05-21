@@ -38,6 +38,17 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn() => $request->session()->get('success'),
                 'error'   => fn() => $request->session()->get('error'),
             ],
+            'dateFormat' => config('settings.date_format', 'DD/MM/YYYY'),
+            'availableEvents' => fn() => \App\Models\Ems\Event::join('global_statuses', 'events.active_flag', '=', 'global_statuses.id')
+                ->where('global_statuses.name', 'Active')
+                ->orderBy('events.name')
+                ->get(['events.id', 'events.name', 'events.event_logo'])
+                ->map(fn($e) => [
+                    'id' => $e->id,
+                    'name' => $e->name,
+                    'logo' => $e->event_logo ? asset('storage/event-logos/' . $e->event_logo) : null,
+                ]),
+            'selectedEvent' => fn() => $request->session()->get('selected_event_id'),
         ];
     }
 }

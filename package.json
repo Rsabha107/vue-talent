@@ -38,6 +38,7 @@
         "primevue": "^4.5.4",
         "sweetalert2": "^11.26.24",
         "toastr": "^2.1.4",
+        "v-calendar": "^3.1.2",
         "vue-filepond": "^7.0.4",
         "wave-ui": "^3.25.6"
     }

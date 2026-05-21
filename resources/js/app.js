@@ -169,11 +169,19 @@ createInertiaApp({
     progress: {
         color: "#4B5563",
     },
+    
+    // Handle 419 CSRF token errors
+    onError: (errors) => {
+        if (errors?.response?.status === 419) {
+            toastr.error("Your session has expired. Reloading page...");
+            setTimeout(() => window.location.reload(), 1500);
+        }
+    },
 });
 
 router.on("start", () => console.log("Inertia start"));
 router.on("success", () => console.log("Inertia success"));
-router.on("error", () => console.log("Inertia error"));
+router.on("error", (event) => console.log("Inertia error", event));
 
 router.on("finish", async () => {
     console.log("Inertia finish");

@@ -18,7 +18,7 @@ class OtpController extends Controller
     {
         $user = User::findOrFail($request->session()->get('otp_user_id'));
 
-        return Inertia::render('MyAuth/OtpVerification', [
+        return Inertia::render('MeridianHR/OtpVerification', [
             'email'  => $user->email,
             'length' => config('one-time-passwords.password_length'),
         ]);
