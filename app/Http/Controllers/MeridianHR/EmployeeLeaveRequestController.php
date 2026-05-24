@@ -2,29 +2,39 @@
 
 namespace App\Http\Controllers\MeridianHR;
 
-use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\EmployeeLeaveRequest;
 use App\Models\EmployeeLeaveStatus;
 use App\Models\LeaveType;
+use App\Services\LeaveBalanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
-class EmployeeLeaveRequestController extends Controller
+class EmployeeLeaveRequestController extends BaseHRController
 {
     public function index()
     {
-        $leaveRequests = EmployeeLeaveRequest::with([
+        $eventId = $this->getSelectedEventId();
+        
+        // Build query with optional event filtering
+        $query = EmployeeLeaveRequest::with([
             'employee',
+            'event',
             'user',
             'leaveType',
             'status',
             'performer'
         ])
             ->active()
-            ->orderBy('created_at', 'desc')
-            ->get()
+            ->orderBy('created_at', 'desc');
+        
+        // Apply event scope if event is selected
+        if ($eventId) {
+            $query->forEvent($eventId);
+        }
+        
+        $leaveRequests = $query->get()
             ->map(function ($request) {
                 return [
                     'id'                    => $request->id,
@@ -32,6 +42,8 @@ class EmployeeLeaveRequestController extends Controller
                     'employeeId'            => $request->employee_id,
                     'employeeName'          => $request->employee?->full_name,
                     'employeeNumber'        => $request->employee?->employee_number,
+                    'eventId'               => $request->event_id,
+                    'eventName'             => $request->event?->name,
                     'userId'                => $request->user_id,
                     'userName'              => $request->user?->name,
                     'leaveTypeId'           => $request->leave_type_id,
@@ -51,14 +63,35 @@ class EmployeeLeaveRequestController extends Controller
                 ];
             });
 
-        return Inertia::render('MeridianHR/LeaveRequest', [
-            'hrRole'         => $this->getHrRole(),
-            'hrPage'         => 'leave-requests',
+        // Get employees filtered by event if selected
+        $employees = $eventId 
+            ? $this->getEventEmployees()->orderBy('full_name')->get(['id', 'full_name', 'employee_number'])
+            : Employee::orderBy('full_name')->get(['id', 'full_name', 'employee_number']);
+
+        // Get leave balances for all employees (for the selected event if applicable)
+        $leaveBalances = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
+            ->where('active_flag', 1)
+            ->when($eventId, fn($q) => $q->where('event_id', $eventId))
+            ->with('leaveType')
+            ->get()
+            ->map(function ($balance) {
+                return [
+                    'employee_id'    => $balance->employee_id,
+                    'leave_type_id'  => $balance->leave_type_id,
+                    'allocated_days' => $balance->allocated_days,
+                    'used_days'      => $balance->used_days,
+                    'pending_days'   => $balance->pending_days,
+                    'available_days' => $balance->available_days,
+                ];
+            });
+
+        return Inertia::render('MeridianHR/LeaveRequest', array_merge($this->getCommonProps('leave-requests'), [
             'leaveRequests'  => $leaveRequests,
-            'employees'      => Employee::orderBy('full_name')->get(['id', 'full_name', 'employee_number']),
+            'employees'      => $employees,
             'leaveTypes'     => LeaveType::active()->orderBy('title')->get(['id', 'title']),
             'statuses'       => EmployeeLeaveStatus::active()->orderBy('title')->get(['id', 'title', 'color']),
-        ]);
+            'leaveBalances'  => $leaveBalances,
+        ]));
     }
 
     public function store(Request $request)
@@ -74,9 +107,24 @@ class EmployeeLeaveRequestController extends Controller
             'additional_information' => 'nullable|string|max:4000',
         ]);
 
-        EmployeeLeaveRequest::create([
+        // Check for overlapping leave dates
+        $hasOverlap = $this->checkDateOverlap(
+            $validated['employee_id'],
+            $validated['date_from'],
+            $validated['date_to'],
+            $this->getSelectedEventId()
+        );
+
+        if ($hasOverlap) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['date_from' => 'This employee already has a leave request for overlapping dates.']);
+        }
+
+        $leaveRequest = EmployeeLeaveRequest::create([
             'archived'               => 'N',
             'employee_id'            => $validated['employee_id'],
+            'event_id'               => $this->getSelectedEventId(), // Add event context
             'user_id'                => Auth::id() ?? 0,
             'leave_type_id'          => $validated['leave_type_id'],
             'number_of_days'         => $validated['number_of_days'],
@@ -86,6 +134,9 @@ class EmployeeLeaveRequestController extends Controller
             'status_id'              => $validated['status_id'],
             'additional_information' => $validated['additional_information'] ?? null,
         ]);
+
+        // Recalculate leave balances after creating new request
+        LeaveBalanceService::recalculateAfterLeaveRequest($leaveRequest);
 
         return redirect()->route('hr.leave-requests')->with('success', 'Leave request created successfully.');
     }
@@ -106,6 +157,21 @@ class EmployeeLeaveRequestController extends Controller
             'additional_information' => 'nullable|string|max:4000',
         ]);
 
+        // Check for overlapping leave dates (excluding current record)
+        $hasOverlap = $this->checkDateOverlap(
+            $validated['employee_id'],
+            $validated['date_from'],
+            $validated['date_to'],
+            $leaveRequest->event_id,
+            $id
+        );
+
+        if ($hasOverlap) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['date_from' => 'This employee already has a leave request for overlapping dates.']);
+        }
+
         $leaveRequest->update([
             'employee_id'            => $validated['employee_id'],
             'leave_type_id'          => $validated['leave_type_id'],
@@ -118,6 +184,9 @@ class EmployeeLeaveRequestController extends Controller
             'additional_information' => $validated['additional_information'] ?? null,
         ]);
 
+        // Recalculate leave balances after status change (approved/rejected)
+        LeaveBalanceService::recalculateAfterLeaveRequest($leaveRequest);
+
         return redirect()->route('hr.leave-requests')->with('success', 'Leave request updated successfully.');
     }
 
@@ -126,11 +195,52 @@ class EmployeeLeaveRequestController extends Controller
         $leaveRequest = EmployeeLeaveRequest::findOrFail($id);
         $leaveRequest->update(['archived' => 'Y']);
 
+        // Recalculate leave balances after archiving request
+        LeaveBalanceService::recalculateAfterLeaveRequest($leaveRequest);
+
         return redirect()->route('hr.leave-requests')->with('success', 'Leave request archived successfully.');
     }
 
-    private function getHrRole()
+    /**
+     * Check if leave dates overlap with existing leave requests
+     * 
+     * @param int $employeeId
+     * @param string $dateFrom
+     * @param string $dateTo
+     * @param int|null $eventId
+     * @param int|null $excludeId ID of leave request to exclude from check (for updates)
+     * @return bool
+     */
+    private function checkDateOverlap($employeeId, $dateFrom, $dateTo, $eventId = null, $excludeId = null)
     {
-        return request()->query('role', 'admin');
+        $query = EmployeeLeaveRequest::where('employee_id', $employeeId)
+            ->where('archived', 'N')
+            ->whereNotNull('status_id')
+            ->whereHas('status', function ($q) {
+                // Only check against Pending or Approved leaves (not Rejected)
+                $q->whereIn('title', ['Pending', 'Approved']);
+            })
+            ->where(function ($q) use ($dateFrom, $dateTo) {
+                // Check for overlapping date ranges
+                // Overlap occurs when: (start1 <= end2) AND (end1 >= start2)
+                $q->where(function ($query) use ($dateFrom, $dateTo) {
+                    $query->where('date_from', '<=', $dateTo)
+                          ->where('date_to', '>=', $dateFrom);
+                });
+            });
+
+        // Match event context
+        if ($eventId) {
+            $query->where('event_id', $eventId);
+        } else {
+            $query->whereNull('event_id');
+        }
+
+        // Exclude current record when updating
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+
+        return $query->exists();
     }
 }

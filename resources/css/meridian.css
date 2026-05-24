@@ -387,6 +387,39 @@
 .meridian-app .mhr-btn--danger:hover { background: var(--mhr-danger-bg); }
 .meridian-app .mhr-btn svg { width: 14px; height: 14px; }
 .meridian-app .mhr-btn--sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 7px; }
+.meridian-app .mhr-btn--accent { 
+  background: var(--mhr-accent); 
+  color: white; 
+  border: 1px solid transparent;
+}
+.meridian-app .mhr-btn--accent:hover { 
+  background: var(--green-800); 
+}
+
+/* ─── Dropdown Item ──────────────────────────────────────────────── */
+.meridian-app .mhr-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--mhr-ink);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.meridian-app .mhr-dropdown-item:hover {
+  background: var(--mhr-surface);
+}
+.meridian-app .mhr-dropdown-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
 
 /* ─── Cards ──────────────────────────────────────────────────────── */
 .meridian-app .mhr-card {
@@ -446,12 +479,20 @@
 .meridian-app .mhr-stat__delta--down { color: var(--mhr-danger); }
 
 /* ─── Table ──────────────────────────────────────────────────────── */
+.meridian-app .mhr-table-container {
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
+  overflow-x: auto;
+}
 .meridian-app .mhr-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13.5px;
 }
 .meridian-app .mhr-table th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   text-align: left;
   font-size: 11.5px;
   text-transform: uppercase;
@@ -462,6 +503,7 @@
   border-bottom: 1px solid var(--mhr-line);
   background: var(--mhr-surface-2);
   white-space: nowrap;
+  box-shadow: 0 1px 0 0 var(--mhr-line);
 }
 .meridian-app .mhr-table td {
   padding: 12px 14px;

@@ -19,6 +19,7 @@ const hrPage  = computed(() => page.props.hrPage || 'dashboard')
 const me      = computed(() => page.props.me || { name: 'User', initials: 'U', avatarColor: 0, role: 'Employee' })
 const availableEvents = computed(() => page.props.availableEvents || [])
 const selectedEvent = computed(() => page.props.selectedEvent || null)
+const pendingCounts = computed(() => page.props.pendingCounts || { pendingLeaves: 0, pendingTimesheets: 0 })
 
 const selectedEventData = computed(() => {
   if (!selectedEvent.value) return null
@@ -31,12 +32,19 @@ const activeEventLabel = computed(() => {
   return ev ? ev.name : 'Select Event'
 })
 
-const NAV = {
+// Navigation structure - now a function to use dynamic badge counts
+const getNavStructure = (counts) => ({
   employee: [
     { group: 'Workspace', items: [
       { id: 'dashboard', label: 'Home',       icon: 'home' },
       { id: 'leave',     label: 'Time off',   icon: 'calendar' },
       { id: 'timesheet', label: 'Timesheet',  icon: 'clock' },
+    ]},
+    { group: 'Personal', items: [
+      { id: 'addresses', label: 'Addresses',        icon: 'pin' },
+      { id: 'banks',     label: 'Banks',            icon: 'wallet' },
+      { id: 'salary',    label: 'Salary',           icon: 'wallet' },
+      { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
     ]},
     { group: 'Records', items: [
       { id: 'documents', label: 'Documents',  icon: 'doc' },
@@ -52,8 +60,14 @@ const NAV = {
       { id: 'timesheet', label: 'Timesheet',  icon: 'clock' },
     ]},
     { group: 'Approvals', items: [
-      { id: 'approve-leave', label: 'Leave requests', icon: 'inbox', badge: 6 },
-      { id: 'approve-time',  label: 'Timesheets',     icon: 'inbox', badge: 5 },
+      { id: 'approve-leave', label: 'Leave requests', icon: 'inbox', badge: counts.pendingLeaves },
+      { id: 'approve-time',  label: 'Timesheets',     icon: 'inbox', badge: counts.pendingTimesheets },
+    ]},
+    { group: 'Personal', items: [
+      { id: 'addresses', label: 'Addresses',        icon: 'pin' },
+      { id: 'banks',     label: 'Banks',            icon: 'wallet' },
+      { id: 'salary',    label: 'Salary',           icon: 'wallet' },
+      { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
     ]},
     { group: 'Records', items: [
       { id: 'documents', label: 'Documents',  icon: 'doc' },
@@ -65,6 +79,7 @@ const NAV = {
   admin: [
     { group: 'Workspace', items: [
       { id: 'dashboard', label: 'Home', icon: 'home' },
+      { id: 'master-employee', label: 'Employee Master', icon: 'users' },
     ]},
     { group: 'People', items: [
       { id: 'employee', label: 'Employees',      icon: 'users' },
@@ -73,8 +88,14 @@ const NAV = {
       { id: 'timesheet', label: 'All timesheets', icon: 'clock' },
     ]},
     { group: 'Approvals', items: [
-      { id: 'approve-leave', label: 'Leave queue',      icon: 'inbox', badge: 14 },
-      { id: 'approve-time',  label: 'Timesheet queue',  icon: 'inbox', badge: 22 },
+      { id: 'approve-leave', label: 'Leave queue',      icon: 'inbox', badge: counts.pendingLeaves },
+      { id: 'approve-time',  label: 'Timesheet queue',  icon: 'inbox', badge: counts.pendingTimesheets },
+    ]},
+    { group: 'Personal', items: [
+      { id: 'addresses', label: 'Addresses',        icon: 'pin' },
+      { id: 'banks',     label: 'Banks',            icon: 'wallet' },
+      { id: 'salary',    label: 'Salary',           icon: 'wallet' },
+      { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
     ]},
     { group: 'Records', items: [
       { id: 'documents', label: 'Documents',  icon: 'doc' },
@@ -84,10 +105,11 @@ const NAV = {
     { group: 'Settings', items: [
       { id: 'leave-types', label: 'Leave Types', icon: 'settings' },
       { id: 'events', label: 'Events', icon: 'calendar' },
+      { id: 'event-templates', label: 'Event Templates', icon: 'users' },
       { id: 'venues', label: 'Venues', icon: 'pin' },
     ]},
   ],
-}
+})
 
 const PAGE_TITLES = {
   dashboard:      'Home',
@@ -98,14 +120,23 @@ const PAGE_TITLES = {
   documents:      'Documents',
   payslips:       'Payslips',
   employee:       'Employee',
+  'master-employee': 'Employee Master List',
   profile:        'My profile',
   'leave-types':  'Leave Types',
   'leave-requests': 'Leave Requests',
   events:         'Events',
+  'event-templates': 'Event Templates',
   venues:         'Venues',
+  addresses:      'Addresses',
+  banks:          'Bank Details',
+  salary:         'Salary Information',
+  emergency:      'Emergency Contact',
 }
 
-const navGroups = computed(() => NAV[hrRole.value] || NAV.employee)
+const navGroups = computed(() => {
+  const nav = getNavStructure(pendingCounts.value)
+  return nav[hrRole.value] || nav.employee
+})
 const pageTitle = computed(() => PAGE_TITLES[hrPage.value] || 'Home')
 const breadcrumbGroup = computed(() => {
   if (hrRole.value === 'admin') return 'HR Admin'
@@ -122,11 +153,17 @@ const ROUTE_MAP = {
   documents:      'hr.documents',
   payslips:       'hr.payslips',
   employee:       'hr.employee',
+  'master-employee': 'hr.master-employee',
   profile:        'hr.profile',
   'leave-types':  'hr.leave-types',
   'leave-requests': 'hr.leave-requests',
+  'event-templates': 'hr.event-templates',
   events:         'hr.events',
   venues:         'hr.venues',
+  addresses:      'hr.addresses',
+  banks:          'hr.banks',
+  salary:         'hr.salary',
+  emergency:      'hr.emergency',
 }
 
 const NOTIFICATIONS = [
@@ -332,4 +369,54 @@ defineExpose({ showToast })
 <style>
 .mhr-toast-anim-enter-active, .mhr-toast-anim-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .mhr-toast-anim-enter-from, .mhr-toast-anim-leave-to { opacity: 0; transform: translate(-50%, 8px); }
+
+/* Event Context Banner */
+.mhr-event-banner {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  background: var(--mhr-accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--mhr-pad);
+  height: 40px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.mhr-event-banner__content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.mhr-event-banner__label {
+  opacity: 0.9;
+  font-weight: 400;
+}
+
+.mhr-event-banner__name {
+  font-weight: 600;
+}
+
+.mhr-event-banner__change {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.mhr-event-banner__change:hover {
+  background: rgba(255,255,255,0.25);
+}
 </style>

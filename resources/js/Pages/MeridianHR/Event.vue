@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { router, useForm } from '@inertiajs/vue3'
+import { router, useForm, Link } from '@inertiajs/vue3'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 
@@ -176,6 +176,7 @@ function deleteEvent() {
               <th style="width:52px;"></th>
               <th>NAME</th>
               <th>VENUES</th>
+              <th>EMPLOYEES</th>
               <th>STATUS</th>
               <th>CREATED</th>
               <th style="width:60px;"></th>
@@ -183,7 +184,7 @@ function deleteEvent() {
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td colspan="6" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
+              <td colspan="7" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
                 No events found
               </td>
             </tr>
@@ -215,6 +216,12 @@ function deleteEvent() {
                 </div>
               </td>
               <td>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <AppIcon name="users" :size="14" style="color:var(--mhr-ink-3);" />
+                  <span style="font-weight:500;color:var(--mhr-ink);">{{ event.employeeCount || 0 }}</span>
+                </div>
+              </td>
+              <td>
                 <span
                   class="mhr-badge"
                   :class="event.statusName === 'active' ? 'mhr-badge--success' : (event.statusName ? 'mhr-badge--neutral' : '')"
@@ -233,6 +240,15 @@ function deleteEvent() {
                     @click.stop
                     style="position:absolute;right:0;top:100%;margin-top:4px;min-width:160px;background:white;border:1px solid var(--mhr-line);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:1000;"
                   >
+                    <Link
+                      :href="route('hr.events.show', event.id)"
+                      style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);text-decoration:none;"
+                      @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'"
+                      @mouseleave="$event.currentTarget.style.background='transparent'"
+                    >
+                      <AppIcon name="users" :size="14" /><span>Manage Team</span>
+                    </Link>
+                    <div style="border-top:1px solid var(--mhr-line-2);margin:4px 0;"></div>
                     <button
                       @click="openEdit(event)"
                       style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);"

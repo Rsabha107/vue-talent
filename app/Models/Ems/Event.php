@@ -40,4 +40,22 @@ class Event extends Model
     {
         return $this->belongsToMany(Venue::class, 'venue_event', 'event_id', 'venue_id');
     }
+
+    // Employee relationships
+    public function employees()
+    {
+        return $this->belongsToMany(\App\Models\Employee::class, 'employee_events', 'event_id', 'employee_id')
+            ->withPivot(['assigned_at', 'released_at', 'event_role', 'event_department_id', 'is_active'])
+            ->withTimestamps();
+    }
+
+    public function activeEmployees()
+    {
+        return $this->employees()->wherePivot('is_active', 1);
+    }
+
+    public function leaveRequests()
+    {
+        return $this->hasMany(\App\Models\EmployeeLeaveRequest::class);
+    }
 }

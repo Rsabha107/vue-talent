@@ -3,12 +3,15 @@ import { ref, computed } from 'vue'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import AppAvatar from '@/Components/MeridianHR/AppAvatar.vue'
-import { router } from '@inertiajs/vue3'
+import { router, usePage } from '@inertiajs/vue3'
+import { DatePicker } from 'v-calendar'
+import 'v-calendar/style.css'
 
 defineOptions({ layout: MeridianLayout })
 
 const props = defineProps({
   hrRole:              { type: String, default: 'employee' },
+  hrPage:              { type: String, default: 'employee' },
   employees:           { type: Array,  default: () => [] },
   salutations:         { type: Array,  default: () => [] },
   designations:        { type: Array,  default: () => [] },
@@ -25,6 +28,32 @@ const props = defineProps({
   countries:           { type: Array,  default: () => [] },
   reportingToOptions:  { type: Array,  default: () => [] },
 })
+
+const dateFormat = computed(() => usePage().props.dateFormat || 'DD/MM/YYYY')
+
+// Get selected event for banner
+const selectedEventId = computed(() => usePage().props.selectedEvent)
+const availableEvents = computed(() => usePage().props.availableEvents || [])
+const selectedEventData = computed(() => {
+  if (!selectedEventId.value) return null
+  return availableEvents.value.find(e => e.id === selectedEventId.value)
+})
+
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+function applyFormat(d, fmt) {
+  const pad = n => String(n).padStart(2, '0')
+  return fmt.replace(/YYYY|YY|MMMM|MMM|MM|M|DD|D/g, t => ({
+    YYYY: d.getFullYear(),
+    YY:   String(d.getFullYear()).slice(-2),
+    MMMM: MONTHS[d.getMonth()],
+    MMM:  MONTHS[d.getMonth()].slice(0, 3),
+    MM:   pad(d.getMonth() + 1),
+    M:    d.getMonth() + 1,
+    DD:   pad(d.getDate()),
+    D:    d.getDate(),
+  }[t]))
+}
 
 const q    = ref('')
 const dept = ref('All')
@@ -45,7 +74,13 @@ const toast = ref(null)
 const openMenuId = ref(null)
 const isRefreshing = ref(false)
 const isImporting = ref(false)
+const isUpdating = ref(false)
 const showColumnMenu = ref(false)
+const selectedEmployees = ref(new Set())
+const showActionsMenu = ref(false)
+const showAssignEventModal = ref(false)
+const assignEventId = ref(null)
+const isAssigning = ref(false)
 
 const visibleColumns = ref({
   employeeNumber: true,
@@ -215,8 +250,88 @@ const filtered = computed(() =>
 )
 
 const visibleColumnsCount = computed(() => {
-  return 1 + Object.values(visibleColumns.value).filter(Boolean).length + 1 // Employee name + visible cols + actions
+  return 1 + 1 + Object.values(visibleColumns.value).filter(Boolean).length + 1 // Checkbox + Employee name + visible cols + actions
 })
+
+const allSelected = computed(() => {
+  return filtered.value.length > 0 && filtered.value.every(emp => selectedEmployees.value.has(emp.id))
+})
+
+const someSelected = computed(() => {
+  return filtered.value.some(emp => selectedEmployees.value.has(emp.id)) && !allSelected.value
+})
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    // Deselect all
+    filtered.value.forEach(emp => selectedEmployees.value.delete(emp.id))
+  } else {
+    // Select all
+    filtered.value.forEach(emp => selectedEmployees.value.add(emp.id))
+  }
+}
+
+function toggleSelect(id) {
+  if (selectedEmployees.value.has(id)) {
+    selectedEmployees.value.delete(id)
+  } else {
+    selectedEmployees.value.add(id)
+  }
+}
+
+function exportSelected() {
+  const selectedIds = Array.from(selectedEmployees.value)
+  toast.value = `Exporting ${selectedIds.length} employee(s)...`
+  setTimeout(() => { toast.value = null }, 3000)
+  // TODO: Implement actual export functionality
+  console.log('Exporting employees:', selectedIds)
+}
+
+function assignToEvent() {
+  showAssignEventModal.value = true
+}
+
+function confirmAssignToEvent() {
+  if (!assignEventId.value) {
+    toast.value = 'Please select an event'
+    setTimeout(() => { toast.value = null }, 3000)
+    return
+  }
+
+  const selectedIds = Array.from(selectedEmployees.value)
+  isAssigning.value = true
+
+  router.post(route('hr.employee.assign-to-event'), {
+    employee_ids: selectedIds,
+    event_id: assignEventId.value
+  }, {
+    onSuccess: () => {
+      isAssigning.value = false
+      showAssignEventModal.value = false
+      assignEventId.value = null
+      selectedEmployees.value.clear()
+      toast.value = `Successfully assigned ${selectedIds.length} employee(s) to event`
+      setTimeout(() => { toast.value = null }, 3000)
+    },
+    onError: (errors) => {
+      isAssigning.value = false
+      console.error('Failed to assign employees:', errors)
+      toast.value = 'Failed to assign employees to event'
+      setTimeout(() => { toast.value = null }, 3000)
+    }
+  })
+}
+
+function deleteSelected() {
+  const selectedIds = Array.from(selectedEmployees.value)
+  if (confirm(`Are you sure you want to delete ${selectedIds.length} employee(s)?`)) {
+    toast.value = `Deleting ${selectedIds.length} employee(s)...`
+    setTimeout(() => { toast.value = null }, 3000)
+    // TODO: Implement bulk delete functionality
+    console.log('Deleting employees:', selectedIds)
+    selectedEmployees.value.clear()
+  }
+}
 
 const columnPreview = computed(() => {
   if (all.value.length === 0) return {}
@@ -257,7 +372,21 @@ const columnPreview = computed(() => {
 
 function fmtDate(s) {
   if (!s) return ''
-  return new Date(s).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+  const d = new Date(String(s).length === 10 ? s + 'T00:00:00' : s)
+  return applyFormat(d, dateFormat.value)
+}
+
+// Convert Date object to MySQL-compatible YYYY-MM-DD format
+function toMySQLDate(date) {
+  if (!date) return null
+  if (typeof date === 'string') return date
+  if (date instanceof Date) {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  return null
 }
 
 function addEmployee() {
@@ -283,21 +412,21 @@ function addEmployee() {
     entity_id: form.value.entityId,
     contract_type_id: form.value.contractTypeId,
     reporting_to_id: form.value.reportingToId,
-    contract_start_date: form.value.contractStartDate,
-    contract_end_date: form.value.contractEndDate,
-    date_of_hire: form.value.dateOfHire,
-    join_date: form.value.joinDate,
+    contract_start_date: toMySQLDate(form.value.contractStartDate),
+    contract_end_date: toMySQLDate(form.value.contractEndDate),
+    date_of_hire: toMySQLDate(form.value.dateOfHire),
+    join_date: toMySQLDate(form.value.joinDate),
     gender_id: form.value.genderId,
     marital_status_id: form.value.maritalStatusId,
-    date_of_birth: form.value.dateOfBirth,
+    date_of_birth: toMySQLDate(form.value.dateOfBirth),
     town_of_birth: form.value.townOfBirth,
     country_of_birth: form.value.countryOfBirth,
     nationality_id: form.value.nationalityId,
     language_id: form.value.languageId,
     national_identifier_number: form.value.nationalIdNumber,
     passport_number: form.value.passportNumber,
-    passport_expiry: form.value.passportExpiry,
-    civil_id_expiry: form.value.civilIdExpiry,
+    passport_expiry: toMySQLDate(form.value.passportExpiry),
+    civil_id_expiry: toMySQLDate(form.value.civilIdExpiry),
     sponsorship_id: form.value.sponsorshipId,
     sponsorship_name: form.value.sponsorshipName,
     manager_flag: form.value.managerFlag,
@@ -508,6 +637,7 @@ function exportFailedRows() {
 }
 
 function updateEmployee() {
+  isUpdating.value = true
   router.put(route('hr.employee.update', editForm.value.id), {
     // Basic Information
     first_name: editForm.value.firstName,
@@ -537,15 +667,15 @@ function updateEmployee() {
     reporting_to_id: editForm.value.reportingToId,
     
     // Contract & Dates
-    contract_start_date: editForm.value.contractStartDate,
-    contract_end_date: editForm.value.contractEndDate,
-    date_of_hire: editForm.value.dateOfHire,
-    join_date: editForm.value.joinDate,
+    contract_start_date: toMySQLDate(editForm.value.contractStartDate),
+    contract_end_date: toMySQLDate(editForm.value.contractEndDate),
+    date_of_hire: toMySQLDate(editForm.value.dateOfHire),
+    join_date: toMySQLDate(editForm.value.joinDate),
     
     // Personal Information
     gender_id: editForm.value.genderId,
     marital_status_id: editForm.value.maritalStatusId,
-    date_of_birth: editForm.value.dateOfBirth,
+    date_of_birth: toMySQLDate(editForm.value.dateOfBirth),
     town_of_birth: editForm.value.townOfBirth,
     country_of_birth: editForm.value.countryOfBirth,
     nationality_id: editForm.value.nationalityId,
@@ -554,8 +684,8 @@ function updateEmployee() {
     // Identification
     national_identifier_number: editForm.value.nationalIdNumber,
     passport_number: editForm.value.passportNumber,
-    passport_expiry: editForm.value.passportExpiry,
-    civil_id_expiry: editForm.value.civilIdExpiry,
+    passport_expiry: toMySQLDate(editForm.value.passportExpiry),
+    civil_id_expiry: toMySQLDate(editForm.value.civilIdExpiry),
     
     // Sponsorship
     sponsorship_id: editForm.value.sponsorshipId,
@@ -566,40 +696,113 @@ function updateEmployee() {
     administrator_flag: editForm.value.administratorFlag,
   }, {
     onSuccess: () => {
+      isUpdating.value = false
       showEditModal.value = false
       toast.value = 'Employee updated successfully'
       setTimeout(() => { toast.value = null }, 3000)
     },
     onError: (errors) => {
+      isUpdating.value = false
       console.error('Failed to update employee:', errors)
       toast.value = 'Failed to update employee'
       setTimeout(() => { toast.value = null }, 3000)
+    },
+    onFinish: () => {
+      isUpdating.value = false
     }
   })
 }
 </script>
 
 <template>
-  <div @click="openMenuId = null; showColumnMenu = false">
+  <div @click="openMenuId = null; showColumnMenu = false; showActionsMenu = false">
     <div class="mhr-page-head">
       <div>
-        <h1 class="mhr-page-head__title">Employees</h1>
-        <p class="mhr-page-head__sub">{{ filtered.length }} of {{ all.length }} people</p>
+        <h1 class="mhr-page-head__title">{{ hrPage === 'master-employee' ? 'Employee Master List' : 'Employees' }}</h1>
+        <p class="mhr-page-head__sub">{{ hrPage === 'master-employee' ? 'Complete database of all employees' : `${filtered.length} of ${all.length} people` }}</p>
       </div>
       <div class="mhr-page-head__actions">
         <button class="mhr-btn mhr-btn--outline" @click="refreshEmployees" :disabled="isRefreshing">
           <AppIcon name="refresh" :size="14" :style="{ transition: 'transform 0.5s', transform: isRefreshing ? 'rotate(360deg)' : 'rotate(0deg)' }" />
         </button>
-        <button v-if="hrRole === 'admin'" class="mhr-btn mhr-btn--outline" @click="downloadTemplate">
+        <div v-if="selectedEmployees.size > 0" style="position:relative;">
+          <button class="mhr-btn mhr-btn--accent" @click.stop="showActionsMenu = !showActionsMenu">
+            <AppIcon name="check" :size="14" />
+            <span>{{ selectedEmployees.size }} Selected</span>
+            <AppIcon name="chevron-down" :size="12" />
+          </button>
+          <div v-if="showActionsMenu" @click.stop class="mhr-dropdown" style="position:absolute;left:0;top:100%;margin-top:4px;min-width:200px;background:white;border:1px solid var(--mhr-line);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:1000;padding:8px;">
+            <button @click="() => { exportSelected(); showActionsMenu = false }" class="mhr-dropdown-item">
+              <AppIcon name="download" :size="14" style="color:var(--mhr-ink-2);" />
+              <span>Export Selected</span>
+            </button>
+            <button @click="() => { assignToEvent(); showActionsMenu = false }" class="mhr-dropdown-item">
+              <AppIcon name="calendar" :size="14" style="color:var(--mhr-ink-2);" />
+              <span>Assign to Event</span>
+            </button>
+            <div style="height:1px;background:var(--mhr-line);margin:4px 0;"></div>
+            <button @click="() => { deleteSelected(); showActionsMenu = false }" class="mhr-dropdown-item" style="color:var(--mhr-danger);">
+              <AppIcon name="trash" :size="14" />
+              <span>Delete Selected</span>
+            </button>
+          </div>
+        </div>
+        <button v-if="hrRole === 'admin' && hrPage === 'master-employee'" class="mhr-btn mhr-btn--outline" @click="downloadTemplate">
           <AppIcon name="download" :size="14" /> Download Template
         </button>
-        <button v-if="hrRole === 'admin'" class="mhr-btn mhr-btn--outline" @click="openImportModal">
+        <button v-if="hrRole === 'admin' && hrPage === 'master-employee'" class="mhr-btn mhr-btn--outline" @click="openImportModal">
           <AppIcon name="upload" :size="14" /> Import
         </button>
         <button v-if="hrRole === 'admin'" class="mhr-btn mhr-btn--primary" @click="showAddModal = true">
           <AppIcon name="plus" /> Add employee
         </button>
       </div>
+    </div>
+
+    <!-- Event Context Banner (when viewing event-filtered employees) -->
+    <div
+      v-if="selectedEventData && hrPage !== 'master-employee'"
+      class="mhr-card"
+      style="margin-bottom:12px;background:linear-gradient(135deg,var(--green-700),var(--green-800));color:#fff;border:none;padding:8px 12px;"
+    >
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div
+          v-if="selectedEventData.logo"
+          style="width:24px;height:24px;border-radius:4px;background:rgba(255,255,255,0.15);padding:3px;flex-shrink:0;"
+        >
+          <img
+            :src="selectedEventData.logo"
+            :alt="selectedEventData.name"
+            style="width:100%;height:100%;object-fit:contain;"
+          />
+        </div>
+        <AppIcon
+          v-else
+          name="calendar"
+          :size="14"
+          style="opacity:0.8;"
+        />
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:10px;opacity:0.75;text-transform:uppercase;letter-spacing:0.5px;font-weight:500;line-height:1;">Viewing Event</div>
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">{{ selectedEventData.name }}</div>
+        </div>
+        <AppIcon name="check" :size="14" style="opacity:0.75;flex-shrink:0;" />
+      </div>
+    </div>
+
+    <!-- Bulk Actions Bar -->
+    <div v-if="selectedEmployees.size > 0" class="mhr-card" style="margin-bottom:14px;padding:12px 16px;display:flex;align-items:center;gap:12px;background:var(--mhr-accent-soft);border:1px solid var(--mhr-accent);">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--mhr-ink);">
+        <AppIcon name="check" :size="16" style="color:var(--mhr-accent);" />
+        <span>{{ selectedEmployees.size }} employee{{ selectedEmployees.size > 1 ? 's' : '' }} selected</span>
+      </div>
+      <div style="flex:1;"></div>
+      <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="selectedEmployees.clear()">
+        Clear Selection
+      </button>
+      <button class="mhr-btn mhr-btn--sm mhr-btn--primary">
+        <AppIcon name="download" :size="14" /> Export Selected
+      </button>
     </div>
 
     <!-- Filters -->
@@ -819,7 +1022,7 @@ function updateEmployee() {
           </label>
         </div>
       </div>
-      <div style="display:flex;gap:4px;padding:3px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:9px;overflow:auto;">
+      <div v-if="all.length > 0" style="display:flex;gap:4px;padding:3px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:9px;overflow:auto;">
         <button v-for="d in depts" :key="d"
           class="mhr-btn mhr-btn--sm"
           :style="dept === d ? 'background:var(--green-700);color:#fff;' : 'background:transparent;color:var(--mhr-ink-2);'"
@@ -830,13 +1033,24 @@ function updateEmployee() {
     </div>
 
     <div class="mhr-card">
-      <table class="mhr-table">
-        <thead>
-          <tr>
-            <th>Employee</th>
-            <th v-if="visibleColumns.employeeNumber">Employee #</th>
-            <th v-if="visibleColumns.role">Role</th>
-            <th v-if="visibleColumns.department">Department</th>
+      <div class="mhr-table-container">
+        <table class="mhr-table">
+          <thead>
+            <tr>
+              <th style="width: 40px;">
+                <input 
+                  type="checkbox" 
+                  :checked="allSelected" 
+                  :indeterminate="someSelected"
+                  @change="toggleSelectAll"
+                  class="mhr-checkbox"
+                  style="cursor: pointer;"
+                />
+              </th>
+              <th>Employee</th>
+              <th v-if="visibleColumns.employeeNumber">Employee #</th>
+              <th v-if="visibleColumns.role">Role</th>
+              <th v-if="visibleColumns.department">Department</th>
             <th v-if="visibleColumns.email">Work Email</th>
             <th v-if="visibleColumns.personalEmail">Personal Email</th>
             <th v-if="visibleColumns.phone">Phone</th>
@@ -868,9 +1082,27 @@ function updateEmployee() {
         </thead>
         <tbody>
           <tr v-if="filtered.length === 0">
-            <td :colspan="visibleColumnsCount" style="text-align:center;padding:40px;color:var(--mhr-ink-3);">No employees found</td>
+            <td :colspan="visibleColumnsCount" style="text-align:center;padding:60px 20px;">
+              <div v-if="!selectedEventData && hrPage !== 'master-employee'" style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+                <AppIcon name="calendar" :size="48" style="opacity:0.2;" />
+                <div>
+                  <div style="font-size:15px;font-weight:600;color:var(--mhr-ink-2);margin-bottom:4px;">No Event Selected</div>
+                  <div style="font-size:13px;color:var(--mhr-ink-3);">Please select an event from the sidebar to view its employees</div>
+                </div>
+              </div>
+              <div v-else style="color:var(--mhr-ink-3);">No employees found</div>
+            </td>
           </tr>
           <tr v-for="p in filtered" :key="p.id">
+            <td style="width: 40px;">
+              <input 
+                type="checkbox" 
+                :checked="selectedEmployees.has(p.id)" 
+                @change="toggleSelect(p.id)"
+                class="mhr-checkbox"
+                style="cursor: pointer;"
+              />
+            </td>
             <td>
               <div style="display:flex;align-items:center;gap:12px;">
                 <AppAvatar :name="p.name" :c="p.c" />
@@ -933,6 +1165,7 @@ function updateEmployee() {
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- Add Employee Modal -->
@@ -1095,21 +1328,49 @@ function updateEmployee() {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="mhr-field">
                 <label class="mhr-field__label">Contract Start Date</label>
-                <input class="mhr-input" type="date" v-model="form.contractStartDate" />
+                <DatePicker v-model="form.contractStartDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Contract End Date</label>
-                <input class="mhr-input" type="date" v-model="form.contractEndDate" />
+                <DatePicker v-model="form.contractEndDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
               <div class="mhr-field">
                 <label class="mhr-field__label">Date of Hire</label>
-                <input class="mhr-input" type="date" v-model="form.dateOfHire" />
+                <DatePicker v-model="form.dateOfHire" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Join Date</label>
-                <input class="mhr-input" type="date" v-model="form.joinDate" />
+                <DatePicker v-model="form.joinDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
             </div>
           </div>
@@ -1134,7 +1395,14 @@ function updateEmployee() {
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Date of Birth</label>
-                <input class="mhr-input" type="date" v-model="form.dateOfBirth" />
+                <DatePicker v-model="form.dateOfBirth" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
@@ -1177,12 +1445,26 @@ function updateEmployee() {
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Passport Expiry</label>
-                <input class="mhr-input" type="date" v-model="form.passportExpiry" />
+                <DatePicker v-model="form.passportExpiry" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
             </div>
             <div class="mhr-field" style="margin-top:12px;">
               <label class="mhr-field__label">Civil ID Expiry</label>
-              <input class="mhr-input" type="date" v-model="form.civilIdExpiry" />
+              <DatePicker v-model="form.civilIdExpiry" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                <template #default="{ inputValue, inputEvents }">
+                  <div style="position:relative;">
+                    <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                    <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                  </div>
+                </template>
+              </DatePicker>
             </div>
           </div>
 
@@ -1390,21 +1672,49 @@ function updateEmployee() {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="mhr-field">
                 <label class="mhr-field__label">Contract Start Date</label>
-                <input class="mhr-input" type="date" v-model="editForm.contractStartDate" />
+                <DatePicker v-model="editForm.contractStartDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Contract End Date</label>
-                <input class="mhr-input" type="date" v-model="editForm.contractEndDate" />
+                <DatePicker v-model="editForm.contractEndDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
               <div class="mhr-field">
                 <label class="mhr-field__label">Date of Hire</label>
-                <input class="mhr-input" type="date" v-model="editForm.dateOfHire" />
+                <DatePicker v-model="editForm.dateOfHire" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Join Date</label>
-                <input class="mhr-input" type="date" v-model="editForm.joinDate" />
+                <DatePicker v-model="editForm.joinDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
             </div>
           </div>
@@ -1429,7 +1739,14 @@ function updateEmployee() {
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Date of Birth</label>
-                <input class="mhr-input" type="date" v-model="editForm.dateOfBirth" />
+                <DatePicker v-model="editForm.dateOfBirth" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
@@ -1472,12 +1789,26 @@ function updateEmployee() {
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Passport Expiry</label>
-                <input class="mhr-input" type="date" v-model="editForm.passportExpiry" />
+                <DatePicker v-model="editForm.passportExpiry" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
             </div>
             <div class="mhr-field" style="margin-top:12px;">
               <label class="mhr-field__label">Civil ID Expiry</label>
-              <input class="mhr-input" type="date" v-model="editForm.civilIdExpiry" />
+              <DatePicker v-model="editForm.civilIdExpiry" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                <template #default="{ inputValue, inputEvents }">
+                  <div style="position:relative;">
+                    <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                    <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                  </div>
+                </template>
+              </DatePicker>
             </div>
           </div>
 
@@ -1519,8 +1850,22 @@ function updateEmployee() {
 
         </div>
         <div class="mhr-modal__ft">
-          <button class="mhr-btn mhr-btn--ghost" @click="showEditModal = false">Cancel</button>
-          <button class="mhr-btn mhr-btn--primary" @click="updateEmployee">Save changes</button>
+          <button class="mhr-btn mhr-btn--ghost" @click="showEditModal = false" :disabled="isUpdating">Cancel</button>
+          <button 
+            class="mhr-btn mhr-btn--primary" 
+            @click="updateEmployee"
+            :disabled="isUpdating"
+            :style="isUpdating ? 'opacity:0.6;cursor:not-allowed;' : ''"
+          >
+            <span v-if="isUpdating" style="display:flex;align-items:center;gap:8px;">
+              <svg style="animation:spin 1s linear infinite;width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" opacity="0.25"/>
+                <path d="M12 2a10 10 0 0 1 10 10" opacity="0.75"/>
+              </svg>
+              Saving...
+            </span>
+            <span v-else>Save changes</span>
+          </button>
         </div>
       </div>
     </div>
@@ -1699,6 +2044,49 @@ function updateEmployee() {
             <AppIcon name="download" :size="14" /> Export Failed Rows
           </button>
           <button class="mhr-btn mhr-btn--primary" @click="showStatsModal = false">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Assign to Event Modal -->
+    <div v-if="showAssignEventModal" class="mhr-modal__scrim" @click.self="showAssignEventModal = false">
+      <div class="mhr-modal" style="max-width:500px;">
+        <div class="mhr-modal__hd">
+          <h2 class="mhr-modal__title">Assign to Event</h2>
+          <p class="mhr-modal__sub">Select an event to assign {{ selectedEmployees.size }} employee(s)</p>
+        </div>
+        <div class="mhr-modal__body">
+          <!-- Event Selection -->
+          <div class="mhr-field">
+            <label class="mhr-field__label">Event</label>
+            <select v-model="assignEventId" class="mhr-select" required>
+              <option :value="null">Select an event...</option>
+              <option v-for="event in availableEvents" :key="event.id" :value="event.id">
+                {{ event.name }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Selected Employees Preview -->
+          <div v-if="selectedEmployees.size > 0" style="margin-top:16px;padding:12px;background:var(--mhr-surface-2);border-radius:8px;">
+            <div style="font-size:12px;font-weight:600;color:var(--mhr-ink-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
+              Selected Employees ({{ selectedEmployees.size }})
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:120px;overflow-y:auto;">
+              <span v-for="empId in Array.from(selectedEmployees)" :key="empId" class="mhr-badge mhr-badge--neutral" style="font-size:12px;">
+                {{ all.find(e => e.id === empId)?.name || `Employee #${empId}` }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--ghost" @click="showAssignEventModal = false; assignEventId = null" :disabled="isAssigning">
+            Cancel
+          </button>
+          <button class="mhr-btn mhr-btn--primary" @click="confirmAssignToEvent" :disabled="!assignEventId || isAssigning">
+            <AppIcon v-if="isAssigning" name="refresh" :size="14" style="animation: spin 1s linear infinite;" />
+            <span v-else>Assign {{ selectedEmployees.size }} Employee{{ selectedEmployees.size > 1 ? 's' : '' }}</span>
+          </button>
         </div>
       </div>
     </div>

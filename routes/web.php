@@ -8,6 +8,7 @@ use App\Http\Controllers\EventSessionController;
 use App\Http\Controllers\MeridianHR\EmployeeController;
 use App\Http\Controllers\MeridianHR\EmployeeLeaveRequestController;
 use App\Http\Controllers\MeridianHR\EventController as MeridianEventController;
+use App\Http\Controllers\MeridianHR\EventTeamTemplateController;
 use App\Http\Controllers\MeridianHR\LeaveTypeController;
 use App\Http\Controllers\MeridianHR\VenueController as MeridianVenueController;
 use App\Http\Controllers\Ems\FunctionalAreaController;
@@ -160,6 +161,7 @@ Route::prefix('hr')->name('hr.')->middleware('auth')->group(function () {
     Route::get('/documents',         [EmployeeController::class, 'documents'])->name('documents');
     Route::get('/payslips',          [EmployeeController::class, 'payslips'])->name('payslips');
     Route::get('/employee',          [EmployeeController::class, 'employee'])->name('employee');
+    Route::get('/master-employee',   [EmployeeController::class, 'masterEmployee'])->name('master-employee');
     Route::post('/employee',         [EmployeeController::class, 'store'])->name('employee.store');
     Route::get('/employee/{id}/edit',[EmployeeController::class, 'edit'])->name('employee.edit');
     Route::put('/employee/{id}',     [EmployeeController::class, 'update'])->name('employee.update');
@@ -167,8 +169,11 @@ Route::prefix('hr')->name('hr.')->middleware('auth')->group(function () {
     Route::get('/employee/template/download', [EmployeeController::class, 'downloadTemplate'])->name('employee.template');
     Route::post('/employee/import',  [EmployeeController::class, 'import'])->name('employee.import');
     Route::get('/employee/export-failed', [EmployeeController::class, 'exportFailedRows'])->name('employee.export.failed');
+    Route::post('/employee/assign-to-event', [EmployeeController::class, 'assignToEvent'])->name('employee.assign-to-event');
     Route::get('/profile',           [EmployeeController::class, 'profile'])->name('profile');
     Route::get('/approvals/leave',   [EmployeeController::class, 'approvalsLeave'])->name('approvals.leave');
+    Route::post('/approvals/leave/approve', [EmployeeController::class, 'approveLeave'])->name('approvals.leave.approve');
+    Route::post('/approvals/leave/reject', [EmployeeController::class, 'rejectLeave'])->name('approvals.leave.reject');
     Route::get('/approvals/time',    [EmployeeController::class, 'approvalsTime'])->name('approvals.time');
     
     // Leave Type Management (Settings)
@@ -185,9 +190,27 @@ Route::prefix('hr')->name('hr.')->middleware('auth')->group(function () {
     
     // Event Management (Settings)
     Route::get('/events',       [MeridianEventController::class, 'index'])->name('events');
+    Route::get('/events/{event}', [MeridianEventController::class, 'show'])->name('events.show');
     Route::post('/events',      [MeridianEventController::class, 'store'])->name('events.store');
     Route::put('/events/{event}',  [MeridianEventController::class, 'update'])->name('events.update');
     Route::delete('/events/{event}',[MeridianEventController::class, 'destroy'])->name('events.destroy');
+    
+    // Event-Employee Assignment
+    Route::get('/events/{event}/employees', [MeridianEventController::class, 'showEmployees'])->name('events.employees');
+    Route::post('/events/{event}/assign-employees', [MeridianEventController::class, 'assignEmployees'])->name('events.assign-employees');
+    Route::delete('/events/{event}/employees/{employee}', [MeridianEventController::class, 'removeEmployee'])->name('events.remove-employee');
+    Route::get('/events/{event}/unassigned-employees', [MeridianEventController::class, 'unassignedEmployees'])->name('events.unassigned-employees');
+    Route::get('/events/{event}/source-events', [MeridianEventController::class, 'listSourceEvents'])->name('events.source-events');
+    Route::post('/events/{event}/copy-team', [MeridianEventController::class, 'copyTeamFrom'])->name('events.copy-team');
+    Route::post('/events/{event}/import-csv', [MeridianEventController::class, 'importFromCsv'])->name('events.import-csv');
+    
+    // Event Team Templates (Settings)
+    Route::get('/event-templates', [EventTeamTemplateController::class, 'index'])->name('event-templates');
+    Route::get('/event-templates/list', [EventTeamTemplateController::class, 'list'])->name('event-templates.list');
+    Route::post('/event-templates', [EventTeamTemplateController::class, 'store'])->name('event-templates.store');
+    Route::put('/event-templates/{template}', [EventTeamTemplateController::class, 'update'])->name('event-templates.update');
+    Route::delete('/event-templates/{template}', [EventTeamTemplateController::class, 'destroy'])->name('event-templates.destroy');
+    Route::post('/events/{event}/apply-template', [EventTeamTemplateController::class, 'applyToEvent'])->name('events.apply-template');
     
     // Venue Management (Settings)
     Route::get('/venues',       [MeridianVenueController::class, 'index'])->name('venues');

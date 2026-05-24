@@ -1,8 +1,9 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { router, useForm, usePage } from '@inertiajs/vue3'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
+import StatusPill from '@/Components/MeridianHR/StatusPill.vue'
 import { DatePicker } from 'v-calendar'
 import 'v-calendar/style.css'
 
@@ -14,6 +15,7 @@ const props = defineProps({
   employees:      { type: Array,  default: () => [] },
   leaveTypes:     { type: Array,  default: () => [] },
   statuses:       { type: Array,  default: () => [] },
+  leaveBalances:  { type: Array,  default: () => [] },
 })
 
 const dateFormat = computed(() => usePage().props.dateFormat || 'DD/MM/YYYY')
@@ -46,6 +48,10 @@ const requestToDelete = ref(null)
 const toast = ref(null)
 const openMenuId = ref(null)
 const isRefreshing = ref(false)
+const employeeSearch = ref('')
+const showEmployeeDropdown = ref(false)
+const editEmployeeSearch = ref('')
+const showEditEmployeeDropdown = ref(false)
 
 const getPendingStatusId = () => {
   const pending = props.statuses.find(s => s.title?.toLowerCase() === 'pending')
@@ -77,6 +83,48 @@ const editForm = useForm({
 })
 
 const statusOptions = computed(() => ['All', ...new Set(props.leaveRequests.map(r => r.statusTitle).filter(Boolean))])
+
+const filteredEmployees = computed(() => {
+  if (!employeeSearch.value) return props.employees
+  const query = employeeSearch.value.toLowerCase()
+  return props.employees.filter(emp =>
+    emp.full_name?.toLowerCase().includes(query) ||
+    emp.employee_number?.toLowerCase().includes(query)
+  )
+})
+
+const filteredEditEmployees = computed(() => {
+  if (!editEmployeeSearch.value) return props.employees
+  const query = editEmployeeSearch.value.toLowerCase()
+  return props.employees.filter(emp =>
+    emp.full_name?.toLowerCase().includes(query) ||
+    emp.employee_number?.toLowerCase().includes(query)
+  )
+})
+
+// Get leave balance for selected employee and leave type (Add modal)
+const currentBalance = computed(() => {
+  if (!form.employee_id || !form.leave_type_id) return null
+  return props.leaveBalances.find(
+    b => b.employee_id === form.employee_id && b.leave_type_id === form.leave_type_id
+  )
+})
+
+// Get leave balance for selected employee and leave type (Edit modal)
+const editCurrentBalance = computed(() => {
+  if (!editForm.employee_id || !editForm.leave_type_id) return null
+  return props.leaveBalances.find(
+    b => b.employee_id === editForm.employee_id && b.leave_type_id === editForm.leave_type_id
+  )
+})
+
+const selectedEmployee = computed(() => {
+  return props.employees.find(emp => emp.id === form.employee_id)
+})
+
+const selectedEditEmployee = computed(() => {
+  return props.employees.find(emp => emp.id === editForm.employee_id)
+})
 
 const filtered = computed(() => {
   let results = props.leaveRequests
@@ -129,6 +177,35 @@ function calculateDaysEdit() {
   }
 }
 
+function resetAddForm() {
+  form.reset()
+  form.status_id = getPendingStatusId()
+  employeeSearch.value = ''
+  showEmployeeDropdown.value = false
+}
+
+function resetEditForm() {
+  editForm.reset()
+  editingRequest.value = null
+  editEmployeeSearch.value = ''
+  showEditEmployeeDropdown.value = false
+}
+
+function closeAddModal() {
+  showAddModal.value = false
+  resetAddForm()
+}
+
+function closeEditModal() {
+  showEditModal.value = false
+  resetEditForm()
+}
+
+function closeViewModal() {
+  showViewModal.value = false
+  viewingRequest.value = null
+}
+
 function toDateObj(str) {
   return str ? new Date(str + 'T00:00:00') : null
 }
@@ -159,12 +236,16 @@ const editDateTo = computed({
 function addLeaveRequest() {
   form.post(route('hr.leave-requests.store'), {
     onSuccess: () => {
-      showAddModal.value = false
+      closeAddModal()
       showToast('Leave request created successfully')
-      form.reset()
-      form.status_id = getPendingStatusId()
     },
-    onError: () => showToast('Failed to create leave request', true),
+    onError: (errors) => {
+      if (errors.date_from) {
+        showToast(errors.date_from, true)
+      } else {
+        showToast('Failed to create leave request', true)
+      }
+    },
   })
 }
 
@@ -197,10 +278,16 @@ function editRequest(request) {
 function updateLeaveRequest() {
   editForm.put(route('hr.leave-requests.update', editForm.id), {
     onSuccess: () => {
-      showEditModal.value = false
+      closeEditModal()
       showToast('Leave request updated successfully')
     },
-    onError: () => showToast('Failed to update leave request', true),
+    onError: (errors) => {
+      if (errors.date_from) {
+        showToast(errors.date_from, true)
+      } else {
+        showToast('Failed to update leave request', true)
+      }
+    },
   })
 }
 
@@ -229,6 +316,24 @@ function refreshLeaveRequests() {
     }
   })
 }
+
+// Close dropdowns when clicking outside
+function handleClickOutside(event) {
+  // Check if click is outside employee dropdown
+  const employeeDropdown = event.target.closest('[data-employee-dropdown]')
+  if (!employeeDropdown) {
+    showEmployeeDropdown.value = false
+    showEditEmployeeDropdown.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 </script>
 
 <template>
@@ -301,9 +406,7 @@ function refreshLeaveRequests() {
                 <span style="font-weight:500;color:var(--mhr-ink);">{{ request.numberOfDays }}</span>
               </td>
               <td>
-                <span class="mhr-badge" :style="{ background: request.statusColor || 'var(--mhr-line)', color: 'white' }">
-                  {{ request.statusTitle }}
-                </span>
+                <StatusPill :status="request.statusTitle" />
               </td>
               <td style="color:var(--mhr-ink-3);font-size:13px;">
                 {{ fmtDate(request.createdAt) }}
@@ -343,7 +446,7 @@ function refreshLeaveRequests() {
     </div>
 
     <!-- Add Leave Request Modal -->
-    <div v-if="showAddModal" class="mhr-modal__scrim" @click.self="showAddModal = false">
+    <div v-if="showAddModal" class="mhr-modal__scrim" @click.self="closeAddModal">
       <div class="mhr-modal mhr-modal--lg">
         <div class="mhr-modal__hd">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;">
@@ -351,7 +454,7 @@ function refreshLeaveRequests() {
               <h2 class="mhr-modal__title">Add Leave Request</h2>
               <p class="mhr-modal__sub" style="margin-top:2px;">Create a new leave request</p>
             </div>
-            <button class="mhr-icon-btn" @click="showAddModal = false" style="margin-top:-4px;">
+            <button class="mhr-icon-btn" @click="closeAddModal" style="margin-top:-4px;">
               <AppIcon name="x" :size="16" />
             </button>
           </div>
@@ -359,14 +462,40 @@ function refreshLeaveRequests() {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div class="mhr-field" style="grid-column:1/-1;">
+            <div class="mhr-field" style="grid-column:1/-1;position:relative;" data-employee-dropdown>
               <label class="mhr-field__label">EMPLOYEE *</label>
-              <select class="mhr-select" v-model="form.employee_id">
-                <option :value="null">Select employee...</option>
-                <option v-for="emp in employees" :key="emp.id" :value="emp.id">
-                  {{ emp.full_name }} ({{ emp.employee_number }})
-                </option>
-              </select>
+              <div style="position:relative;">
+                <input
+                  type="text"
+                  class="mhr-input"
+                  :value="showEmployeeDropdown ? employeeSearch : (selectedEmployee ? `${selectedEmployee.full_name} (${selectedEmployee.employee_number})` : '')"
+                  @focus="showEmployeeDropdown = true; employeeSearch = ''"
+                  @input="employeeSearch = $event.target.value; showEmployeeDropdown = true"
+                  placeholder="Search employee..."
+                  style="cursor:pointer;"
+                />
+                <div v-if="showEmployeeDropdown" style="position:absolute;top:100%;left:0;right:0;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);margin-top:4px;max-height:250px;overflow-y:auto;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+                  <div
+                    v-if="filteredEmployees.length === 0"
+                    style="padding:12px;color:var(--mhr-ink-3);font-size:13px;text-align:center;"
+                  >
+                    No employees found
+                  </div>
+                  <button
+                    v-for="emp in filteredEmployees"
+                    :key="emp.id"
+                    type="button"
+                    @click="form.employee_id = emp.id; showEmployeeDropdown = false; employeeSearch = ''"
+                    style="width:100%;padding:10px 12px;border:none;background:transparent;text-align:left;cursor:pointer;font-size:13px;color:var(--mhr-ink);display:flex;flex-direction:column;gap:2px;"
+                    :style="form.employee_id === emp.id ? 'background:var(--mhr-accent);color:white;' : ''"
+                    @mouseenter="$event.currentTarget.style.background = form.employee_id === emp.id ? 'var(--mhr-accent)' : 'var(--mhr-surface-2)'"
+                    @mouseleave="$event.currentTarget.style.background = form.employee_id === emp.id ? 'var(--mhr-accent)' : 'transparent'"
+                  >
+                    <span style="font-weight:500;">{{ emp.full_name }}</span>
+                    <span style="font-size:12px;opacity:0.8;">{{ emp.employee_number }}</span>
+                  </button>
+                </div>
+              </div>
             </div>
             
             <div class="mhr-field" style="grid-column:1/-1;">
@@ -379,6 +508,59 @@ function refreshLeaveRequests() {
               </select>
             </div>
 
+            <!-- Leave Balance Display -->
+            <transition name="fade-slide">
+              <div v-if="currentBalance" class="leave-balance-card" style="grid-column:1/-1;">
+                <div class="leave-balance-header">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <AppIcon name="calendar" :size="16" />
+                    <span>Leave Balance</span>
+                  </div>
+                  <button 
+                    type="button"
+                    @click="refreshLeaveRequests" 
+                    :disabled="isRefreshing"
+                    class="balance-refresh-btn"
+                    title="Refresh balance"
+                  >
+                    <AppIcon 
+                      name="refresh" 
+                      :size="14" 
+                      :style="{ transition: 'transform 0.5s', transform: isRefreshing ? 'rotate(360deg)' : 'rotate(0deg)' }" 
+                    />
+                  </button>
+                </div>
+                <div class="leave-balance-stats">
+                  <div class="balance-stat">
+                    <div class="balance-stat__value">{{ currentBalance.allocated_days }}</div>
+                    <div class="balance-stat__label">Allocated</div>
+                  </div>
+                  <div class="balance-stat balance-stat--used">
+                    <div class="balance-stat__value">{{ currentBalance.used_days }}</div>
+                    <div class="balance-stat__label">Used</div>
+                  </div>
+                  <div class="balance-stat balance-stat--pending">
+                    <div class="balance-stat__value">{{ currentBalance.pending_days }}</div>
+                    <div class="balance-stat__label">Pending</div>
+                  </div>
+                  <div class="balance-stat balance-stat--available">
+                    <div class="balance-stat__value">{{ currentBalance.available_days }}</div>
+                    <div class="balance-stat__label">Available</div>
+                  </div>
+                </div>
+                <div class="leave-balance-bar">
+                  <div 
+                    class="leave-balance-bar__fill leave-balance-bar__fill--used" 
+                    :style="{ width: `${(currentBalance.used_days / currentBalance.allocated_days * 100)}%` }"
+                  ></div>
+                  <div 
+                    class="leave-balance-bar__fill leave-balance-bar__fill--pending" 
+                    :style="{ width: `${(currentBalance.pending_days / currentBalance.allocated_days * 100)}%` }"
+                  ></div>
+                </div>
+              </div>
+            </transition>
+
             <div class="mhr-field">
               <label class="mhr-field__label">DATE FROM *</label>
               <DatePicker v-model="addDateFrom" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
@@ -389,6 +571,9 @@ function refreshLeaveRequests() {
                   </div>
                 </template>
               </DatePicker>
+              <div v-if="form.errors.date_from" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
+                {{ form.errors.date_from }}
+              </div>
             </div>
 
             <div class="mhr-field">
@@ -431,7 +616,7 @@ function refreshLeaveRequests() {
         </div>
 
         <div class="mhr-modal__ft">
-          <button class="mhr-btn mhr-btn--ghost" @click="showAddModal = false">Cancel</button>
+          <button class="mhr-btn mhr-btn--ghost" @click="closeAddModal">Cancel</button>
           <button 
             class="mhr-btn mhr-btn--primary" 
             @click="addLeaveRequest"
@@ -452,7 +637,7 @@ function refreshLeaveRequests() {
     </div>
 
     <!-- Edit Leave Request Modal -->
-    <div v-if="showEditModal" class="mhr-modal__scrim" @click.self="showEditModal = false">
+    <div v-if="showEditModal" class="mhr-modal__scrim" @click.self="closeEditModal">
       <div class="mhr-modal mhr-modal--lg">
         <div class="mhr-modal__hd">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;">
@@ -460,7 +645,7 @@ function refreshLeaveRequests() {
               <h2 class="mhr-modal__title">Edit Leave Request</h2>
               <p class="mhr-modal__sub" style="margin-top:2px;">{{ editingRequest?.employeeName }}</p>
             </div>
-            <button class="mhr-icon-btn" @click="showEditModal = false" style="margin-top:-4px;">
+            <button class="mhr-icon-btn" @click="closeEditModal" style="margin-top:-4px;">
               <AppIcon name="x" :size="16" />
             </button>
           </div>
@@ -468,14 +653,40 @@ function refreshLeaveRequests() {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div class="mhr-field" style="grid-column:1/-1;">
+            <div class="mhr-field" style="grid-column:1/-1;position:relative;" data-employee-dropdown>
               <label class="mhr-field__label">EMPLOYEE *</label>
-              <select class="mhr-select" v-model="editForm.employee_id">
-                <option :value="null">Select employee...</option>
-                <option v-for="emp in employees" :key="emp.id" :value="emp.id">
-                  {{ emp.full_name }} ({{ emp.employee_number }})
-                </option>
-              </select>
+              <div style="position:relative;">
+                <input
+                  type="text"
+                  class="mhr-input"
+                  :value="showEditEmployeeDropdown ? editEmployeeSearch : (selectedEditEmployee ? `${selectedEditEmployee.full_name} (${selectedEditEmployee.employee_number})` : '')"
+                  @focus="showEditEmployeeDropdown = true; editEmployeeSearch = ''"
+                  @input="editEmployeeSearch = $event.target.value; showEditEmployeeDropdown = true"
+                  placeholder="Search employee..."
+                  style="cursor:pointer;"
+                />
+                <div v-if="showEditEmployeeDropdown" style="position:absolute;top:100%;left:0;right:0;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);margin-top:4px;max-height:250px;overflow-y:auto;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+                  <div
+                    v-if="filteredEditEmployees.length === 0"
+                    style="padding:12px;color:var(--mhr-ink-3);font-size:13px;text-align:center;"
+                  >
+                    No employees found
+                  </div>
+                  <button
+                    v-for="emp in filteredEditEmployees"
+                    :key="emp.id"
+                    type="button"
+                    @click="editForm.employee_id = emp.id; showEditEmployeeDropdown = false; editEmployeeSearch = ''"
+                    style="width:100%;padding:10px 12px;border:none;background:transparent;text-align:left;cursor:pointer;font-size:13px;color:var(--mhr-ink);display:flex;flex-direction:column;gap:2px;"
+                    :style="editForm.employee_id === emp.id ? 'background:var(--mhr-accent);color:white;' : ''"
+                    @mouseenter="$event.currentTarget.style.background = editForm.employee_id === emp.id ? 'var(--mhr-accent)' : 'var(--mhr-surface-2)'"
+                    @mouseleave="$event.currentTarget.style.background = editForm.employee_id === emp.id ? 'var(--mhr-accent)' : 'transparent'"
+                  >
+                    <span style="font-weight:500;">{{ emp.full_name }}</span>
+                    <span style="font-size:12px;opacity:0.8;">{{ emp.employee_number }}</span>
+                  </button>
+                </div>
+              </div>
             </div>
             
             <div class="mhr-field" style="grid-column:1/-1;">
@@ -488,6 +699,59 @@ function refreshLeaveRequests() {
               </select>
             </div>
 
+            <!-- Leave Balance Display (Edit Modal) -->
+            <transition name="fade-slide">
+              <div v-if="editCurrentBalance" class="leave-balance-card" style="grid-column:1/-1;">
+                <div class="leave-balance-header">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <AppIcon name="calendar" :size="16" />
+                    <span>Leave Balance</span>
+                  </div>
+                  <button 
+                    type="button"
+                    @click="refreshLeaveRequests" 
+                    :disabled="isRefreshing"
+                    class="balance-refresh-btn"
+                    title="Refresh balance"
+                  >
+                    <AppIcon 
+                      name="refresh" 
+                      :size="14" 
+                      :style="{ transition: 'transform 0.5s', transform: isRefreshing ? 'rotate(360deg)' : 'rotate(0deg)' }" 
+                    />
+                  </button>
+                </div>
+                <div class="leave-balance-stats">
+                  <div class="balance-stat">
+                    <div class="balance-stat__value">{{ editCurrentBalance.allocated_days }}</div>
+                    <div class="balance-stat__label">Allocated</div>
+                  </div>
+                  <div class="balance-stat balance-stat--used">
+                    <div class="balance-stat__value">{{ editCurrentBalance.used_days }}</div>
+                    <div class="balance-stat__label">Used</div>
+                  </div>
+                  <div class="balance-stat balance-stat--pending">
+                    <div class="balance-stat__value">{{ editCurrentBalance.pending_days }}</div>
+                    <div class="balance-stat__label">Pending</div>
+                  </div>
+                  <div class="balance-stat balance-stat--available">
+                    <div class="balance-stat__value">{{ editCurrentBalance.available_days }}</div>
+                    <div class="balance-stat__label">Available</div>
+                  </div>
+                </div>
+                <div class="leave-balance-bar">
+                  <div 
+                    class="leave-balance-bar__fill leave-balance-bar__fill--used" 
+                    :style="{ width: `${(editCurrentBalance.used_days / editCurrentBalance.allocated_days * 100)}%` }"
+                  ></div>
+                  <div 
+                    class="leave-balance-bar__fill leave-balance-bar__fill--pending" 
+                    :style="{ width: `${(editCurrentBalance.pending_days / editCurrentBalance.allocated_days * 100)}%` }"
+                  ></div>
+                </div>
+              </div>
+            </transition>
+
             <div class="mhr-field">
               <label class="mhr-field__label">DATE FROM *</label>
               <DatePicker v-model="editDateFrom" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
@@ -498,6 +762,9 @@ function refreshLeaveRequests() {
                   </div>
                 </template>
               </DatePicker>
+              <div v-if="editForm.errors.date_from" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
+                {{ editForm.errors.date_from }}
+              </div>
             </div>
 
             <div class="mhr-field">
@@ -540,7 +807,7 @@ function refreshLeaveRequests() {
         </div>
 
         <div class="mhr-modal__ft">
-          <button class="mhr-btn mhr-btn--ghost" @click="showEditModal = false">Cancel</button>
+          <button class="mhr-btn mhr-btn--ghost" @click="closeEditModal">Cancel</button>
           <button 
             class="mhr-btn mhr-btn--primary" 
             @click="updateLeaveRequest"
@@ -561,14 +828,14 @@ function refreshLeaveRequests() {
     </div>
 
     <!-- View Details Modal -->
-    <div v-if="showViewModal" class="mhr-modal__scrim" @click.self="showViewModal = false">
+    <div v-if="showViewModal" class="mhr-modal__scrim" @click.self="closeViewModal">
       <div class="mhr-modal mhr-modal--md">
         <div class="mhr-modal__hd">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;">
             <div>
               <h2 class="mhr-modal__title">Leave Request Details</h2>
             </div>
-            <button class="mhr-icon-btn" @click="showViewModal = false" style="margin-top:-4px;">
+            <button class="mhr-icon-btn" @click="closeViewModal" style="margin-top:-4px;">
               <AppIcon name="x" :size="16" />
             </button>
           </div>
@@ -589,9 +856,7 @@ function refreshLeaveRequests() {
               </div>
               <div>
                 <div style="font-size:11px;font-weight:600;color:var(--mhr-ink-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Status</div>
-                <span class="mhr-badge" :style="{ background: viewingRequest?.statusColor || 'var(--mhr-line)', color: 'white' }">
-                  {{ viewingRequest?.statusTitle }}
-                </span>
+                <StatusPill :status="viewingRequest?.statusTitle" />
               </div>
             </div>
 
@@ -639,7 +904,7 @@ function refreshLeaveRequests() {
         </div>
 
         <div class="mhr-modal__ft">
-          <button class="mhr-btn mhr-btn--ghost" @click="showViewModal = false">Close</button>
+          <button class="mhr-btn mhr-btn--ghost" @click="closeViewModal">Close</button>
         </div>
       </div>
     </div>
@@ -691,6 +956,174 @@ function refreshLeaveRequests() {
   transform: translateY(-50%);
   color: var(--mhr-ink-3);
   pointer-events: none;
+}
+
+/* Leave Balance Card */
+.leave-balance-card {
+  background: linear-gradient(135deg, var(--mhr-surface) 0%, var(--mhr-surface-2) 100%);
+  border: 1px solid var(--mhr-line);
+  border-radius: var(--mhr-r);
+  padding: 16px;
+  animation: slideDown 0.3s ease-out;
+}
+
+.leave-balance-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mhr-ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+.balance-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--mhr-line);
+  background: var(--mhr-bg);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--mhr-ink-2);
+}
+
+.balance-refresh-btn:hover:not(:disabled) {
+  background: var(--mhr-surface);
+  border-color: var(--mhr-accent);
+  color: var(--mhr-accent);
+  transform: scale(1.05);
+}
+
+.balance-refresh-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.balance-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.leave-balance-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.balance-stat {
+  text-align: center;
+  padding: 12px;
+  background: var(--mhr-bg);
+  border-radius: 6px;
+  border: 1px solid var(--mhr-line);
+  transition: all 0.2s;
+}
+
+.balance-stat:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.balance-stat__value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--mhr-ink);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.balance-stat__label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mhr-ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.balance-stat--used .balance-stat__value {
+  color: var(--mhr-danger);
+}
+
+.balance-stat--pending .balance-stat__value {
+  color: var(--mhr-warn);
+}
+
+.balance-stat--available .balance-stat__value {
+  color: var(--green-700);
+}
+
+.leave-balance-bar {
+  display: flex;
+  height: 8px;
+  background: var(--mhr-surface);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.leave-balance-bar__fill {
+  height: 100%;
+  transition: width 0.5s ease-out;
+}
+
+.leave-balance-bar__fill--used {
+  background: var(--mhr-danger);
+}
+
+.leave-balance-bar__fill--pending {
+  background: var(--mhr-warn);
+}
+
+/* Fade slide transition */
+.fade-slide-enter-active {
+  animation: fadeSlideIn 0.3s ease-out;
+}
+
+.fade-slide-leave-active {
+  animation: fadeSlideOut 0.2s ease-in;
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeSlideOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+    transform: translateY(0);
+  }
 }
 </style>
 

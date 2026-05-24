@@ -2,13 +2,12 @@
 
 namespace App\Http\Controllers\MeridianHR;
 
-use App\Http\Controllers\Controller;
 use App\Models\Ems\Venue;
 use App\Models\GlobalStatus;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
-class VenueController extends Controller
+class VenueController extends BaseHRController
 {
     public function index()
     {
@@ -36,11 +35,10 @@ class VenueController extends Controller
                 ];
             });
 
-        return Inertia::render('MeridianHR/Venue', [
-            'hrRole' => request()->query('role', 'admin'),
+        return Inertia::render('MeridianHR/Venue', array_merge($this->getCommonProps('venues'), [
             'venues' => $venues,
             'statuses' => GlobalStatus::where('is_active', 1)->orderBy('name')->get(['id', 'name as title', 'color']),
-        ]);
+        ]));
     }
 
     public function store(Request $request)

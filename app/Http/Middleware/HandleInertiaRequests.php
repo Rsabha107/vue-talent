@@ -39,10 +39,9 @@ class HandleInertiaRequests extends Middleware
                 'error'   => fn() => $request->session()->get('error'),
             ],
             'dateFormat' => config('settings.date_format', 'DD/MM/YYYY'),
-            'availableEvents' => fn() => \App\Models\Ems\Event::join('global_statuses', 'events.active_flag', '=', 'global_statuses.id')
-                ->where('global_statuses.name', 'Active')
-                ->orderBy('events.name')
-                ->get(['events.id', 'events.name', 'events.event_logo'])
+            'availableEvents' => fn() => \App\Models\Ems\Event::where('active_flag', 1)
+                ->orderBy('name')
+                ->get(['id', 'name', 'event_logo'])
                 ->map(fn($e) => [
                     'id' => $e->id,
                     'name' => $e->name,

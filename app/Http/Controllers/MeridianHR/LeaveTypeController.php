@@ -2,17 +2,18 @@
 
 namespace App\Http\Controllers\MeridianHR;
 
-use App\Http\Controllers\Controller;
 use App\Models\Department;
 use App\Models\Designation;
 use App\Models\EmployeeContractType;
 use App\Models\Gender;
 use App\Models\LeaveEligibility;
 use App\Models\LeaveType;
+use App\Services\LeaveBalanceService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
-class LeaveTypeController extends Controller
+class LeaveTypeController extends BaseHRController
 {
     public function index()
     {
@@ -37,15 +38,13 @@ class LeaveTypeController extends Controller
                 ];
             });
 
-        return Inertia::render('MeridianHR/LeaveType', [
-            'hrRole'        => $this->getHrRole(),
-            'hrPage'        => 'leave-types',
+        return Inertia::render('MeridianHR/LeaveType', array_merge($this->getCommonProps('leave-types'), [
             'leaveTypes'    => $leaveTypes,
             'contractTypes' => EmployeeContractType::orderBy('title')->get(['id', 'title']),
             'genders'       => Gender::orderBy('title')->get(['id', 'title']),
             'departments'   => Department::active()->orderBy('name')->get(['id', 'name']),
             'designations'  => Designation::active()->orderBy('name')->get(['id', 'name']),
-        ]);
+        ]));
     }
 
     public function store(Request $request)
@@ -68,11 +67,15 @@ class LeaveTypeController extends Controller
             'accrual_frequency' => $validated['accrual_frequency'] ?? null,
             'number_of_leaves'  => $validated['number_of_leaves'] ?? null,
             'eligible'          => $validated['eligible'] ?? true,
-            'created_by'        => auth()->id(),
-            'updated_by'        => auth()->id(),
+            'created_by'        => Auth::id(),
+            'updated_by'        => Auth::id(),
         ]);
 
         $this->syncEligibilities($leaveType->id, $validated);
+
+        // Initialize leave balances for all employees for this new leave type
+        $eventId = $this->getSelectedEventId();
+        LeaveBalanceService::initializeLeaveBalance($leaveType, null, $eventId);
 
         return redirect()->route('hr.leave-types')->with('success', 'Leave type created successfully.');
     }
@@ -99,10 +102,14 @@ class LeaveTypeController extends Controller
             'accrual_frequency' => $validated['accrual_frequency'] ?? null,
             'number_of_leaves'  => $validated['number_of_leaves'] ?? null,
             'eligible'          => $validated['eligible'] ?? true,
-            'updated_by'        => auth()->id(),
+            'updated_by'        => Auth::id(),
         ]);
 
         $this->syncEligibilities($leaveType->id, $validated);
+
+        // Recalculate leave balances for all employees for this leave type
+        $eventId = $this->getSelectedEventId();
+        LeaveBalanceService::initializeLeaveBalance($leaveType, null, $eventId);
 
         return redirect()->route('hr.leave-types')->with('success', 'Leave type updated successfully.');
     }
@@ -110,7 +117,7 @@ class LeaveTypeController extends Controller
     public function destroy($id)
     {
         $leaveType = LeaveType::findOrFail($id);
-        $leaveType->update(['active_flag' => 0, 'updated_by' => auth()->id()]);
+        $leaveType->update(['active_flag' => 0, 'updated_by' => Auth::id()]);
 
         return redirect()->route('hr.leave-types')->with('success', 'Leave type deactivated successfully.');
     }
@@ -138,8 +145,4 @@ class LeaveTypeController extends Controller
         }
     }
 
-    private function getHrRole()
-    {
-        return request()->query('role', 'admin');
-    }
 }

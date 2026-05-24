@@ -11,6 +11,7 @@ class EmployeeLeaveRequest extends Model
     protected $fillable = [
         'archived',
         'employee_id',
+        'event_id',
         'user_id',
         'leave_type_id',
         'number_of_days',
@@ -24,6 +25,7 @@ class EmployeeLeaveRequest extends Model
 
     protected $casts = [
         'employee_id' => 'integer',
+        'event_id' => 'integer',
         'user_id' => 'integer',
         'leave_type_id' => 'integer',
         'number_of_days' => 'integer',
@@ -44,6 +46,11 @@ class EmployeeLeaveRequest extends Model
     public function employee()
     {
         return $this->belongsTo(Employee::class);
+    }
+
+    public function event()
+    {
+        return $this->belongsTo(\App\Models\Ems\Event::class);
     }
 
     public function leaveType()
@@ -82,4 +89,43 @@ class EmployeeLeaveRequest extends Model
         return $query->whereBetween('date_from', [$from, $to])
             ->orWhereBetween('date_to', [$from, $to]);
     }
+
+    /**
+     * Scope to filter by event
+     * 
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param int|null $eventId - If null, uses session event
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeForEvent($query, $eventId = null)
+    {
+        $eventId = $eventId ?? session('selected_event_id');
+        
+        if ($eventId) {
+            return $query->where('event_id', $eventId);
+        }
+        
+        return $query;
+    }
+
+    /**
+     * Scope to bypass event filtering (for admin views)
+     */
+    public function scopeAllEvents($query)
+    {
+        return $query; // Does nothing, just for clarity in code
+    }
+
+    // Uncomment below to enable automatic event filtering on ALL queries
+    // Use carefully - this will affect every query unless you use ->withoutGlobalScope('event')
+    /*
+    protected static function booted()
+    {
+        static::addGlobalScope('event', function ($query) {
+            if ($eventId = session('selected_event_id')) {
+                $query->where('event_id', $eventId);
+            }
+        });
+    }
+    */
 }

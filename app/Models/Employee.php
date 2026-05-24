@@ -140,6 +140,24 @@ class Employee extends Model
         return $this->hasMany(EmployeeLeaveRequest::class, 'employee_id');
     }
 
+    // Event relationships
+    public function events()
+    {
+        return $this->belongsToMany(\App\Models\Ems\Event::class, 'employee_events', 'employee_id', 'event_id')
+            ->withPivot(['assigned_at', 'released_at', 'event_role', 'event_department_id', 'is_active'])
+            ->withTimestamps();
+    }
+
+    public function activeEvents()
+    {
+        return $this->events()->wherePivot('is_active', 1);
+    }
+
+    public function leaveBalances()
+    {
+        return $this->hasMany(EmployeeLeaveBalance::class);
+    }
+
     // Accessors
     public function getInitialsAttribute()
     {
@@ -163,5 +181,26 @@ class Employee extends Model
     public function scopeArchived($query)
     {
         return $query->where('archived', 'Y');
+    }
+
+    /**
+     * Scope to filter employees by event assignment
+     * 
+     * @param \Illuminate\Database\Eloquent\Builder $query
+     * @param int|null $eventId - If null, uses session event
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    public function scopeForEvent($query, $eventId = null)
+    {
+        $eventId = $eventId ?? session('selected_event_id');
+        
+        if ($eventId) {
+            return $query->whereHas('events', function ($q) use ($eventId) {
+                $q->where('events.id', $eventId)
+                  ->where('employee_events.is_active', 1);
+            });
+        }
+        
+        return $query;
     }
 }
