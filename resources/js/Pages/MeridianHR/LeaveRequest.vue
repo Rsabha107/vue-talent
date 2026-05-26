@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { router, useForm, usePage } from '@inertiajs/vue3'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
+import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
 import StatusPill from '@/Components/MeridianHR/StatusPill.vue'
 import { DatePicker } from 'v-calendar'
 import 'v-calendar/style.css'
@@ -124,6 +125,10 @@ const selectedEmployee = computed(() => {
 
 const selectedEditEmployee = computed(() => {
   return props.employees.find(emp => emp.id === editForm.employee_id)
+})
+
+const isApproved = computed(() => {
+  return editingRequest.value?.statusTitle?.toLowerCase() === 'approved'
 })
 
 const filtered = computed(() => {
@@ -292,12 +297,23 @@ function updateLeaveRequest() {
 }
 
 function confirmDelete(request) {
+  // Don't allow deletion of approved leave requests
+  if (request.statusTitle?.toLowerCase() === 'approved') {
+    showToast('Cannot delete approved leave requests', true)
+    return
+  }
   requestToDelete.value = request
   showDeleteModal.value = true
   openMenuId.value = null
 }
 
 function deleteLeaveRequest() {
+  // Additional safety check
+  if (requestToDelete.value?.statusTitle?.toLowerCase() === 'approved') {
+    showToast('Cannot delete approved leave requests', true)
+    showDeleteModal.value = false
+    return
+  }
   router.delete(route('hr.leave-requests.destroy', requestToDelete.value.id), {
     onSuccess: () => {
       showDeleteModal.value = false
@@ -344,9 +360,7 @@ onBeforeUnmount(() => {
         <p class="mhr-page-head__sub">Manage employee leave requests</p>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
-        <button class="mhr-btn mhr-btn--outline" @click="refreshLeaveRequests" :disabled="isRefreshing">
-          <AppIcon name="refresh" :size="14" :style="{ transition: 'transform 0.5s', transform: isRefreshing ? 'rotate(360deg)' : 'rotate(0deg)' }" />
-        </button>
+        <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshLeaveRequests" />
         <button class="mhr-btn mhr-btn--primary" @click="showAddModal = true">
           <AppIcon name="plus" /> Add Leave Request
         </button>
@@ -421,12 +435,12 @@ onBeforeUnmount(() => {
                       <AppIcon name="eye" :size="14" />
                       <span>View Details</span>
                     </button>
-                    <button @click="editRequest(request)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
+                    <button v-if="request.statusTitle?.toLowerCase() !== 'approved'" @click="editRequest(request)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
                       <AppIcon name="edit" :size="14" />
                       <span>Edit</span>
                     </button>
-                    <div style="border-top:1px solid var(--mhr-line-2);margin:4px 0;"></div>
-                    <button @click="confirmDelete(request)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-danger);" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
+                    <div v-if="request.statusTitle?.toLowerCase() !== 'approved'" style="border-top:1px solid var(--mhr-line-2);margin:4px 0;"></div>
+                    <button v-if="request.statusTitle?.toLowerCase() !== 'approved'" @click="confirmDelete(request)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-danger);" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
                       <AppIcon name="trash" :size="14" />
                       <span>Archive</span>
                     </button>
@@ -644,6 +658,9 @@ onBeforeUnmount(() => {
             <div>
               <h2 class="mhr-modal__title">Edit Leave Request</h2>
               <p class="mhr-modal__sub" style="margin-top:2px;">{{ editingRequest?.employeeName }}</p>
+              <div v-if="isApproved" style="margin-top:8px;padding:8px 12px;background:var(--mhr-accent-soft);border-left:3px solid var(--mhr-accent);border-radius:4px;font-size:12px;color:var(--mhr-ink-2);">
+                <strong style="color:var(--mhr-accent);">✓ Approved</strong> — This leave request has been approved and cannot be edited.
+              </div>
             </div>
             <button class="mhr-icon-btn" @click="closeEditModal" style="margin-top:-4px;">
               <AppIcon name="x" :size="16" />
@@ -660,12 +677,13 @@ onBeforeUnmount(() => {
                   type="text"
                   class="mhr-input"
                   :value="showEditEmployeeDropdown ? editEmployeeSearch : (selectedEditEmployee ? `${selectedEditEmployee.full_name} (${selectedEditEmployee.employee_number})` : '')"
-                  @focus="showEditEmployeeDropdown = true; editEmployeeSearch = ''"
+                  @focus="!isApproved && (showEditEmployeeDropdown = true, editEmployeeSearch = '')"
                   @input="editEmployeeSearch = $event.target.value; showEditEmployeeDropdown = true"
                   placeholder="Search employee..."
-                  style="cursor:pointer;"
+                  :disabled="isApproved"
+                  :style="isApproved ? 'cursor:not-allowed;opacity:0.6;' : 'cursor:pointer;'"
                 />
-                <div v-if="showEditEmployeeDropdown" style="position:absolute;top:100%;left:0;right:0;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);margin-top:4px;max-height:250px;overflow-y:auto;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+                <div v-if="showEditEmployeeDropdown && !isApproved" style="position:absolute;top:100%;left:0;right:0;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);margin-top:4px;max-height:250px;overflow-y:auto;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.1);">
                   <div
                     v-if="filteredEditEmployees.length === 0"
                     style="padding:12px;color:var(--mhr-ink-3);font-size:13px;text-align:center;"
@@ -691,7 +709,7 @@ onBeforeUnmount(() => {
             
             <div class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">LEAVE TYPE *</label>
-              <select class="mhr-select" v-model="editForm.leave_type_id">
+              <select class="mhr-select" v-model="editForm.leave_type_id" :disabled="isApproved" :style="isApproved ? 'cursor:not-allowed;opacity:0.6;' : ''">
                 <option :value="null">Select leave type...</option>
                 <option v-for="type in leaveTypes" :key="type.id" :value="type.id">
                   {{ type.title }}
@@ -754,10 +772,10 @@ onBeforeUnmount(() => {
 
             <div class="mhr-field">
               <label class="mhr-field__label">DATE FROM *</label>
-              <DatePicker v-model="editDateFrom" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+              <DatePicker v-model="editDateFrom" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }" :disabled="isApproved">
                 <template #default="{ inputValue, inputEvents }">
                   <div class="mhr-date-wrap">
-                    <input class="mhr-input mhr-date-trigger" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" />
+                    <input class="mhr-input mhr-date-trigger" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" :disabled="isApproved" :style="isApproved ? 'cursor:not-allowed;opacity:0.6;' : ''" />
                     <AppIcon name="calendar" :size="14" class="mhr-date-icon" />
                   </div>
                 </template>
@@ -769,10 +787,10 @@ onBeforeUnmount(() => {
 
             <div class="mhr-field">
               <label class="mhr-field__label">DATE TO *</label>
-              <DatePicker v-model="editDateTo" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+              <DatePicker v-model="editDateTo" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }" :disabled="isApproved">
                 <template #default="{ inputValue, inputEvents }">
                   <div class="mhr-date-wrap">
-                    <input class="mhr-input mhr-date-trigger" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" />
+                    <input class="mhr-input mhr-date-trigger" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" :disabled="isApproved" :style="isApproved ? 'cursor:not-allowed;opacity:0.6;' : ''" />
                     <AppIcon name="calendar" :size="14" class="mhr-date-icon" />
                   </div>
                 </template>
@@ -781,12 +799,12 @@ onBeforeUnmount(() => {
 
             <div class="mhr-field">
               <label class="mhr-field__label">NUMBER OF DAYS *</label>
-              <input class="mhr-input" type="number" v-model="editForm.number_of_days" min="1" />
+              <input class="mhr-input" type="number" v-model="editForm.number_of_days" min="1" :disabled="isApproved" :style="isApproved ? 'cursor:not-allowed;opacity:0.6;' : ''" />
             </div>
 
             <div class="mhr-field">
               <label class="mhr-field__label">STATUS *</label>
-              <select class="mhr-select" v-model="editForm.status_id">
+              <select class="mhr-select" v-model="editForm.status_id" :disabled="isApproved" :style="isApproved ? 'cursor:not-allowed;opacity:0.6;' : ''">
                 <option :value="null">Select status...</option>
                 <option v-for="status in statuses" :key="status.id" :value="status.id">
                   {{ status.title }}
@@ -796,19 +814,20 @@ onBeforeUnmount(() => {
 
             <div class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">REASON *</label>
-              <textarea class="mhr-input" v-model="editForm.reason" rows="3" placeholder="Reason for leave request..."></textarea>
+              <textarea class="mhr-input" v-model="editForm.reason" rows="3" placeholder="Reason for leave request..." :disabled="isApproved" :style="isApproved ? 'cursor:not-allowed;opacity:0.6;' : ''"></textarea>
             </div>
 
             <div class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">ADDITIONAL INFORMATION</label>
-              <textarea class="mhr-input" v-model="editForm.additional_information" rows="2" placeholder="Any additional notes..."></textarea>
+              <textarea class="mhr-input" v-model="editForm.additional_information" rows="2" placeholder="Any additional notes..." :disabled="isApproved" :style="isApproved ? 'cursor:not-allowed;opacity:0.6;' : ''"></textarea>
             </div>
           </div>
         </div>
 
         <div class="mhr-modal__ft">
-          <button class="mhr-btn mhr-btn--ghost" @click="closeEditModal">Cancel</button>
+          <button class="mhr-btn mhr-btn--ghost" @click="closeEditModal">{{ isApproved ? 'Close' : 'Cancel' }}</button>
           <button 
+            v-if="!isApproved"
             class="mhr-btn mhr-btn--primary" 
             @click="updateLeaveRequest"
             :disabled="editForm.processing"

@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { router, useForm, usePage } from '@inertiajs/vue3'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
+import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
 
 defineOptions({ layout: MeridianLayout })
 
@@ -211,9 +212,7 @@ onBeforeUnmount(() => {
         <p class="mhr-page-head__sub">Manage employee addresses</p>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
-        <button class="mhr-btn mhr-btn--outline" @click="refreshAddresses" :disabled="isRefreshing">
-          <AppIcon name="refresh" :size="14" :style="{ transition: 'transform 0.5s', transform: isRefreshing ? 'rotate(360deg)' : 'rotate(0deg)' }" />
-        </button>
+        <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshAddresses" />
         <button class="mhr-btn mhr-btn--primary" @click="showAddModal = true">
           <AppIcon name="plus" /> Add Address
         </button>

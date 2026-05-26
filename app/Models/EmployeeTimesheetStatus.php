@@ -4,14 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class EmployeeLeaveStatus extends Model
+class EmployeeTimesheetStatus extends Model
 {
     // Status constants
     const STATUS_PENDING = 'Pending';
+    const STATUS_SUBMITTED = 'Submitted';
     const STATUS_APPROVED = 'Approved';
     const STATUS_REJECTED = 'Rejected';
     
-    protected $table = 'employee_leave_status';
+    protected $table = 'employee_timesheet_status';
 
     protected $fillable = [
         'title',
@@ -31,7 +32,7 @@ class EmployeeLeaveStatus extends Model
     public static function getIdByTitle(string $title): ?int
     {
         return cache()->remember(
-            "leave_status_{$title}", 
+            "timesheet_status_{$title}", 
             now()->addDay(), 
             fn() => static::where('title', $title)->value('id')
         );
@@ -45,6 +46,11 @@ class EmployeeLeaveStatus extends Model
         return static::getIdByTitle(self::STATUS_PENDING);
     }
     
+    public static function submittedId(): int
+    {
+        return static::getIdByTitle(self::STATUS_SUBMITTED);
+    }
+    
     public static function approvedId(): int
     {
         return static::getIdByTitle(self::STATUS_APPROVED);
@@ -55,9 +61,9 @@ class EmployeeLeaveStatus extends Model
         return static::getIdByTitle(self::STATUS_REJECTED);
     }
 
-    public function leaveRequests()
+    public function timesheets()
     {
-        return $this->hasMany(EmployeeLeaveRequest::class, 'status_id');
+        return $this->hasMany(EmployeeTimesheet::class, 'status_id');
     }
 
     public function scopeActive($query)

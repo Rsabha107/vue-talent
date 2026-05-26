@@ -65,6 +65,11 @@ class EmployeeTimesheet extends Model
         return $this->belongsTo(Employee::class, 'performer_id');
     }
 
+    public function status(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(EmployeeTimesheetStatus::class, 'status_id');
+    }
+
     public function entries(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(EmployeeTimesheetEntry::class)->orderBy('calendar_day');

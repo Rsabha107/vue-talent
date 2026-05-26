@@ -9,6 +9,7 @@ use App\Models\EmployeeLeaveStatus;
 use App\Models\EmployeeSalary;
 use App\Models\EmployeeTimesheet;
 use App\Models\EmployeeTimesheetEntry;
+use App\Models\EmployeeTimesheetStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -122,9 +123,24 @@ class TimesheetController extends BaseHRController
 
     public function submitTimesheet(Request $request)
     {
-        $request->validate(['month' => 'required|string']);
-        // In production: mark timesheet as submitted
-        return back()->with('success', 'Timesheet submitted.');
+        $request->validate([
+            'timesheet_id' => 'required|integer|exists:employee_timesheets,id',
+        ]);
+        
+        $timesheet = EmployeeTimesheet::findOrFail($request->timesheet_id);
+        
+        // Only allow submission if status is Pending
+        if ($timesheet->status_id !== EmployeeTimesheetStatus::pendingId()) {
+            return back()->withErrors(['error' => 'Only pending timesheets can be submitted.']);
+        }
+        
+        // Update status to Submitted
+        $timesheet->update([
+            'status_id' => EmployeeTimesheetStatus::submittedId(),
+            'updated_at' => now(),
+        ]);
+        
+        return back()->with('success', 'Timesheet submitted successfully.');
     }
 
     public function saveTimesheetDay(Request $request)
@@ -176,7 +192,7 @@ class TimesheetController extends BaseHRController
                        'July', 'August', 'September', 'October', 'November', 'December'];
 
         // Approved leave dates keyed by employee_id → [Y-m-d => true]
-        $approvedStatusId = EmployeeLeaveStatus::where('title', 'Approved')->value('id');
+        $approvedStatusId = EmployeeLeaveStatus::approvedId();
         $leaveDays = [];
         if ($approvedStatusId) {
             EmployeeLeaveRequest::active()
@@ -218,17 +234,29 @@ class TimesheetController extends BaseHRController
             }
 
             $empLeave = $leaveDays[$ts->employee_id] ?? [];
-            $entries = $ts->entries->map(function ($e) use ($ts, $DAYS, $empLeave) {
-                $date      = new \DateTime("{$ts->year}-{$ts->month_id}-{$e->calendar_day}");
-                $dow       = (int) $date->format('w'); // 0=Sun, 5=Fri, 6=Sat
-                return [
-                    'day'       => $e->calendar_day,
+            
+            // Build entries for ALL days in the valid range, not just saved ones
+            $savedEntries = $ts->entries->keyBy('calendar_day');
+            $entries = [];
+            
+            for ($d = $startDay; $d <= $endDay; $d++) {
+                $date = new \DateTime("{$ts->year}-{$ts->month_id}-{$d}");
+                $dow = (int) $date->format('w'); // 0=Sun, 5=Fri, 6=Sat
+                $isWeekend = $dow === 5 || $dow === 6; // Friday or Saturday
+                $isLeave = isset($empLeave[$date->format('Y-m-d')]);
+                
+                // If there's a saved entry for this day, use its action; otherwise default
+                $savedEntry = $savedEntries[$d] ?? null;
+                $action = $savedEntry ? $savedEntry->day_action : ($isWeekend ? '0' : 'W');
+                
+                $entries[] = [
+                    'day'       => $d,
                     'dayName'   => $DAYS[$dow],
-                    'isWeekend' => $dow === 5 || $dow === 6, // Friday or Saturday
-                    'action'    => $e->day_action,
-                    'isLeave'   => isset($empLeave[$date->format('Y-m-d')]),
+                    'isWeekend' => $isWeekend,
+                    'action'    => $action,
+                    'isLeave'   => $isLeave,
                 ];
-            })->values()->all();
+            }
 
             $period     = $monthNames[$ts->month_id] . '-' . $ts->year;
             $statusId   = $ts->status_id;
@@ -407,7 +435,7 @@ class TimesheetController extends BaseHRController
                 'year'             => (string) $request->year_selected,
                 'timesheet_period' => $monthName . '-' . $request->year_selected,
                 'days_in_month'    => $daysInMonth,
-                'status_id'        => 1, // Pending
+                'status_id'        => EmployeeTimesheetStatus::pendingId(),
                 'creator_id'       => Auth::id(),
             ]);
 
@@ -546,7 +574,7 @@ class TimesheetController extends BaseHRController
                 'total_payment' => $totalPayment,
                 'bank_id' => $bank?->id,
                 'entries_exists' => 'Y',
-                'status_id' => 1, // Reset to Pending when entries are updated
+                'status_id' => EmployeeTimesheetStatus::pendingId(),
             ]);
         });
 
@@ -564,8 +592,94 @@ class TimesheetController extends BaseHRController
 
     public function approvalsTime()
     {
+        $eventId = $this->getSelectedEventId();
+        
+        // Get submitted timesheets (ready for approval)
+        $submittedStatusId = EmployeeTimesheetStatus::submittedId();
+        
+        $query = EmployeeTimesheet::active()
+            ->with(['employee', 'performer:id,full_name'])
+            ->where('status_id', $submittedStatusId)
+            ->forEvent($eventId)
+            ->orderBy('created_at', 'DESC');
+        
+        $monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                       'July', 'August', 'September', 'October', 'November', 'December'];
+        
+        $timesheets = $query->get()->map(function ($ts) use ($monthNames) {
+            $emp = $ts->employee;
+            $period = $monthNames[$ts->month_id] . ' ' . $ts->year;
+            
+            return [
+                'id'        => $ts->id,
+                'emp'       => $emp?->full_name ?? 'Unknown',
+                'empId'     => $emp?->employee_number ?? 'N/A',
+                'c'         => $emp?->avatar_color ?? 0,
+                'period'    => $period,
+                'worked'    => $ts->days_worked ?? 0,
+                'leave'     => $ts->leave_taken ?? 0,
+                'unpaid'    => $ts->unpaid_leave_taken ?? 0,
+                'submitted' => $ts->created_at?->format('Y-m-d'),
+                'note'      => $ts->additional_information ?? '',
+            ];
+        });
+        
         return Inertia::render('MeridianHR/TimesheetApprovals', array_merge($this->getCommonProps('approve-time'), [
-            'items'  => $this->pendingTimesheets(),
+            'items' => $timesheets,
         ]));
+    }
+    
+    public function approveTimesheet(Request $request)
+    {
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'required|integer|exists:employee_timesheets,id',
+            'additional_information' => 'nullable|string|max:1000',
+        ]);
+        
+        $approvedStatusId = EmployeeTimesheetStatus::approvedId();
+        $submittedStatusId = EmployeeTimesheetStatus::submittedId();
+        $userId = Auth::id();
+        $additionalInfo = $request->additional_information;
+        
+        DB::transaction(function () use ($request, $approvedStatusId, $submittedStatusId, $userId, $additionalInfo) {
+            EmployeeTimesheet::whereIn('id', $request->ids)
+                ->where('status_id', $submittedStatusId)
+                ->update([
+                    'status_id'   => $approvedStatusId,
+                    'performer_id' => $userId,
+                    'additional_information' => $additionalInfo,
+                    'updated_at'  => now(),
+                ]);
+        });
+        
+        return back()->with('success', count($request->ids) . ' timesheet(s) approved successfully');
+    }
+    
+    public function rejectTimesheet(Request $request)
+    {
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'required|integer|exists:employee_timesheets,id',
+            'additional_information' => 'nullable|string|max:1000',
+        ]);
+        
+        $rejectedStatusId = EmployeeTimesheetStatus::rejectedId();
+        $submittedStatusId = EmployeeTimesheetStatus::submittedId();
+        $userId = Auth::id();
+        $additionalInfo = $request->additional_information;
+        
+        DB::transaction(function () use ($request, $rejectedStatusId, $submittedStatusId, $userId, $additionalInfo) {
+            EmployeeTimesheet::whereIn('id', $request->ids)
+                ->where('status_id', $submittedStatusId)
+                ->update([
+                    'status_id'   => $rejectedStatusId,
+                    'performer_id' => $userId,
+                    'additional_information' => $additionalInfo,
+                    'updated_at'  => now(),
+                ]);
+        });
+        
+        return back()->with('success', count($request->ids) . ' timesheet(s) rejected');
     }
 }

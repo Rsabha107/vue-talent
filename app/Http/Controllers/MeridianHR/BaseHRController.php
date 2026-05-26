@@ -178,14 +178,15 @@ abstract class BaseHRController extends Controller
         
         // Get pending leave requests count for selected event
         $pendingLeaves = \App\Models\EmployeeLeaveRequest::forEvent($eventId)
-            ->whereHas('status', function($q) {
-                $q->where('title', 'Pending');
-            })
+            ->where('status_id', \App\Models\EmployeeLeaveStatus::pendingId())
             ->active()
             ->count();
         
-        // TODO: Add timesheet approvals count when implemented
-        $pendingTimesheets = 0;
+        // Get pending timesheets count for selected event
+        $pendingTimesheets = \App\Models\EmployeeTimesheet::forEvent($eventId)
+            ->where('status_id', \App\Models\EmployeeTimesheetStatus::submittedId())
+            ->active()
+            ->count();
         
         return [
             'pendingLeaves' => $pendingLeaves,

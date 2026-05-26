@@ -61,9 +61,7 @@ class EmployeeController extends BaseHRController
     {
         $leaveRequests = EmployeeLeaveRequest::with(['employee', 'leaveType', 'status'])
             ->forEvent() // Filter by selected event from session
-            ->whereHas('status', function($q) {
-                $q->where('title', 'Pending');
-            })
+            ->where('status_id', EmployeeLeaveStatus::pendingId())
             ->active()
             ->orderBy('created_at', 'asc')
             ->get();
@@ -928,19 +926,14 @@ class EmployeeController extends BaseHRController
         try {
             $ids = $request->input('ids');
             $additionalInfo = $request->input('additional_information');
-            $approvedStatus = EmployeeLeaveStatus::where('title', 'Approved')->first();
-            
-            if (!$approvedStatus) {
-                return back()->with('error', 'Approved status not found in system.');
-            }
+            $approvedStatusId = EmployeeLeaveStatus::approvedId();
+            $pendingStatusId = EmployeeLeaveStatus::pendingId();
 
             $updated = EmployeeLeaveRequest::forEvent() // Only update leave requests for selected event
                 ->whereIn('id', $ids)
-                ->whereHas('status', function($q) {
-                    $q->where('title', 'Pending');
-                })
+                ->where('status_id', $pendingStatusId)
                 ->update([
-                    'status_id' => $approvedStatus->id,
+                    'status_id' => $approvedStatusId,
                     'performer_id' => auth()->id(),
                     'additional_information' => $additionalInfo,
                     'updated_at' => now(),
@@ -967,19 +960,14 @@ class EmployeeController extends BaseHRController
         try {
             $ids = $request->input('ids');
             $additionalInfo = $request->input('additional_information');
-            $rejectedStatus = EmployeeLeaveStatus::where('title', 'Rejected')->first();
-            
-            if (!$rejectedStatus) {
-                return back()->with('error', 'Rejected status not found in system.');
-            }
+            $rejectedStatusId = EmployeeLeaveStatus::rejectedId();
+            $pendingStatusId = EmployeeLeaveStatus::pendingId();
 
             $updated = EmployeeLeaveRequest::forEvent() // Only update leave requests for selected event
                 ->whereIn('id', $ids)
-                ->whereHas('status', function($q) {
-                    $q->where('title', 'Pending');
-                })
+                ->where('status_id', $pendingStatusId)
                 ->update([
-                    'status_id' => $rejectedStatus->id,
+                    'status_id' => $rejectedStatusId,
                     'performer_id' => auth()->id(),
                     'additional_information' => $additionalInfo,
                     'updated_at' => now(),

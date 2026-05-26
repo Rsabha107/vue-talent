@@ -84,9 +84,9 @@ const getNavStructure = (counts) => ({
     { group: 'People', items: [
       { id: 'employee', label: 'Employees',      icon: 'users' },
       { id: 'leave-requests', label: 'Leave Requests', icon: 'calendar' },
-      { id: 'leave',     label: 'All leave',      icon: 'calendar' },
-      { id: 'timesheet',        label: 'All timesheets',  icon: 'clock' },
-      { id: 'timesheet-talent', label: 'Timesheet Talent', icon: 'clock' },
+      // { id: 'leave',     label: 'All leave',      icon: 'calendar' },
+      // { id: 'timesheet',        label: 'All timesheets',  icon: 'clock' },
+      { id: 'timesheet-talent', label: 'Timesheets', icon: 'clock' },
     ]},
     { group: 'Approvals', items: [
       { id: 'approve-leave', label: 'Leave queue',      icon: 'inbox', badge: counts.pendingLeaves },
@@ -215,14 +215,48 @@ function closeNotif(e) {
   }
 }
 
-onMounted(() => document.addEventListener('click', closeNotif))
-onUnmounted(() => document.removeEventListener('click', closeNotif))
+// Auto-hide sidebar on mobile
+function handleResize() {
+  const isMobile = window.innerWidth <= 768
+  if (isMobile) {
+    collapsed.value = true
+  }
+}
+
+// Close sidebar on navigation when on mobile
+function handleNavigation(id) {
+  navigate(id)
+  if (window.innerWidth <= 768) {
+    collapsed.value = true
+  }
+}
+
+// Close sidebar (used by overlay click)
+function closeSidebar(e) {
+  e?.stopPropagation()
+  collapsed.value = true
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeNotif)
+  window.addEventListener('resize', handleResize)
+  // Auto-collapse on initial mount if mobile
+  handleResize()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeNotif)
+  window.removeEventListener('resize', handleResize)
+})
 
 defineExpose({ showToast })
 </script>
 
 <template>
   <div class="meridian-app" :data-collapsed="collapsed ? '1' : undefined">
+
+    <!-- Mobile overlay backdrop -->
+    <div v-if="!collapsed" class="mhr-sidebar-overlay" @click.stop="closeSidebar"></div>
 
     <!-- Sidebar -->
     <aside class="mhr-sidebar">
@@ -231,27 +265,29 @@ defineExpose({ showToast })
         <span class="mhr-sidebar__brand-name">Meridian<em>·</em>HR</span>
       </div>
 
-      <template v-for="group in navGroups" :key="group.group">
-        <div class="mhr-sidebar__group">{{ group.group }}</div>
-        <nav class="mhr-sidebar__nav">
-          <button
-            v-for="item in group.items"
-            :key="item.id"
-            class="mhr-sidebar__item"
-            :aria-current="hrPage === item.id ? 'page' : undefined"
-            :title="collapsed ? item.label : undefined"
-            @click="navigate(item.id)"
-          >
-            <AppIcon :name="item.icon" :size="17" class="mhr-sidebar__icon" />
-            <span>{{ item.label }}</span>
-            <span v-if="item.badge != null" class="mhr-sidebar__badge">{{ item.badge }}</span>
-          </button>
-        </nav>
-      </template>
+      <div class="mhr-sidebar__content">
+        <template v-for="group in navGroups" :key="group.group">
+          <div class="mhr-sidebar__group">{{ group.group }}</div>
+          <nav class="mhr-sidebar__nav">
+            <button
+              v-for="item in group.items"
+              :key="item.id"
+              class="mhr-sidebar__item"
+              :aria-current="hrPage === item.id ? 'page' : undefined"
+              :title="collapsed ? item.label : undefined"
+              @click="handleNavigation(item.id)"
+            >
+              <AppIcon :name="item.icon" :size="17" class="mhr-sidebar__icon" />
+              <span>{{ item.label }}</span>
+              <span v-if="item.badge != null" class="mhr-sidebar__badge">{{ item.badge }}</span>
+            </button>
+          </nav>
+        </template>
+      </div>
 
       <div class="mhr-sidebar__footer">
         <div style="display:flex;align-items:center;gap:6px;">
-          <div class="mhr-sidebar__user" style="flex:1;min-width:0;" @click="navigate('profile')">
+          <div class="mhr-sidebar__user" style="flex:1;min-width:0;" @click="handleNavigation('profile')">
             <AppAvatar :name="me.name" :c="me.avatarColor" :initials="me.initials" />
             <div class="mhr-sidebar__user-meta">
               <div class="mhr-sidebar__user-name">{{ me.name }}</div>

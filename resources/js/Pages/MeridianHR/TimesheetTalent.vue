@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import AppAvatar from '@/Components/MeridianHR/AppAvatar.vue'
+import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
 import { router } from '@inertiajs/vue3'
 
 // ── Toast ────────────────────────────────────────────────────────────
@@ -209,6 +210,7 @@ function saveStatus() {
 // ── Entries view ────────────────────────────────────────────────────
 const entryRows       = ref([])
 const isSavingEntries = ref(false)
+const isSubmitting    = ref(false)
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -347,11 +349,14 @@ function cellLabel(day) {
 
 function saveEntries() {
   isSavingEntries.value = true
+  // Filter out weekends - they shouldn't be saved
+  const workingDays = entryRows.value.filter(r => !r.isWeekend)
+  
   router.post(route('hr.timesheet-talent.entries.store'), {
     employee_timesheet_id: activeTimesheet.value.id,
     employee_id:           activeTimesheet.value.employeeId,
-    calendar_day:          entryRows.value.map(r => r.day),
-    day_action:            entryRows.value.map(r => r.isLeave ? 'L' : r.action),
+    calendar_day:          workingDays.map(r => r.day),
+    day_action:            workingDays.map(r => r.isLeave ? 'L' : r.action),
   }, {
     onSuccess: () => {
       // Update the local record so "View / Edit" shows the correct entry count
@@ -373,16 +378,66 @@ function saveEntries() {
   })
 }
 
+function submitForApproval() {
+  if (!activeTimesheet.value) return
+  showSubmitModal.value = true
+}
+
+function confirmSubmit() {
+  if (!activeTimesheet.value) return
+  
+  isSubmitting.value = true
+  router.post(route('hr.timesheet.submit'), {
+    timesheet_id: activeTimesheet.value.id,
+  }, {
+    onSuccess: () => {
+      // Update local status to Submitted
+      const ts = localTimesheets.value.find(t => t.id === activeTimesheet.value.id)
+      if (ts) {
+        ts.statusId = 2 // Submitted
+        ts.statusTitle = 'Submitted'
+      }
+      if (activeTimesheet.value) {
+        activeTimesheet.value.statusId = 2
+        activeTimesheet.value.statusTitle = 'Submitted'
+      }
+      showSubmitModal.value = false
+      showToast('Timesheet submitted for approval successfully.')
+      backToList()
+      refreshData()
+    },
+    onError: (errors) => {
+      const first = Object.values(errors)[0]
+      showToast(first || 'Failed to submit timesheet. Please try again.', 'error')
+    },
+    onFinish: () => { isSubmitting.value = false },
+  })
+}
+
 // ── Delete ──────────────────────────────────────────────────────────
+const showDeleteModal = ref(false)
+const timesheetToDelete = ref(null)
 const deletingId = ref(null)
 
+// ── Submit Confirmation ─────────────────────────────────────────────
+const showSubmitModal = ref(false)
+
 function confirmDelete(ts) {
-  if (!confirm(`Delete the timesheet for ${ts.employeeName} (${ts.period})?\nThis cannot be undone.`)) return
+  timesheetToDelete.value = ts
+  showDeleteModal.value = true
+}
+
+function deleteTimesheet() {
+  const ts = timesheetToDelete.value
+  if (!ts) return
+  
   deletingId.value = ts.id
   router.delete(route('hr.timesheet-talent.destroy', ts.id), {
     onSuccess: () => {
       localTimesheets.value = localTimesheets.value.filter(t => t.id !== ts.id)
       showToast('Timesheet deleted.')
+      showDeleteModal.value = false
+      timesheetToDelete.value = null
     },
     onError: () => { showToast('Failed to delete timesheet.', 'error') },
     onFinish: () => { deletingId.value = null },
@@ -423,9 +478,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <p class="mhr-page-head__sub">{{ filtered.length }} record{{ filtered.length !== 1 ? 's' : '' }}</p>
         </div>
         <div class="mhr-page-head__actions">
-          <button class="mhr-btn mhr-btn--ghost" @click="refreshData" :disabled="isRefreshing" title="Refresh">
-            <AppIcon name="refresh" :size="14" :class="{ 'icon-spin': isRefreshing }" />
-          </button>
+          <RefreshButton variant="ghost" :is-refreshing="isRefreshing" @refresh="refreshData" />
           <button class="mhr-btn mhr-btn--primary" @click="openAddModal">
             <AppIcon name="plus" :size="14" /> Add Timesheet
           </button>
@@ -521,6 +574,88 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         </div>
       </div>
 
+      <!-- Mobile Cards View -->
+      <div class="ts-mobile-cards">
+        <div v-if="filtered.length === 0" class="ts-empty-state">
+          <AppIcon name="clock" :size="40" style="opacity:0.18;" />
+          <div style="font-size:14px;font-weight:600;color:var(--mhr-ink-2);margin-top:12px;">No timesheets found</div>
+          <div style="font-size:13px;color:var(--mhr-ink-3);margin-top:4px;">Click <strong>Add Timesheet</strong> to create the first one.</div>
+        </div>
+
+        <div v-for="ts in filtered" :key="'card-' + ts.id" class="ts-card">
+          <!-- Header -->
+          <div class="ts-card__header">
+            <div v-if="isAdminOrManager" class="ts-card__employee">
+              <AppAvatar :name="ts.employeeName" :c="ts.employeeColor" :size="32" />
+              <span style="font-weight:600;font-size:14px;">{{ ts.employeeName }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span class="mhr-mono" style="font-size:13px;color:var(--mhr-ink-2);font-weight:500;">{{ ts.period }}</span>
+              <span class="mhr-badge" :style="{ background: statusStyle(ts.statusTitle).bg, color: statusStyle(ts.statusTitle).color }">
+                {{ ts.statusTitle || 'Pending' }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Stats Grid -->
+          <div class="ts-card__stats">
+            <div class="ts-card__stat">
+              <div class="ts-card__stat-label">Worked</div>
+              <div class="ts-card__stat-value">{{ ts.daysWorked || 0 }}</div>
+            </div>
+            <div class="ts-card__stat">
+              <div class="ts-card__stat-label">Leave</div>
+              <div class="ts-card__stat-value">{{ ts.leaveTaken || 0 }}</div>
+            </div>
+            <div class="ts-card__stat">
+              <div class="ts-card__stat-label">Unpaid</div>
+              <div class="ts-card__stat-value">{{ ts.unpaidLeave || 0 }}</div>
+            </div>
+            <div class="ts-card__stat">
+              <div class="ts-card__stat-label">Total</div>
+              <div class="ts-card__stat-value" style="font-weight:600;">{{ ts.totalDays || 0 }}</div>
+            </div>
+          </div>
+
+          <!-- Financial Info -->
+          <div class="ts-card__financial">
+            <div class="ts-card__fin-item">
+              <span class="ts-card__fin-label">Daily Rate</span>
+              <span class="ts-card__fin-value">{{ ts.dailyRate || '0.00' }}</span>
+            </div>
+            <div class="ts-card__fin-item">
+              <span class="ts-card__fin-label">Salary</span>
+              <span class="ts-card__fin-value">{{ ts.salary || '0.00' }}</span>
+            </div>
+            <div class="ts-card__fin-item">
+              <span class="ts-card__fin-label">Payment</span>
+              <span class="ts-card__fin-value" style="font-weight:600;color:var(--green-700);">{{ ts.payment || '0.00' }}</span>
+            </div>
+          </div>
+
+          <!-- Approver -->
+          <div v-if="ts.approver" class="ts-card__approver">
+            <AppIcon name="check" :size="12" />
+            <span>Approved by {{ ts.approver }}</span>
+          </div>
+
+          <!-- Actions -->
+          <div class="ts-card__actions">
+            <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="openEntries(ts)" style="flex:1;">
+              <AppIcon name="edit" :size="13" />
+              {{ ts.hasEntries ? 'View / Edit' : 'Add Entries' }}
+            </button>
+            <button v-if="isAdminOrManager" class="mhr-btn mhr-btn--sm mhr-btn--ghost" @click="openStatusModal(ts)">
+              Status
+            </button>
+            <button v-if="isAdminOrManager" class="mhr-btn mhr-btn--sm mhr-btn--danger"
+              @click="confirmDelete(ts)" :disabled="deletingId === ts.id">
+              <AppIcon name="trash" :size="13" />
+            </button>
+          </div>
+        </div>
+      </div>
+
     </template>
 
     <!-- ════════════════════════════════════════════════════════════
@@ -529,24 +664,26 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
     <template v-else-if="view === 'entries'">
 
       <div class="mhr-page-head">
-        <div style="display:flex;align-items:center;gap:12px;">
-          <button class="mhr-btn mhr-btn--ghost mhr-btn--sm" @click="backToList">
-            <AppIcon name="chevron" :size="14" style="transform:rotate(180deg);" />
-            Back
-          </button>
-          <div>
-            <h1 class="mhr-page-head__title">
-              {{ activeTimesheet.employeeName }}
-              <span style="font-weight:400;color:var(--mhr-ink-3);font-size:16px;">({{ activeTimesheet.period }})</span>
-            </h1>
-            <p class="mhr-page-head__sub">Click on any day to mark it as worked or unpaid leave</p>
-          </div>
+        <div>
+          <h1 class="mhr-page-head__title">
+            {{ activeTimesheet.employeeName }}
+            <span style="font-weight:400;color:var(--mhr-ink-3);font-size:16px;">({{ activeTimesheet.period }})</span>
+          </h1>
+          <p class="mhr-page-head__sub">Click on any day to mark it as worked or unpaid leave</p>
         </div>
         <div class="mhr-page-head__actions">
           <button class="mhr-btn mhr-btn--ghost" @click="backToList">Cancel</button>
-          <button class="mhr-btn mhr-btn--primary" @click="saveEntries" :disabled="isSavingEntries">
+          <button class="mhr-btn mhr-btn--outline" @click="saveEntries" :disabled="isSavingEntries || isSubmitting">
+            <AppIcon name="check" :size="14" />
+            {{ isSavingEntries ? 'Saving…' : 'Save' }}
+          </button>
+          <button 
+            v-if="activeTimesheet?.statusId === 1" 
+            class="mhr-btn mhr-btn--primary" 
+            @click="submitForApproval" 
+            :disabled="isSavingEntries || isSubmitting">
             <AppIcon name="arrowup" :size="14" />
-            {{ isSavingEntries ? 'Saving…' : 'Save Timesheet' }}
+            {{ isSubmitting ? 'Submitting…' : 'Submit for Approval' }}
           </button>
         </div>
       </div>
@@ -780,9 +917,111 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
     </div>
 
     <!-- ════════════════════════════════════════════════════════════
+         SUBMIT CONFIRMATION MODAL
+    ════════════════════════════════════════════════════════════════ -->
+    <div v-if="showSubmitModal" class="mhr-modal__scrim" @click.self="showSubmitModal = false">
+      <div class="mhr-modal" style="max-width:520px;">
+        <div class="mhr-modal__hd">
+          <div>
+            <h2 class="mhr-modal__title">Submit Timesheet for Approval?</h2>
+            <p class="mhr-modal__sub">Review the summary below before submitting</p>
+          </div>
+        </div>
+        <div class="mhr-modal__body">
+          <div style="padding:16px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:8px;margin-bottom:16px;">
+            <div style="display:grid;gap:12px;">
+              <div>
+                <div style="font-size:12px;color:var(--mhr-ink-3);margin-bottom:4px;">Employee</div>
+                <div style="font-size:14px;font-weight:500;color:var(--mhr-ink);">{{ activeTimesheet?.employeeName }}</div>
+              </div>
+              <div>
+                <div style="font-size:12px;color:var(--mhr-ink-3);margin-bottom:4px;">Period</div>
+                <div style="font-size:14px;font-weight:500;color:var(--mhr-ink);">{{ activeTimesheet?.period }}</div>
+              </div>
+            </div>
+          </div>
+          
+          <div style="padding:16px;background:var(--mhr-accent-bg);border:1px solid var(--mhr-accent);border-radius:8px;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+              <AppIcon name="info" :size="16" style="color:var(--mhr-accent);" />
+              <strong style="color:var(--mhr-accent);font-size:13px;">Timesheet Summary</strong>
+            </div>
+            <div style="display:grid;gap:8px;font-size:13px;color:var(--mhr-ink-2);">
+              <div style="display:flex;justify-content:space-between;">
+                <span>Days Worked:</span>
+                <strong style="color:var(--mhr-ink);">{{ summary.workedDays }}</strong>
+              </div>
+              <div style="display:flex;justify-content:space-between;">
+                <span>Paid Leave:</span>
+                <strong style="color:var(--mhr-ink);">{{ summary.leaveDays }}</strong>
+              </div>
+              <div style="display:flex;justify-content:space-between;">
+                <span>Unpaid Leave:</span>
+                <strong style="color:var(--mhr-ink);">{{ summary.unpaidDays }}</strong>
+              </div>
+              <div style="height:1px;background:var(--mhr-accent);opacity:0.2;margin:4px 0;"></div>
+              <div style="display:flex;justify-content:space-between;">
+                <span style="font-weight:600;">Total Payment:</span>
+                <strong style="color:var(--mhr-accent);font-size:15px;">{{ activeTimesheet?.payment || '—' }}</strong>
+              </div>
+            </div>
+          </div>
+          
+          <p style="font-size:13px;color:var(--mhr-ink-2);margin:0;text-align:center;">
+            Once submitted, this timesheet will be sent to your manager for approval.
+          </p>
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--ghost" @click="showSubmitModal = false" :disabled="isSubmitting">
+            Cancel
+          </button>
+          <button class="mhr-btn mhr-btn--primary" @click="confirmSubmit" :disabled="isSubmitting">
+            <AppIcon name="arrowup" :size="14" />
+            {{ isSubmitting ? 'Submitting…' : 'Submit for Approval' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         DELETE CONFIRMATION MODAL
+    ════════════════════════════════════════════════════════════════ -->
+    <div v-if="showDeleteModal" class="mhr-modal__scrim" @click.self="showDeleteModal = false">
+      <div class="mhr-modal" style="max-width:480px;">
+        <div class="mhr-modal__hd">
+          <div>
+            <h2 class="mhr-modal__title">Delete Timesheet</h2>
+            <p class="mhr-modal__sub">Are you sure you want to delete this timesheet?</p>
+          </div>
+        </div>
+        <div class="mhr-modal__body">
+          <div style="padding:16px;background:var(--mhr-warn-bg);border:1px solid var(--mhr-warn);border-radius:8px;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+              <AppIcon name="alert" :size="18" style="color:var(--mhr-warn);" />
+              <strong style="color:var(--mhr-warn);font-size:14px;">Warning: This action cannot be undone</strong>
+            </div>
+            <p style="font-size:13px;color:var(--mhr-ink-2);margin:0;">
+              You are about to delete the timesheet for <strong>{{ timesheetToDelete?.employeeName }}</strong> 
+              for the period <strong>{{ timesheetToDelete?.period }}</strong>.
+            </p>
+          </div>
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--ghost" @click="showDeleteModal = false" :disabled="deletingId">
+            Cancel
+          </button>
+          <button class="mhr-btn mhr-btn--danger" @click="deleteTimesheet" :disabled="deletingId">
+            <AppIcon name="trash" :size="14" />
+            {{ deletingId ? 'Deleting…' : 'Delete Timesheet' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
          TOAST STACK
     ════════════════════════════════════════════════════════════════ -->
-    <Teleport to=".meridian-app">
+    <Teleport to=".meridian-app" v-if="toasts.length > 0">
       <div class="ts-toast-stack">
         <transition-group name="ts-toast">
           <div v-for="t in toasts" :key="t.id"
@@ -799,20 +1038,6 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
 </template>
 
 <style scoped>
-/* ── Refresh icon animation ────────────────────────────────── */
-.icon-spin {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* ── Calendar cells ─────────────────────────────────────────── */
 .ts-cell {
   /* aspect-ratio: 4/3; */
@@ -880,16 +1105,125 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
   background: var(--mhr-accent-soft);
 }
 
+/* ── Mobile Cards ───────────────────────────────────────────── */
+/* Hide by default, show on mobile */
+.ts-mobile-cards {
+  display: none;
+}
+
+.ts-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 56px 20px;
+  text-align: center;
+}
+
+.ts-card {
+  background: var(--mhr-surface);
+  border: 1px solid var(--mhr-line);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ts-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--mhr-line-2);
+}
+
+.ts-card__employee {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ts-card__stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.ts-card__stat {
+  text-align: center;
+}
+
+.ts-card__stat-label {
+  font-size: 11px;
+  color: var(--mhr-ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.ts-card__stat-value {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--mhr-ink);
+}
+
+.ts-card__financial {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--mhr-surface-2);
+  border-radius: 8px;
+}
+
+.ts-card__fin-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ts-card__fin-label {
+  font-size: 12px;
+  color: var(--mhr-ink-3);
+  font-weight: 500;
+}
+
+.ts-card__fin-value {
+  font-size: 13px;
+  font-family: monospace;
+  color: var(--mhr-ink-2);
+}
+
+.ts-card__approver {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--mhr-ink-3);
+  font-style: italic;
+}
+
+.ts-card__actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--mhr-line-2);
+}
+
 /* Toast stack */
 .ts-toast-stack {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 9999;
   display: flex;
   flex-direction: column;
   gap: 8px;
   pointer-events: none;
+  align-items: center;
 }
 
 .ts-toast {
@@ -922,6 +1256,232 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
 .ts-toast-enter-from,
 .ts-toast-leave-to {
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(-12px);
+}
+
+/* ── Mobile responsive ──────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Show cards, hide table on mobile */
+  .mhr-table-container {
+    display: none !important;
+  }
+  
+  .ts-mobile-cards {
+    display: block !important;
+  }
+  
+  /* Stats grid - stack on mobile */
+  .mhr-grid-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+  
+  /* Compact stats style for entries view - match card stats */
+  .mhr-stat {
+    padding: 12px !important;
+    text-align: center;
+  }
+  
+  .mhr-stat__label {
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px !important;
+  }
+  
+  .mhr-stat__value {
+    font-size: 20px !important;
+    margin-bottom: 0 !important;
+  }
+  
+  .mhr-stat__value + div {
+    display: none !important; /* Hide description text on mobile */
+  }
+  
+  /* Ensure content has proper padding on mobile */
+  .mhr-content {
+    padding: 12px !important;
+  }
+  
+  /* Legend - wrap items */
+  .mhr-card__hd {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+  
+  .mhr-card__hd-actions {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  
+  /* Calendar cells */
+  .ts-cell {
+    min-height: 60px;
+    padding: 4px 6px;
+  }
+  
+  .ts-cell__date {
+    font-size: 14px;
+  }
+  
+  .ts-cell__label {
+    font-size: 11px;
+    word-break: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  /* Calendar container adjustments */
+  .mhr-card div[style*="padding:16px 20px 20px"] {
+    padding: 12px !important;
+  }
+  
+  /* Reduce calendar grid gaps */
+  div[style*="grid-template-columns:repeat(7,1fr)"] {
+    gap: 3px !important;
+  }
+  
+  /* Ensure calendar stays within bounds */
+  .mhr-card {
+    overflow: hidden;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin-left: 0;
+    margin-right: 0;
+  }
+  
+  /* Calendar grid proper sizing */
+  div[style*="display:grid;grid-template-columns:repeat(7,1fr)"] {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  
+  /* Page header - stack actions */
+  .mhr-page-head {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+  
+  .mhr-page-head__actions {
+    justify-content: flex-start !important;
+  }
+  
+  /* Filters - stack vertically */
+  div[style*="display:flex;gap:10px"] {
+    flex-direction: column !important;
+  }
+  
+  div[style*="max-width:280px"],
+  select[style*="max-width:180px"] {
+    max-width: 100% !important;
+  }
+  
+  /* Modal adjustments */
+  .mhr-modal {
+    max-width: 95vw !important;
+    margin: 10px !important;
+  }
+  
+  /* Type cards in modal */
+  .ts-type-card {
+    padding: 12px 14px;
+  }
+  
+  /* Toast positioning */
+  .ts-toast-stack {
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 24px);
+    max-width: 500px;
+  }
+  
+  .ts-toast {
+    max-width: 100%;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Stats grid - 2 columns to match card stats layout */
+  .mhr-grid-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  
+  /* Match entries view stats with card stats size */
+  .mhr-stat {
+    padding: 10px !important;
+  }
+  
+  .mhr-stat__value {
+    font-size: 18px !important;
+  }
+  
+  /* Card stats - 2 columns on very small screens */
+  .ts-card__stats {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  
+  .ts-card {
+    padding: 12px !important;
+  }
+  
+  .ts-card__stat-value {
+    font-size: 18px !important;
+  }
+  
+  /* Tighter content padding */
+  .mhr-content {
+    padding: 8px !important;
+  }
+  
+  /* Smaller calendar cells for very small screens */
+  .ts-cell {
+    min-height: 50px;
+    padding: 3px 4px;
+  }
+  
+  .ts-cell__date {
+    font-size: 12px;
+  }
+  
+  .ts-cell__label {
+    font-size: 10px;
+    word-break: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  /* Tighter calendar spacing */
+  .mhr-card div[style*="padding:16px 20px 20px"] {
+    padding: 8px !important;
+  }
+  
+  div[style*="grid-template-columns:repeat(7,1fr)"] {
+    gap: 2px !important;
+  }
+  
+  /* Weekday headers more compact */
+  div[style*="grid-template-columns:repeat(7,1fr)"] div[style*="font-size:11px"] {
+    font-size: 10px !important;
+    padding: 2px 0 !important;
+  }
+  
+  /* Compact buttons */
+  .mhr-btn {
+    font-size: 13px !important;
+    padding: 8px 14px !important;
+  }
+  
+  /* Smaller stat text */
+  .mhr-stat__value {
+    font-size: 28px !important;
+  }
+  
+  .mhr-stat__label {
+    font-size: 12px !important;
+  }
 }
 </style>

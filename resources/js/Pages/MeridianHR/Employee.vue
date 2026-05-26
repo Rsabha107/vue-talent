@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import AppAvatar from '@/Components/MeridianHR/AppAvatar.vue'
+import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
 import { router, usePage } from '@inertiajs/vue3'
 import { DatePicker } from 'v-calendar'
 import 'v-calendar/style.css'
@@ -758,9 +759,7 @@ function updateEmployee() {
         <p class="mhr-page-head__sub">{{ hrPage === 'master-employee' ? 'Complete database of all employees' : `${filtered.length} of ${all.length} people` }}</p>
       </div>
       <div class="mhr-page-head__actions">
-        <button class="mhr-btn mhr-btn--outline" @click="refreshEmployees" :disabled="isRefreshing">
-          <AppIcon name="refresh" :size="14" :style="{ transition: 'transform 0.5s', transform: isRefreshing ? 'rotate(360deg)' : 'rotate(0deg)' }" />
-        </button>
+        <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshEmployees" />
         <div v-if="selectedEmployees.size > 0" style="position:relative;">
           <button class="mhr-btn mhr-btn--accent" @click.stop="showActionsMenu = !showActionsMenu">
             <AppIcon name="check" :size="14" />
