@@ -32,6 +32,8 @@ const props = defineProps({
 
 const dateFormat = computed(() => usePage().props.dateFormat || 'DD/MM/YYYY')
 
+const isAdmin = computed(() => ['admin', 'manager'].includes(props.hrRole))
+
 // Get selected event for banner
 const selectedEventId = computed(() => usePage().props.selectedEvent)
 const availableEvents = computed(() => usePage().props.availableEvents || [])
@@ -252,7 +254,8 @@ const filtered = computed(() =>
 )
 
 const visibleColumnsCount = computed(() => {
-  return 1 + 1 + Object.values(visibleColumns.value).filter(Boolean).length + 1 // Checkbox + Employee name + visible cols + actions
+  const docsColumn = isAdmin.value ? 1 : 0
+  return 1 + 1 + Object.values(visibleColumns.value).filter(Boolean).length + docsColumn + 1 // Checkbox + Employee name + visible cols + docs (if admin) + actions
 })
 
 const allSelected = computed(() => {
@@ -569,9 +572,16 @@ function duplicateEmployee(emp) {
 }
 
 function updateDocument(emp) {
-  toast.value = `Opening document update for ${emp.name}...`
-  setTimeout(() => { toast.value = null }, 3000)
   openMenuId.value = null
+  router.get(route('hr.documents'), {
+    employee_id: emp.id
+  })
+}
+
+function viewEmployeeDocuments(emp) {
+  router.get(route('hr.documents'), {
+    employee_id: emp.id
+  })
 }
 
 function deleteEmployee(emp) {
@@ -1112,6 +1122,7 @@ function updateEmployee() {
             <th v-if="visibleColumns.civilIdExpiry">Civil ID Expiry</th>
             <th v-if="visibleColumns.managerFlag">Manager</th>
             <th v-if="visibleColumns.adminFlag">Admin</th>
+            <th v-if="isAdmin" style="width: 60px;text-align:center;">Docs</th>
             <th></th>
           </tr>
         </thead>
@@ -1173,6 +1184,21 @@ function updateEmployee() {
             <td v-if="visibleColumns.civilIdExpiry" style="color:var(--mhr-ink-3);">{{ fmtDate(p.civilIdExpiry) }}</td>
             <td v-if="visibleColumns.managerFlag" style="color:var(--mhr-ink-3);">{{ p.managerFlag }}</td>
             <td v-if="visibleColumns.adminFlag" style="color:var(--mhr-ink-3);">{{ p.adminFlag }}</td>
+            <td v-if="isAdmin" style="text-align:center;">
+              <button 
+                v-if="p.documentsCount > 0"
+                @click.stop="viewEmployeeDocuments(p)"
+                class="mhr-icon-btn" 
+                style="width:28px;height:28px;position:relative;"
+                :title="`View ${p.documentsCount} document${p.documentsCount > 1 ? 's' : ''}`"
+              >
+                <AppIcon name="doc" :size="13" />
+                <span style="position:absolute;top:-6px;right:-6px;background:var(--green-600);color:white;font-size:9px;font-weight:600;border-radius:999px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 4px;box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+                  {{ p.documentsCount }}
+                </span>
+              </button>
+              <span v-else style="color:var(--mhr-ink-4);font-size:11px;">—</span>
+            </td>
             <td>
               <button class="mhr-icon-btn" style="width:28px;height:28px;" @click.stop="toggleMenu(p.id, $event)">
                 <AppIcon name="more" :size="13" />
@@ -1189,7 +1215,7 @@ function updateEmployee() {
                   </button>
                   <button @click="updateDocument(p)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
                     <AppIcon name="doc" :size="14" />
-                    <span>Update document</span>
+                    <span>Document management</span>
                   </button>
                   <div style="border-top:1px solid var(--mhr-line-2);margin:4px 0;"></div>
                   <button @click="deleteEmployee(p)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-danger);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">

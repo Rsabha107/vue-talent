@@ -294,12 +294,12 @@ function deleteEvent() {
             </button>
           </div>
         </div>
-        <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
-          <div style="display:grid;gap:16px;">
-            <div class="mhr-field">
+        <div class="mhr-modal__body">
+          <div class="evt-form-grid">
+            <div class="mhr-field" style="grid-column:1/3;">
               <label class="mhr-field__label">EVENT NAME *</label>
               <input class="mhr-input" v-model="form.name" placeholder="Enter event name" />
-              <div v-if="form.errors.name" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ form.errors.name }}</div>
+              <div v-if="form.errors.name" class="evt-field-err">{{ form.errors.name }}</div>
             </div>
             <div class="mhr-field">
               <label class="mhr-field__label">STATUS *</label>
@@ -307,23 +307,32 @@ function deleteEvent() {
                 <option :value="null">Select status…</option>
                 <option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.title }}</option>
               </select>
-              <div v-if="form.errors.active_flag" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ form.errors.active_flag }}</div>
+              <div v-if="form.errors.active_flag" class="evt-field-err">{{ form.errors.active_flag }}</div>
             </div>
             <div class="mhr-field">
               <label class="mhr-field__label">EVENT LOGO</label>
-              <input type="file" @change="handleLogoChange" accept="image/*" class="mhr-input" style="padding:8px;" />
-              <div v-if="logoPreview" style="margin-top:10px;">
-                <img :src="logoPreview" alt="Preview" style="max-width:120px;max-height:120px;border-radius:var(--mhr-r);border:1px solid var(--mhr-line);" />
-              </div>
+              <label class="evt-logo-zone">
+                <img v-if="logoPreview" :src="logoPreview" alt="Preview" class="evt-logo-preview" />
+                <div v-else class="evt-logo-placeholder">
+                  <AppIcon name="image" :size="22" style="color:var(--mhr-ink-4);" />
+                  <span>Upload logo</span>
+                </div>
+                <input type="file" @change="handleLogoChange" accept="image/*" class="evt-file-hidden" />
+              </label>
             </div>
-            <div class="mhr-field">
+            <div class="mhr-field" style="grid-column:1/3;">
               <label class="mhr-field__label">VENUES</label>
-              <div style="max-height:180px;overflow-y:auto;border:1px solid var(--mhr-line);border-radius:var(--mhr-r);padding:10px 12px;">
-                <label v-for="venue in venues" :key="venue.id" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;font-size:13px;color:var(--mhr-ink-2);">
-                  <input type="checkbox" :value="venue.id" v-model="form.venue_ids" style="cursor:pointer;" />
+              <div class="evt-venue-wrap">
+                <label
+                  v-for="venue in venues" :key="venue.id"
+                  class="evt-venue-pill"
+                  :class="{ 'evt-venue-pill--on': form.venue_ids.includes(venue.id) }"
+                >
+                  <input type="checkbox" :value="venue.id" v-model="form.venue_ids" class="evt-checkbox" />
+                  <AppIcon v-if="form.venue_ids.includes(venue.id)" name="check" :size="12" class="evt-pill-check" />
                   {{ venue.title }}
                 </label>
-                <div v-if="!venues.length" style="color:var(--mhr-ink-3);font-size:13px;text-align:center;padding:12px;">No venues available</div>
+                <span v-if="!venues.length" class="evt-venue-empty">No venues available</span>
               </div>
             </div>
           </div>
@@ -357,12 +366,12 @@ function deleteEvent() {
             </button>
           </div>
         </div>
-        <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
-          <div style="display:grid;gap:16px;">
-            <div class="mhr-field">
+        <div class="mhr-modal__body">
+          <div class="evt-form-grid">
+            <div class="mhr-field" style="grid-column:1/3;">
               <label class="mhr-field__label">EVENT NAME *</label>
               <input class="mhr-input" v-model="editForm.name" placeholder="Enter event name" />
-              <div v-if="editForm.errors.name" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ editForm.errors.name }}</div>
+              <div v-if="editForm.errors.name" class="evt-field-err">{{ editForm.errors.name }}</div>
             </div>
             <div class="mhr-field">
               <label class="mhr-field__label">STATUS *</label>
@@ -370,23 +379,32 @@ function deleteEvent() {
                 <option :value="null">Select status…</option>
                 <option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.title }}</option>
               </select>
-              <div v-if="editForm.errors.active_flag" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ editForm.errors.active_flag }}</div>
+              <div v-if="editForm.errors.active_flag" class="evt-field-err">{{ editForm.errors.active_flag }}</div>
             </div>
             <div class="mhr-field">
               <label class="mhr-field__label">EVENT LOGO</label>
-              <div v-if="editLogoPreview" style="margin-bottom:10px;">
-                <img :src="editLogoPreview" alt="Current logo" style="max-width:80px;max-height:80px;border-radius:var(--mhr-r);border:1px solid var(--mhr-line);" />
-              </div>
-              <input type="file" @change="handleEditLogoChange" accept="image/*" class="mhr-input" style="padding:8px;" />
+              <label class="evt-logo-zone">
+                <img v-if="editLogoPreview" :src="editLogoPreview" alt="Current logo" class="evt-logo-preview" />
+                <div v-else class="evt-logo-placeholder">
+                  <AppIcon name="image" :size="22" style="color:var(--mhr-ink-4);" />
+                  <span>Upload logo</span>
+                </div>
+                <input type="file" @change="handleEditLogoChange" accept="image/*" class="evt-file-hidden" />
+              </label>
             </div>
-            <div class="mhr-field">
+            <div class="mhr-field" style="grid-column:1/3;">
               <label class="mhr-field__label">VENUES</label>
-              <div style="max-height:180px;overflow-y:auto;border:1px solid var(--mhr-line);border-radius:var(--mhr-r);padding:10px 12px;">
-                <label v-for="venue in venues" :key="venue.id" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;font-size:13px;color:var(--mhr-ink-2);">
-                  <input type="checkbox" :value="venue.id" v-model="editForm.venue_ids" style="cursor:pointer;" />
+              <div class="evt-venue-wrap">
+                <label
+                  v-for="venue in venues" :key="venue.id"
+                  class="evt-venue-pill"
+                  :class="{ 'evt-venue-pill--on': editForm.venue_ids.includes(venue.id) }"
+                >
+                  <input type="checkbox" :value="venue.id" v-model="editForm.venue_ids" class="evt-checkbox" />
+                  <AppIcon v-if="editForm.venue_ids.includes(venue.id)" name="check" :size="12" class="evt-pill-check" />
                   {{ venue.title }}
                 </label>
-                <div v-if="!venues.length" style="color:var(--mhr-ink-3);font-size:13px;text-align:center;padding:12px;">No venues available</div>
+                <span v-if="!venues.length" class="evt-venue-empty">No venues available</span>
               </div>
             </div>
           </div>
@@ -432,5 +450,111 @@ function deleteEvent() {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
+}
+
+/* Form two-column grid */
+.evt-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+/* Error text */
+.evt-field-err {
+  color: var(--mhr-danger);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Logo upload zone */
+.evt-logo-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  border: 2px dashed var(--mhr-line);
+  border-radius: var(--mhr-r);
+  background: var(--mhr-surface-2);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  overflow: hidden;
+  position: relative;
+}
+.evt-logo-zone:hover {
+  border-color: var(--mhr-accent);
+  background: var(--mhr-accent-soft);
+}
+.evt-logo-preview {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  padding: 8px;
+}
+.evt-logo-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--mhr-ink-3);
+}
+.evt-file-hidden {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* Venue toggle pills */
+.evt-venue-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--mhr-line);
+  border-radius: var(--mhr-r);
+  background: var(--mhr-surface-2);
+  max-height: 180px;
+  overflow-y: auto;
+}
+.evt-checkbox { display: none; }
+.evt-venue-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1.5px solid var(--mhr-line);
+  background: var(--mhr-surface);
+  font-size: 12.5px;
+  color: var(--mhr-ink-3);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.14s, background 0.14s, color 0.14s, box-shadow 0.14s;
+  white-space: nowrap;
+}
+.evt-venue-pill:hover {
+  border-color: var(--mhr-accent);
+  color: var(--mhr-accent);
+  background: var(--mhr-accent-soft);
+}
+.evt-venue-pill--on {
+  background: var(--mhr-accent);
+  border-color: var(--mhr-accent);
+  color: var(--mhr-accent-fg);
+  font-weight: 500;
+  box-shadow: 0 1px 4px rgba(59,111,67,0.25);
+}
+.evt-venue-pill--on:hover {
+  background: var(--mhr-accent);
+  color: var(--mhr-accent-fg);
+}
+.evt-pill-check { flex-shrink: 0; }
+.evt-venue-empty {
+  color: var(--mhr-ink-3);
+  font-size: 13px;
+  padding: 8px 4px;
 }
 </style>

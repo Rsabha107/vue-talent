@@ -27,9 +27,9 @@ const selectedEventData = computed(() => {
 })
 
 const activeEventLabel = computed(() => {
-  if (!selectedEvent.value) return 'Select Event'
+  if (!selectedEvent.value) return 'All Events'
   const ev = availableEvents.value.find(e => e.id === selectedEvent.value)
-  return ev ? ev.name : 'Select Event'
+  return ev ? ev.name : 'All Events'
 })
 
 // Navigation structure - now a function to use dynamic badge counts
@@ -190,7 +190,7 @@ function selectEvent(eventId) {
   if (!eventId) {
     router.post(route('event.clear'), {}, {
       preserveScroll: true,
-      onSuccess: () => showToast('Event selection cleared'),
+      onSuccess: () => showToast('Showing all events'),
     })
   } else {
     router.post(route('event.select'), { event_id: eventId }, {
@@ -330,6 +330,14 @@ defineExpose({ showToast })
           <transition name="dropdown">
             <div v-if="eventSelectorOpen" class="event-dropdown">
               <div class="event-dropdown-header">Switch Event</div>
+              <button
+                class="event-dropdown-item"
+                :class="{ 'event-dropdown-item--active': !selectedEvent }"
+                @click="selectEvent(null)"
+              >
+                <span class="event-dropdown-name">All Events</span>
+                <svg v-if="!selectedEvent" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+              </button>
               <button
                 v-for="ev in availableEvents"
                 :key="ev.id"

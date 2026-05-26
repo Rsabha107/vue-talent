@@ -15,6 +15,7 @@ const props = defineProps({
   pendingTimesheets: { type: Array, default: () => [] },
   leaveBalance:      { type: Object, default: () => ({}) },
   employees:         { type: Array,  default: () => [] },
+  headcountByDept:   { type: Array,  default: () => [] },
 })
 
 function greet() {
@@ -52,6 +53,11 @@ function fmtDate(s) {
 }
 
 const lb = computed(() => props.leaveBalance)
+
+const maxHeadcount = computed(() => {
+  if (!props.headcountByDept || props.headcountByDept.length === 0) return 1
+  return Math.max(...props.headcountByDept.map(d => d.count))
+})
 </script>
 
 <template>
@@ -229,7 +235,12 @@ const lb = computed(() => props.leaveBalance)
         <div class="mhr-stat">
           <div class="mhr-stat__label">On leave today</div>
           <div class="mhr-stat__value"><em>{{ stats.onLeaveToday || 9 }}</em></div>
-          <div class="mhr-stat__delta">3 sick, 6 annual</div>
+          <div class="mhr-stat__delta">
+            <template v-if="stats.onLeaveBreakdown && Object.keys(stats.onLeaveBreakdown).length > 0">
+              {{ Object.entries(stats.onLeaveBreakdown).map(([type, count]) => `${count} ${type}`).join(', ') }}
+            </template>
+            <template v-else>No one on leave</template>
+          </div>
         </div>
         <div class="mhr-stat" style="cursor:pointer;border-color:var(--green-300);" @click="$inertia.get(route('hr.approvals.leave'))">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
@@ -256,18 +267,14 @@ const lb = computed(() => props.leaveBalance)
             <p class="mhr-card__sub">Including those out today</p>
           </div>
           <div class="mhr-card__body">
-            <div v-for="d in [
-              { name:'Engineering', count:84, leave:4,  color:'#3a6c8c' },
-              { name:'Product',     count:32, leave:1,  color:'#8a5b9c' },
-              { name:'Design',      count:24, leave:2,  color:'#4f8a55' },
-              { name:'People',      count:18, leave:0,  color:'#b6772b' },
-              { name:'Finance',     count:22, leave:1,  color:'#a8413a' },
-              { name:'Operations',  count:84, leave:1,  color:'#5e6b3b' },
-            ]" :key="d.name"
+            <div v-if="headcountByDept.length === 0" style="text-align:center;padding:40px 20px;color:var(--mhr-ink-3);">
+              No department data available
+            </div>
+            <div v-for="d in headcountByDept" :key="d.name"
               style="display:grid;grid-template-columns:120px 1fr 72px;gap:12px;align-items:center;margin-bottom:10px;">
               <div style="font-size:13px;">{{ d.name }}</div>
               <div style="height:24px;background:var(--mhr-surface-2);border-radius:6px;position:relative;overflow:hidden;">
-                <div :style="`width:${(d.count/84)*100}%;background:${d.color};height:100%;border-radius:6px;opacity:0.85`" />
+                <div :style="`width:${(d.count/maxHeadcount)*100}%;background:${d.color};height:100%;border-radius:6px;opacity:0.85`" />
               </div>
               <div style="font-size:12.5px;color:var(--mhr-ink-3);text-align:right;">
                 <strong style="color:var(--mhr-ink);">{{ d.count }}</strong>

@@ -6,6 +6,8 @@ use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Ems\EventController;
 use App\Http\Controllers\EventSessionController;
 use App\Http\Controllers\MeridianHR\BankController;
+use App\Http\Controllers\MeridianHR\DocumentCategoryController;
+use App\Http\Controllers\MeridianHR\DocumentController;
 use App\Http\Controllers\MeridianHR\EmployeeController;
 use App\Http\Controllers\MeridianHR\EmployeeLeaveRequestController;
 use App\Http\Controllers\MeridianHR\EventController as MeridianEventController;
@@ -208,6 +210,19 @@ Route::prefix('hr')->name('hr.')->middleware('auth')->group(function () {
     Route::post('/salary',           [SalaryController::class, 'store'])->name('salary.store');
     Route::put('/salary/{id}',       [SalaryController::class, 'update'])->name('salary.update');
     Route::delete('/salary/{id}',    [SalaryController::class, 'destroy'])->name('salary.destroy');
+    
+    // Document Management
+    Route::get('/documents',         [DocumentController::class, 'index'])->name('documents');
+    Route::post('/documents',        [DocumentController::class, 'store'])->name('documents.store');
+    Route::get('/documents/{id}/view', [DocumentController::class, 'view'])->name('documents.view');
+    Route::get('/documents/{id}/download', [DocumentController::class, 'download'])->name('documents.download');
+    Route::delete('/documents/{id}', [DocumentController::class, 'destroy'])->name('documents.destroy');
+    
+    // Document Categories (admin/manager only)
+    Route::get('/document-categories',     [DocumentCategoryController::class, 'index'])->name('document-categories');
+    Route::post('/document-categories',    [DocumentCategoryController::class, 'store'])->name('document-categories.store');
+    Route::put('/document-categories/{id}', [DocumentCategoryController::class, 'update'])->name('document-categories.update');
+    Route::delete('/document-categories/{id}', [DocumentCategoryController::class, 'destroy'])->name('document-categories.destroy');
     
     Route::get('/emergency',         [EmployeeController::class, 'emergency'])->name('emergency');
     Route::post('/emergency',        [EmployeeController::class, 'storeEmergencyContact'])->name('emergency.store');

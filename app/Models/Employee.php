@@ -169,6 +169,11 @@ class Employee extends Model
         return $this->hasMany(EmployeeEmergencyContact::class, 'employee_id');
     }
 
+    public function documents()
+    {
+        return $this->hasMany(EmployeeDocument::class, 'employee_id');
+    }
+
     public function activeEvents()
     {
         return $this->events()->wherePivot('is_active', 1);

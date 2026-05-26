@@ -97,6 +97,181 @@ class EmployeeController extends BaseHRController
         })->toArray();
     }
 
+    protected function pendingTimesheets(): array
+    {
+        $timesheets = \App\Models\EmployeeTimesheet::with(['employee', 'status'])
+            ->forEvent() // Filter by selected event from session
+            ->where('status_id', \App\Models\EmployeeTimesheetStatus::submittedId())
+            ->active()
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        return $timesheets->map(function($timesheet) {
+            $employee = $timesheet->employee;
+            $empName = $employee ? $employee->full_name : 'Unknown';
+            $empNumber = $employee ? $employee->employee_number : 'N/A';
+            
+            return [
+                'id'        => $timesheet->id,
+                'emp'       => $empName,
+                'empId'     => $empNumber,
+                'c'         => crc32($empName) % 8, // Color hash
+                'period'    => $timesheet->month_year ? $timesheet->month_year->format('F Y') : 'N/A',
+                'worked'    => $timesheet->days_worked ?? 0,
+                'leave'     => $timesheet->days_leave ?? 0,
+                'unpaid'    => $timesheet->days_unpaid ?? 0,
+                'projects'  => 0, // Not tracked in current schema
+                'submitted' => $timesheet->created_at ? $timesheet->created_at->format('Y-m-d') : 'N/A',
+                'note'      => $timesheet->description ?? '',
+            ];
+        })->toArray();
+    }
+
+    protected function headcountByDepartment(): array
+    {
+        $eventId = $this->getSelectedEventId();
+        $today = Carbon::today();
+        
+        // Get employees grouped by department with leave counts
+        $departments = Department::where('active_flag', 1)
+            ->withCount(['employees' => function ($query) use ($eventId) {
+                $query->where('archived', 'N');
+                if ($eventId) {
+                    $query->whereHas('events', function ($eq) use ($eventId) {
+                        $eq->where('events.id', $eventId);
+                    });
+                }
+            }])
+            ->orderBy('name')
+            ->get();
+        
+        $maxCount = $departments->max('employees_count') ?: 1;
+        
+        $result = [];
+        
+        foreach ($departments as $dept) {
+            if ($dept->employees_count > 0) {
+                // Count employees on leave today
+                $onLeaveToday = Employee::where('archived', 'N')
+                    ->where('department_id', $dept->id)
+                    ->when($eventId, function ($query) use ($eventId) {
+                        return $query->whereHas('events', function ($eq) use ($eventId) {
+                            $eq->where('events.id', $eventId);
+                        });
+                    })
+                    ->whereHas('leaveRequests', function ($query) use ($today) {
+                        $query->where('status_id', EmployeeLeaveStatus::approvedId())
+                            ->where('date_from', '<=', $today)
+                            ->where('date_to', '>=', $today);
+                    })
+                    ->count();
+                
+                $result[] = [
+                    'name' => $dept->name,
+                    'count' => $dept->employees_count,
+                    'leave' => $onLeaveToday,
+                    'color' => $this->getDepartmentColor($dept->name),
+                ];
+            }
+        }
+        
+        return $result;
+    }
+    
+    protected function getOnLeaveToday(): array
+    {
+        $eventId = $this->getSelectedEventId();
+        $today = Carbon::today();
+        
+        // Get all approved leave requests for today with leave type
+        $leaveRequests = EmployeeLeaveRequest::join('employee_leave_types', 'employee_leave_requests.leave_type_id', '=', 'employee_leave_types.id')
+            ->join('employee_leave_status', 'employee_leave_requests.status_id', '=', 'employee_leave_status.id')
+            ->where('employee_leave_status.title', 'Approved')
+            ->where('employee_leave_requests.date_from', '<=', $today)
+            ->where('employee_leave_requests.date_to', '>=', $today)
+            ->whereHas('employee', function ($query) {
+                $query->where('archived', 'N');
+            })
+            ->when($eventId, function ($query) use ($eventId) {
+                return $query->where('employee_leave_requests.event_id', $eventId);
+            })
+            ->select('employee_leave_requests.*', 'employee_leave_types.title as leave_type_title')
+            ->get();
+        
+        // Group by leave type and count
+        $breakdown = $leaveRequests->groupBy('leave_type_title')
+            ->map(function ($group) {
+                return $group->count();
+            })
+            ->toArray();
+        
+        return [
+            'total' => $leaveRequests->count(),
+            'breakdown' => $breakdown,
+        ];
+    }
+    
+    private function getDepartmentColor(string $deptName): string
+    {
+        // Assign consistent colors based on department name
+        $colors = [
+            'Engineering' => '#3a6c8c',
+            'Product' => '#8a5b9c',
+            'Design' => '#4f8a55',
+            'People' => '#b6772b',
+            'Finance' => '#a8413a',
+            'Operations' => '#5e6b3b',
+            'HR' => '#b6772b',
+            'Human Resources' => '#b6772b',
+            'IT' => '#3a6c8c',
+            'Marketing' => '#8a5b9c',
+            'Sales' => '#5e6b3b',
+        ];
+        
+        // If department name matches predefined colors, use it
+        if (isset($colors[$deptName])) {
+            return $colors[$deptName];
+        }
+        
+        // Otherwise, generate a unique color based on department name hash
+        $colorPalette = [
+            // Blues & Teals
+            '#3a6c8c', '#2d5a7b', '#4a7c9e', '#1e4d6b', '#5b8aab', '#2a5c7d', '#4277a1', '#1a3e5c',
+            
+            // Purples & Violets
+            '#8a5b9c', '#7a4a8c', '#9a6bac', '#6a3b7c', '#aa7bbc', '#5a2b6c', '#ba8bcc', '#4a1b5c',
+            
+            // Greens
+            '#4f8a55', '#3e7845', '#5f9a65', '#2e6835', '#6faa75', '#1e5825', '#7fba85', '#0e4815',
+            
+            // Oranges & Browns
+            '#b6772b', '#a66620', '#c6873b', '#965610', '#d6974b', '#864600', '#e6a75b', '#763600',
+            
+            // Reds & Magentas
+            '#a8413a', '#983530', '#b8514a', '#882520', '#c86150', '#781510', '#d87160', '#680500',
+            
+            // Olive & Yellow-Greens
+            '#5e6b3b', '#4e5b2b', '#6e7b4b', '#3e4b1b', '#7e8b5b', '#2e3b0b', '#8e9b6b', '#1e2b00',
+            
+            // Cyan & Aqua
+            '#2d8a8a', '#1d7a7a', '#3d9a9a', '#0d6a6a', '#4daaaa', '#005a5a', '#5dbaba', '#004a4a',
+            
+            // Pink & Rose
+            '#c85a7b', '#b84a6b', '#d86a8b', '#a83a5b', '#e87a9b', '#982a4b', '#f88aab', '#881a3b',
+            
+            // Indigo & Navy
+            '#4a5a8c', '#3a4a7c', '#5a6a9c', '#2a3a6c', '#6a7aac', '#1a2a5c', '#7a8abc', '#0a1a4c',
+            
+            // Slate & Charcoal
+            '#5a6a7a', '#4a5a6a', '#6a7a8a', '#3a4a5a', '#7a8a9a', '#2a3a4a', '#8a9aaa', '#1a2a3a',
+        ];
+        
+        $hash = crc32($deptName);
+        $index = abs($hash) % count($colorPalette);
+        
+        return $colorPalette[$index];
+    }
+
 
 
     protected function documentCategories(): array
@@ -180,12 +355,34 @@ class EmployeeController extends BaseHRController
 
     public function dashboard()
     {
+        $pendingCounts = $this->getPendingCounts();
+        $totalPendingRequests = $pendingCounts['pendingLeaves'] + $pendingCounts['pendingTimesheets'];
+        $onLeaveData = $this->getOnLeaveToday();
+        
+        // Get real headcount from database
+        $eventId = $this->getSelectedEventId();
+        $headcount = Employee::where('archived', 'N')
+            ->when($eventId, function ($query) use ($eventId) {
+                return $query->where('event_id', $eventId);
+            })
+            ->count();
+
+        Log::debug('onleave breakdown: ' . json_encode($onLeaveData['breakdown']));
+        
         return Inertia::render('MeridianHR/Dashboard', array_merge($this->getCommonProps('dashboard'), [
-            'stats'            => ['headcount' => 264, 'onLeaveToday' => 9, 'pendingRequests' => 14, 'nextPayDate' => 'Friday, May 29', 'nextPayFormatted' => '$7,312'],
-            'activity'         => $this->activity(),
-            'pendingLeaves'    => $this->pendingLeaves(),
-            'pendingTimesheets'=> $this->pendingTimesheets(),
-            'leaveBalance'     => $this->leaveBalance(),
+            'stats'               => [
+                'headcount' => $headcount, 
+                'onLeaveToday' => $onLeaveData['total'], 
+                'onLeaveBreakdown' => $onLeaveData['breakdown'],
+                'pendingRequests' => $totalPendingRequests, 
+                'nextPayDate' => 'Friday, May 29', 
+                'nextPayFormatted' => '$7,312'
+            ],
+            'activity'            => $this->activity(),
+            'pendingLeaves'       => $this->pendingLeaves(),
+            'pendingTimesheets'   => $this->pendingTimesheets(),
+            'leaveBalance'        => $this->leaveBalance(),
+            'headcountByDept'     => $this->headcountByDepartment(),
         ]));
     }
 
@@ -253,7 +450,11 @@ class EmployeeController extends BaseHRController
         
         // Base query for active employees
         $query = Employee::active()
-            ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType']);
+            ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType'])
+            ->withCount(['documents as documents_count' => function ($query) use ($eventId) {
+                $query->where('active_flag', 1)
+                      ->where('event_id', $eventId);
+            }]);
         
         // Filter by event assignment
         $query->whereHas('events', function ($q) use ($eventId) {
@@ -356,6 +557,9 @@ class EmployeeController extends BaseHRController
                     // UI
                     'c'                 => $emp->avatar_color,
                     'initials'          => $emp->initials,
+                    
+                    // Documents
+                    'documentsCount'    => $emp->documents_count ?? 0,
                 ];
             });
 
@@ -448,6 +652,9 @@ class EmployeeController extends BaseHRController
         // Get ALL active employees without event filtering
         $employees = Employee::active()
             ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType'])
+            ->withCount(['documents as documents_count' => function ($query) {
+                $query->where('active_flag', 1);
+            }])
             ->orderBy('full_name')
             ->get()
             ->map(function ($emp) {
@@ -522,6 +729,9 @@ class EmployeeController extends BaseHRController
                     // UI
                     'c'                 => $emp->avatar_color,
                     'initials'          => $emp->initials,
+                    
+                    // Documents
+                    'documentsCount'    => $emp->documents_count ?? 0,
                 ];
             });
 

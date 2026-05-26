@@ -339,6 +339,15 @@
   color: var(--mhr-accent-ink);
   border-color: var(--green-200);
 }
+.meridian-app .mhr-icon-btn--danger {
+  color: var(--mhr-danger);
+  border-color: var(--mhr-line);
+}
+.meridian-app .mhr-icon-btn--danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--mhr-danger);
+  border-color: var(--mhr-danger);
+}
 .meridian-app .mhr-icon-btn svg { width: 16px; height: 16px; }
 .meridian-app .mhr-icon-btn__dot {
   position: absolute;
