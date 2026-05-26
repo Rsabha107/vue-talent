@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import AppAvatar from '@/Components/MeridianHR/AppAvatar.vue'
@@ -72,6 +72,7 @@ const hasFailures = ref(false)
 const added = ref([])
 const toast = ref(null)
 const openMenuId = ref(null)
+const menuPosition = ref({ top: 0, right: 0 })
 const isRefreshing = ref(false)
 const isImporting = ref(false)
 const isUpdating = ref(false)
@@ -143,15 +144,15 @@ const form = ref({
   reportingToId: null,
   
   // Contract Dates
-  contractStartDate: '',
-  contractEndDate: '',
-  dateOfHire: '',
-  joinDate: '',
+  contractStartDate: null,
+  contractEndDate: null,
+  dateOfHire: null,
+  joinDate: null,
   
   // Personal Information
   genderId: null,
   maritalStatusId: null,
-  dateOfBirth: '',
+  dateOfBirth: null,
   townOfBirth: '',
   countryOfBirth: '',
   nationalityId: null,
@@ -159,9 +160,9 @@ const form = ref({
   
   // Identification
   nationalIdNumber: '',
-  passportNumber: '',
-  passportExpiry: '',
-  civilIdExpiry: '',
+  passportNumber: null,
+  passportExpiry: null,
+  civilIdExpiry: null,
   
   // Sponsorship
   sponsorshipId: '',
@@ -202,15 +203,15 @@ const editForm = ref({
   reportingToId: null,
   
   // Contract Dates
-  contractStartDate: '',
-  contractEndDate: '',
-  dateOfHire: '',
-  joinDate: '',
+  contractStartDate: null,
+  contractEndDate: null,
+  dateOfHire: null,
+  joinDate: null,
   
   // Personal Information
   genderId: null,
   maritalStatusId: null,
-  dateOfBirth: '',
+  dateOfBirth: null,
   townOfBirth: '',
   countryOfBirth: '',
   nationalityId: null,
@@ -218,9 +219,9 @@ const editForm = ref({
   
   // Identification
   nationalIdNumber: '',
-  passportNumber: '',
-  passportExpiry: '',
-  civilIdExpiry: '',
+  passportNumber: null,
+  passportExpiry: null,
+  civilIdExpiry: null,
   
   // Sponsorship
   sponsorshipId: '',
@@ -255,6 +256,11 @@ const visibleColumnsCount = computed(() => {
 
 const allSelected = computed(() => {
   return filtered.value.length > 0 && filtered.value.every(emp => selectedEmployees.value.has(emp.id))
+})
+
+// Close dropdown menu when filtered list changes to prevent DOM errors
+watch([q, dept, () => props.employees], () => {
+  openMenuId.value = null
 })
 
 const someSelected = computed(() => {
@@ -316,7 +322,8 @@ function confirmAssignToEvent() {
     onError: (errors) => {
       isAssigning.value = false
       console.error('Failed to assign employees:', errors)
-      toast.value = 'Failed to assign employees to event'
+      const firstError = Object.values(errors)[0]
+      toast.value = firstError || 'Failed to assign employees to event'
       setTimeout(() => { toast.value = null }, 3000)
     }
   })
@@ -389,46 +396,57 @@ function toMySQLDate(date) {
   return null
 }
 
+// Convert date string to Date object for DatePicker
+function parseDate(dateStr) {
+  if (!dateStr) return null
+  if (dateStr instanceof Date) return dateStr
+  if (typeof dateStr === 'string') {
+    const date = new Date(dateStr)
+    return isNaN(date.getTime()) ? null : date
+  }
+  return null
+}
+
 function addEmployee() {
   router.post(route('hr.employee.store'), {
     first_name: form.value.firstName,
-    middle_name: form.value.middleName,
+    middle_name: form.value.middleName || '',
     last_name: form.value.lastName,
     employee_number: form.value.employeeNumber,
-    agreement_number: form.value.agreementNumber,
-    salutation_id: form.value.salutationId,
+    agreement_number: form.value.agreementNumber || '',
+    salutation_id: form.value.salutationId || null,
     work_email_address: form.value.workEmail,
-    personal_email_address: form.value.personalEmail,
-    phone_number: form.value.phoneNumber,
-    alt_phone_number: form.value.altPhoneNumber,
-    phone_area_code: form.value.phoneAreaCode,
-    alt_area_code: form.value.altAreaCode,
-    designation_id: form.value.designationId,
-    department_id: form.value.departmentId,
-    directorate_id: form.value.directorateId,
-    functional_area_id: form.value.functionalAreaId,
-    salary_basis_id: form.value.salaryBasisId,
-    employee_type: form.value.employeeType,
-    entity_id: form.value.entityId,
-    contract_type_id: form.value.contractTypeId,
-    reporting_to_id: form.value.reportingToId,
+    personal_email_address: form.value.personalEmail || '',
+    phone_number: form.value.phoneNumber || '',
+    alt_phone_number: form.value.altPhoneNumber || '',
+    phone_area_code: form.value.phoneAreaCode || '',
+    alt_area_code: form.value.altAreaCode || '',
+    designation_id: form.value.designationId || null,
+    department_id: form.value.departmentId || null,
+    directorate_id: form.value.directorateId || null,
+    functional_area_id: form.value.functionalAreaId || null,
+    salary_basis_id: form.value.salaryBasisId || null,
+    employee_type: form.value.employeeType || null,
+    entity_id: form.value.entityId || null,
+    contract_type_id: form.value.contractTypeId || null,
+    reporting_to_id: form.value.reportingToId || null,
     contract_start_date: toMySQLDate(form.value.contractStartDate),
     contract_end_date: toMySQLDate(form.value.contractEndDate),
     date_of_hire: toMySQLDate(form.value.dateOfHire),
     join_date: toMySQLDate(form.value.joinDate),
-    gender_id: form.value.genderId,
-    marital_status_id: form.value.maritalStatusId,
+    gender_id: form.value.genderId || null,
+    marital_status_id: form.value.maritalStatusId || null,
     date_of_birth: toMySQLDate(form.value.dateOfBirth),
-    town_of_birth: form.value.townOfBirth,
-    country_of_birth: form.value.countryOfBirth,
-    nationality_id: form.value.nationalityId,
-    language_id: form.value.languageId,
-    national_identifier_number: form.value.nationalIdNumber,
-    passport_number: form.value.passportNumber,
+    town_of_birth: form.value.townOfBirth || '',
+    country_of_birth: form.value.countryOfBirth || null,
+    nationality_id: form.value.nationalityId || null,
+    language_id: form.value.languageId ? String(form.value.languageId) : '',
+    national_identifier_number: form.value.nationalIdNumber || '',
+    passport_number: form.value.passportNumber || '',
     passport_expiry: toMySQLDate(form.value.passportExpiry),
     civil_id_expiry: toMySQLDate(form.value.civilIdExpiry),
-    sponsorship_id: form.value.sponsorshipId,
-    sponsorship_name: form.value.sponsorshipName,
+    sponsorship_id: form.value.sponsorshipId || '',
+    sponsorship_name: form.value.sponsorshipName || '',
     manager_flag: form.value.managerFlag,
     administrator_flag: form.value.administratorFlag,
   }, {
@@ -442,26 +460,43 @@ function addEmployee() {
         workEmail: '', personalEmail: '', phoneNumber: '', altPhoneNumber: '', phoneAreaCode: '', altAreaCode: '',
         designationId: null, departmentId: null, directorateId: null, functionalAreaId: null, salaryBasisId: null,
         employeeType: null, entityId: null, contractTypeId: null, reportingToId: null,
-        contractStartDate: '', contractEndDate: '', dateOfHire: '', joinDate: '',
-        genderId: null, maritalStatusId: null, dateOfBirth: '', townOfBirth: '', countryOfBirth: '',
-        nationalityId: null, languageId: null, nationalIdNumber: '', passportNumber: '', passportExpiry: '',
-        civilIdExpiry: '', sponsorshipId: '', sponsorshipName: '', managerFlag: 'N', administratorFlag: 'N',
+        contractStartDate: null, contractEndDate: null, dateOfHire: null, joinDate: null,
+        genderId: null, maritalStatusId: null, dateOfBirth: null, townOfBirth: '', countryOfBirth: '',
+        nationalityId: null, languageId: null, nationalIdNumber: '', passportNumber: null, passportExpiry: null,
+        civilIdExpiry: null, sponsorshipId: '', sponsorshipName: '', managerFlag: 'N', administratorFlag: 'N',
       }
     },
     onError: (errors) => {
       console.error('Failed to add employee:', errors)
-      toast.value = 'Failed to add employee'
+      const firstError = Object.values(errors)[0]
+      toast.value = firstError || 'Failed to add employee'
       setTimeout(() => { toast.value = null }, 3000)
     }
   })
 }
 
-function toggleMenu(id) {
-  openMenuId.value = openMenuId.value === id ? null : id
+function toggleMenu(id, event) {
+  if (openMenuId.value === id) {
+    openMenuId.value = null
+    return
+  }
+  const rect = event.currentTarget.getBoundingClientRect()
+  const estimatedHeight = 178
+  const openUp = rect.bottom + 4 + estimatedHeight > window.innerHeight
+  menuPosition.value = {
+    top:    openUp ? null : rect.bottom + 4,
+    bottom: openUp ? window.innerHeight - rect.top + 4 : null,
+    right:  window.innerWidth - rect.right,
+  }
+  openMenuId.value = id
 }
 
 function editEmployee(emp) {
   editingEmployee.value = emp
+  
+  // Helper to validate ID exists in list
+  const validId = (id, list) => id && list.some(item => item.id === id) ? id : null
+  
   // Populate form with employee data
   editForm.value = {
     id: emp.id,
@@ -470,7 +505,7 @@ function editEmployee(emp) {
     firstName: emp.firstName || '',
     middleName: emp.middleName || '',
     lastName: emp.lastName || '',
-    salutationId: emp.salutation_id || null,
+    salutationId: validId(emp.salutation_id, props.salutations),
     employeeNumber: emp.empNumber || '',
     agreementNumber: emp.agreementNumber || '',
     
@@ -483,36 +518,36 @@ function editEmployee(emp) {
     altPhoneNumber: emp.altPhone || '',
     
     // Employment Details
-    designationId: emp.designation_id || null,
-    departmentId: emp.department_id || null,
-    directorateId: emp.directorate_id || null,
-    functionalAreaId: emp.functional_area_id || null,
-    salaryBasisId: emp.salary_basis_id || null,
-    employeeType: emp.employee_type || null,
-    entityId: emp.entityId || null,
-    contractTypeId: emp.contractTypeId || null,
-    reportingToId: emp.reporting_to_id || null,
+    designationId: validId(emp.designation_id, props.designations),
+    departmentId: validId(emp.department_id, props.departments),
+    directorateId: validId(emp.directorate_id, props.directorates),
+    functionalAreaId: validId(emp.functional_area_id, props.functionalAreas),
+    salaryBasisId: validId(emp.salary_basis_id, props.salaryBases),
+    employeeType: validId(emp.employee_type, props.employeeTypes),
+    entityId: validId(emp.entityId, props.entities),
+    contractTypeId: validId(emp.contractTypeId, props.contractTypes),
+    reportingToId: validId(emp.reporting_to_id, props.reportingToOptions),
     
     // Contract Dates
-    contractStartDate: emp.contractStart || '',
-    contractEndDate: emp.contractEnd || '',
-    dateOfHire: emp.dateOfHire || '',
-    joinDate: emp.joinDate || '',
+    contractStartDate: parseDate(emp.contractStart),
+    contractEndDate: parseDate(emp.contractEnd),
+    dateOfHire: parseDate(emp.dateOfHire),
+    joinDate: parseDate(emp.joinDate),
     
     // Personal Information
-    genderId: emp.gender_id || null,
-    maritalStatusId: emp.marital_status_id || null,
-    dateOfBirth: emp.dateOfBirth || '',
+    genderId: validId(emp.gender_id, props.genders),
+    maritalStatusId: validId(emp.marital_status_id, props.maritalStatuses),
+    dateOfBirth: parseDate(emp.dateOfBirth),
     townOfBirth: emp.town_of_birth || '',
-    countryOfBirth: emp.country_of_birth || '',
-    nationalityId: emp.nationality_id || null,
-    languageId: emp.language_id || null,
+    countryOfBirth: validId(emp.country_of_birth, props.countries),
+    nationalityId: validId(emp.nationality_id, props.nationalities),
+    languageId: emp.language_id ? String(emp.language_id) : '',
     
     // Identification
     nationalIdNumber: emp.nationalId || '',
-    passportNumber: emp.passportNumber || '',
-    passportExpiry: emp.passportExpiry || '',
-    civilIdExpiry: emp.civilIdExpiry || '',
+    passportNumber: emp.passportNumber || null,
+    passportExpiry: parseDate(emp.passportExpiry),
+    civilIdExpiry: parseDate(emp.civilIdExpiry),
     
     // Sponsorship
     sponsorshipId: emp.sponsorship_id || '',
@@ -641,30 +676,30 @@ function updateEmployee() {
   router.put(route('hr.employee.update', editForm.value.id), {
     // Basic Information
     first_name: editForm.value.firstName,
-    middle_name: editForm.value.middleName,
+    middle_name: editForm.value.middleName || '',
     last_name: editForm.value.lastName,
-    salutation_id: editForm.value.salutationId,
+    salutation_id: editForm.value.salutationId || null,
     employee_number: editForm.value.employeeNumber,
-    agreement_number: editForm.value.agreementNumber,
+    agreement_number: editForm.value.agreementNumber || '',
     
     // Contact Information
     work_email_address: editForm.value.workEmail,
-    personal_email_address: editForm.value.personalEmail,
-    phone_area_code: editForm.value.phoneAreaCode,
-    phone_number: editForm.value.phoneNumber,
-    alt_area_code: editForm.value.altAreaCode,
-    alt_phone_number: editForm.value.altPhoneNumber,
+    personal_email_address: editForm.value.personalEmail || '',
+    phone_area_code: editForm.value.phoneAreaCode || '',
+    phone_number: editForm.value.phoneNumber || '',
+    alt_area_code: editForm.value.altAreaCode || '',
+    alt_phone_number: editForm.value.altPhoneNumber || '',
     
     // Employment Details
-    designation_id: editForm.value.designationId,
-    department_id: editForm.value.departmentId,
-    directorate_id: editForm.value.directorateId,
-    functional_area_id: editForm.value.functionalAreaId,
-    salary_basis_id: editForm.value.salaryBasisId,
-    employee_type: editForm.value.employeeType,
-    entity_id: editForm.value.entityId,
-    contract_type_id: editForm.value.contractTypeId,
-    reporting_to_id: editForm.value.reportingToId,
+    designation_id: editForm.value.designationId || null,
+    department_id: editForm.value.departmentId || null,
+    directorate_id: editForm.value.directorateId || null,
+    functional_area_id: editForm.value.functionalAreaId || null,
+    salary_basis_id: editForm.value.salaryBasisId || null,
+    employee_type: editForm.value.employeeType || null,
+    entity_id: editForm.value.entityId || null,
+    contract_type_id: editForm.value.contractTypeId || null,
+    reporting_to_id: editForm.value.reportingToId || null,
     
     // Contract & Dates
     contract_start_date: toMySQLDate(editForm.value.contractStartDate),
@@ -673,23 +708,23 @@ function updateEmployee() {
     join_date: toMySQLDate(editForm.value.joinDate),
     
     // Personal Information
-    gender_id: editForm.value.genderId,
-    marital_status_id: editForm.value.maritalStatusId,
+    gender_id: editForm.value.genderId || null,
+    marital_status_id: editForm.value.maritalStatusId || null,
     date_of_birth: toMySQLDate(editForm.value.dateOfBirth),
-    town_of_birth: editForm.value.townOfBirth,
-    country_of_birth: editForm.value.countryOfBirth,
-    nationality_id: editForm.value.nationalityId,
-    language_id: editForm.value.languageId,
+    town_of_birth: editForm.value.townOfBirth || '',
+    country_of_birth: editForm.value.countryOfBirth || null,
+    nationality_id: editForm.value.nationalityId || null,
+    language_id: editForm.value.languageId ? String(editForm.value.languageId) : '',
     
     // Identification
-    national_identifier_number: editForm.value.nationalIdNumber,
-    passport_number: editForm.value.passportNumber,
+    national_identifier_number: editForm.value.nationalIdNumber || '',
+    passport_number: editForm.value.passportNumber || '',
     passport_expiry: toMySQLDate(editForm.value.passportExpiry),
     civil_id_expiry: toMySQLDate(editForm.value.civilIdExpiry),
     
     // Sponsorship
-    sponsorship_id: editForm.value.sponsorshipId,
-    sponsorship_name: editForm.value.sponsorshipName,
+    sponsorship_id: editForm.value.sponsorshipId || '',
+    sponsorship_name: editForm.value.sponsorshipName || '',
     
     // Flags
     manager_flag: editForm.value.managerFlag,
@@ -704,7 +739,8 @@ function updateEmployee() {
     onError: (errors) => {
       isUpdating.value = false
       console.error('Failed to update employee:', errors)
-      toast.value = 'Failed to update employee'
+      const firstError = Object.values(errors)[0]
+      toast.value = firstError || 'Failed to update employee'
       setTimeout(() => { toast.value = null }, 3000)
     },
     onFinish: () => {
@@ -1138,29 +1174,31 @@ function updateEmployee() {
             <td v-if="visibleColumns.civilIdExpiry" style="color:var(--mhr-ink-3);">{{ fmtDate(p.civilIdExpiry) }}</td>
             <td v-if="visibleColumns.managerFlag" style="color:var(--mhr-ink-3);">{{ p.managerFlag }}</td>
             <td v-if="visibleColumns.adminFlag" style="color:var(--mhr-ink-3);">{{ p.adminFlag }}</td>
-            <td style="position:relative;">
-              <button class="mhr-icon-btn" style="width:28px;height:28px;" @click.stop="toggleMenu(p.id)">
+            <td>
+              <button class="mhr-icon-btn" style="width:28px;height:28px;" @click.stop="toggleMenu(p.id, $event)">
                 <AppIcon name="more" :size="13" />
               </button>
-              <div v-if="openMenuId === p.id" @click.stop class="mhr-dropdown" style="position:absolute;right:0;top:100%;margin-top:4px;min-width:180px;background:white;border:1px solid var(--mhr-line);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:1000;">
-                <button @click="editEmployee(p)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
-                  <AppIcon name="edit" :size="14" />
-                  <span>Edit</span>
-                </button>
-                <button @click="duplicateEmployee(p)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
-                  <AppIcon name="copy" :size="14" />
-                  <span>Duplicate</span>
-                </button>
-                <button @click="updateDocument(p)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
-                  <AppIcon name="doc" :size="14" />
-                  <span>Update document</span>
-                </button>
-                <div style="border-top:1px solid var(--mhr-line-2);margin:4px 0;"></div>
-                <button @click="deleteEmployee(p)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-danger);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
-                  <AppIcon name="trash" :size="14" />
-                  <span>Delete</span>
-                </button>
-              </div>
+              <Teleport to=".meridian-app" v-if="openMenuId === p.id">
+                <div @click.stop class="mhr-dropdown" :style="{ position:'fixed', top: menuPosition.top != null ? menuPosition.top+'px' : 'auto', bottom: menuPosition.bottom != null ? menuPosition.bottom+'px' : 'auto', right: menuPosition.right+'px', minWidth:'180px', background:'var(--mhr-surface)', border:'1px solid var(--mhr-line)', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:9999 }">
+                  <button @click="editEmployee(p)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
+                    <AppIcon name="edit" :size="14" />
+                    <span>Edit</span>
+                  </button>
+                  <button @click="duplicateEmployee(p)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
+                    <AppIcon name="copy" :size="14" />
+                    <span>Duplicate</span>
+                  </button>
+                  <button @click="updateDocument(p)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
+                    <AppIcon name="doc" :size="14" />
+                    <span>Update document</span>
+                  </button>
+                  <div style="border-top:1px solid var(--mhr-line-2);margin:4px 0;"></div>
+                  <button @click="deleteEmployee(p)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-danger);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
+                    <AppIcon name="trash" :size="14" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              </Teleport>
             </td>
           </tr>
         </tbody>

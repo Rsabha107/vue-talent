@@ -1,0 +1,927 @@
+<script setup>
+import { ref, computed } from 'vue'
+import MeridianLayout from '@/Layouts/MeridianLayout.vue'
+import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
+import AppAvatar from '@/Components/MeridianHR/AppAvatar.vue'
+import { router } from '@inertiajs/vue3'
+
+// ── Toast ────────────────────────────────────────────────────────────
+const toasts = ref([])
+let toastSeq = 0
+
+function showToast(message, type = 'success') {
+  const id = ++toastSeq
+  toasts.value.push({ id, message, type })
+  setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id) }, 4000)
+}
+
+defineOptions({ layout: MeridianLayout })
+
+const props = defineProps({
+  hrRole:     { type: String, default: 'admin' },
+  hrPage:     { type: String, default: 'timesheet-talent' },
+  employees:  { type: Array,  default: () => [] },
+  monthsName: { type: Array,  default: () => [] },  // [{ id, monthName, monthNumber }]
+  years:      { type: Array,  default: () => [] },  // [2024, 2025, 2026]
+  statuses:   { type: Array,  default: () => [] },  // [{ id, title }]
+  timesheets: { type: Array,  default: () => [] },
+  /*
+    timesheets item shape:
+    {
+      id, employeeId, employeeName, employeeColor,
+      period,         // "May-2026"
+      monthNumber,    // 5
+      year,           // 2026
+      daysInMonth,    // 31
+      startDay,       // 1, or contract start day if same month
+      endDay,         // 31, or contract end day if same month
+      statusId, statusTitle,
+      hasEntries,     // boolean
+      entries: [{ day, dayName, isWeekend, action, isLeave }],
+      daysWorked,     // number
+      leaveTaken,     // number
+      unpaidLeave,    // number
+      totalDays,      // number
+      dailyRate,      // string formatted
+      salary,         // string formatted
+      payment,        // string formatted
+      approver,       // string | null
+    }
+  */
+})
+
+// ── View state ──────────────────────────────────────────────────────
+const view            = ref('list')   // 'list' | 'entries'
+const activeTimesheet = ref(null)
+const localTimesheets = ref(JSON.parse(JSON.stringify(props.timesheets)))
+
+// ── Filters ─────────────────────────────────────────────────────────
+const filterPeriod = ref('')
+const filterStatus = ref('')
+
+const filtered = computed(() =>
+  localTimesheets.value.filter(t => {
+    const okPeriod = !filterPeriod.value || t.period.toLowerCase().includes(filterPeriod.value.toLowerCase())
+    const okStatus = !filterStatus.value || String(t.statusId) === String(filterStatus.value)
+    return okPeriod && okStatus
+  })
+)
+
+// ── Refresh ─────────────────────────────────────────────────────────
+const isRefreshing = ref(false)
+
+function refreshData() {
+  isRefreshing.value = true
+  router.reload({
+    preserveScroll: true,
+    preserveState: true,
+    onFinish: () => {
+      isRefreshing.value = false
+      localTimesheets.value = JSON.parse(JSON.stringify(props.timesheets))
+      showToast('Timesheets refreshed', 'success')
+    }
+  })
+}
+
+// ── Add timesheet modal ─────────────────────────────────────────────
+const showAddModal = ref(false)
+const isAdding     = ref(false)
+const addForm      = ref({ employeeId: '', monthId: '', year: '' })
+const addErrors    = ref({})
+
+function openAddModal() {
+  addForm.value   = { employeeId: '', monthId: '', year: '' }
+  addErrors.value = {}
+  showAddModal.value = true
+}
+
+function validateAdd() {
+  const e = {}
+  if ((props.hrRole === 'admin' || props.hrRole === 'manager') && !addForm.value.employeeId) {
+    e.employeeId = 'Employee is required.'
+  }
+  if (!addForm.value.monthId) e.monthId = 'Month is required.'
+  if (!addForm.value.year)    e.year    = 'Year is required.'
+  addErrors.value = e
+  return Object.keys(e).length === 0
+}
+
+function submitAdd() {
+  if (!validateAdd()) return
+  isAdding.value = true
+  router.post(route('hr.timesheet-talent.store'), {
+    employee_id:       addForm.value.employeeId || null,
+    month_selected_id: addForm.value.monthId,
+    year_selected:     addForm.value.year,
+  }, {
+    onSuccess: () => {
+      // Optimistic list update so the user sees the new record immediately
+      const month = props.monthsName.find(m => String(m.id) === String(addForm.value.monthId))
+      const emp   = props.employees.find(e => String(e.id) === String(addForm.value.employeeId))
+      const period = month ? `${month.monthName}-${addForm.value.year}` : String(addForm.value.year)
+      const monthNumber = month?.monthNumber || 1
+      const year = Number(addForm.value.year)
+      const daysInMonth = getDaysInMonth(year, monthNumber)
+      
+      localTimesheets.value.push({
+        id:            Date.now(),
+        employeeId:    addForm.value.employeeId || null,
+        employeeName:  emp?.fullName || 'Me',
+        employeeColor: 0,
+        period,
+        monthNumber,
+        year,
+        daysInMonth,
+        startDay:      1,
+        endDay:        daysInMonth,
+        statusId:      1,
+        statusTitle:   'Pending',
+        hasEntries:    false,
+        entries:       [],
+      })
+      showAddModal.value = false
+      showToast('Timesheet created successfully.')
+    },
+    onError: (errors) => {
+      // Map server validation keys to form error fields
+      addErrors.value = {
+        employeeId: errors.employee_id,
+        monthId:    errors.month_selected_id,
+        year:       errors.year_selected,
+      }
+      showToast(Object.values(errors)[0] || 'Please fix the errors and try again.', 'error')
+    },
+    onFinish: () => { isAdding.value = false },
+  })
+}
+
+// ── Status modal ────────────────────────────────────────────────────
+const showStatusModal = ref(false)
+const statusTarget    = ref(null)
+const statusForm      = ref({ statusId: '', additionalInfo: '' })
+const statusErrors    = ref({})
+const isSavingStatus  = ref(false)
+
+function openStatusModal(ts) {
+  statusTarget.value = ts
+  statusForm.value   = { statusId: ts.statusId || '', additionalInfo: '' }
+  statusErrors.value = {}
+  showStatusModal.value = true
+}
+
+function validateStatus() {
+  const e = {}
+  if (!statusForm.value.statusId) e.statusId = 'Status is required.'
+  statusErrors.value = e
+  return Object.keys(e).length === 0
+}
+
+function saveStatus() {
+  if (!validateStatus()) return
+  isSavingStatus.value = true
+  router.post(route('hr.timesheet-talent.status'), {
+    id:                     statusTarget.value.id,
+    status_id:              statusForm.value.statusId,
+    additional_information: statusForm.value.additionalInfo,
+  }, {
+    preserveScroll: true,
+    onSuccess: () => {
+      const ts = localTimesheets.value.find(t => t.id === statusTarget.value.id)
+      if (ts) {
+        ts.statusId    = statusForm.value.statusId
+        const st       = props.statuses.find(s => String(s.id) === String(statusForm.value.statusId))
+        ts.statusTitle = st?.title || ''
+      }
+      showStatusModal.value = false
+      showToast('Status updated successfully.')
+    },
+    onError: (errors) => {
+      statusErrors.value = {
+        statusId:       errors.status_id,
+        additionalInfo: errors.additional_information,
+      }
+      showToast(Object.values(errors)[0] || 'Please fix the errors and try again.', 'error')
+    },
+    onFinish: () => { isSavingStatus.value = false },
+  })
+}
+
+// ── Entries view ────────────────────────────────────────────────────
+const entryRows       = ref([])
+const isSavingEntries = ref(false)
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+// Weekend configuration: 5 = Friday, 6 = Saturday (common in Middle East)
+// For Western weekend (Sat/Sun), use: [0, 6]
+const WEEKEND_DAYS = [5, 6]
+
+// Helper to get actual days in a month
+function getDaysInMonth(year, monthNumber) {
+  return new Date(year, monthNumber, 0).getDate()
+}
+
+function buildRows(ts) {
+  // If the timesheet already has entries from the backend, use them
+  if (ts.entries && ts.entries.length) {
+    return ts.entries.map(e => ({ ...e }))
+  }
+  // Otherwise generate blank rows for the valid date range
+  const rows = []
+  for (let d = ts.startDay; d <= ts.endDay; d++) {
+    const date      = new Date(ts.year, ts.monthNumber - 1, d)
+    const dow       = date.getDay()
+    const isWeekend = WEEKEND_DAYS.includes(dow)
+    rows.push({
+      day:       d,
+      dayName:   DAYS[dow],
+      isWeekend,
+      action:    'W',   // default to Worked
+      isLeave:   false,
+    })
+  }
+  return rows
+}
+
+function openEntries(ts) {
+  activeTimesheet.value = ts
+  entryRows.value       = buildRows(ts)
+  view.value            = 'entries'
+}
+
+function backToList() {
+  view.value            = 'list'
+  activeTimesheet.value = null
+  entryRows.value       = []
+  editingDay.value      = null
+}
+
+function firstDayOffset() {
+  if (!activeTimesheet.value) return 0
+  const ts = activeTimesheet.value
+  // With Sunday as first day (0), just use getDay() directly
+  return new Date(ts.year, ts.monthNumber - 1, 1).getDay()
+}
+
+function lastDayOffset() {
+  if (!activeTimesheet.value) return 0
+  const ts = activeTimesheet.value
+  const lastDay = ts.endDay
+  const lastDayOfWeek = new Date(ts.year, ts.monthNumber - 1, lastDay).getDay()
+  // Return number of blank cells needed to reach Saturday (day 6)
+  return 6 - lastDayOfWeek
+}
+
+// ── Day edit modal ──────────────────────────────────────────────────
+const ACTION_TYPES = [
+  { key: 'W', label: 'Worked',       sub: 'Regular working day',    icon: 'calendar' },
+  { key: 'U', label: 'Unpaid leave', sub: 'Unpaid time off',        icon: 'clock' },
+]
+
+const editingDay = ref(null)
+const editAction = ref('W')
+
+function canEdit(day) {
+  if (day.isWeekend) return false  // Can't edit weekends (non-working days)
+  if (day.isLeave) return false    // Can't edit days with approved leave
+  return true
+}
+
+function openDay(day) {
+  if (day.isWeekend) {
+    showToast('Weekends are non-working days and cannot be edited', 'error')
+    return
+  }
+  if (!canEdit(day)) {
+    showToast('This day has approved leave and cannot be edited', 'error')
+    return
+  }
+  editingDay.value = day
+  editAction.value = day.action || 'W'
+}
+
+function closeModal() {
+  editingDay.value = null
+}
+
+function saveDay() {
+  const day = editingDay.value
+  if (!day) return
+  
+  // Update the day in entryRows
+  const entry = entryRows.value.find(r => r.day === day.day)
+  if (entry) {
+    entry.action = editAction.value
+  }
+  
+  closeModal()
+  showToast('Day updated. Remember to save your timesheet.', 'success')
+}
+
+// ── Summary computed ────────────────────────────────────────────────
+// Exclude weekends from all counts since employees don't work Fri/Sat
+const summary = computed(() => {
+  const worked = entryRows.value.filter(r => r.action === 'W' && !r.isLeave && !r.isWeekend).length
+  const leave  = entryRows.value.filter(r => (r.action === 'L' || r.isLeave) && !r.isWeekend).length
+  const unpaid = entryRows.value.filter(r => r.action === 'U' && !r.isWeekend).length
+  const weekend = entryRows.value.filter(r => r.isWeekend).length
+  return { workedDays: worked, leaveDays: leave, unpaidDays: unpaid, weekend }
+})
+
+// ── Cell helpers ────────────────────────────────────────────────────
+function cellClass(day) {
+  if (day.isWeekend) return 'ts-cell--weekend'
+  if (day.isLeave || day.action === 'L') return 'ts-cell--leave'
+  if (day.action === 'U') return 'ts-cell--unpaid'
+  if (day.action === 'W') return 'ts-cell--worked'
+  return 'ts-cell--blank'
+}
+
+function cellLabel(day) {
+  if (day.isWeekend) return 'Weekend'
+  if (day.isLeave) return 'Leave'
+  if (day.action === 'W') return 'Worked'
+  if (day.action === 'U') return 'Unpaid'
+  return '—'
+}
+
+function saveEntries() {
+  isSavingEntries.value = true
+  router.post(route('hr.timesheet-talent.entries.store'), {
+    employee_timesheet_id: activeTimesheet.value.id,
+    employee_id:           activeTimesheet.value.employeeId,
+    calendar_day:          entryRows.value.map(r => r.day),
+    day_action:            entryRows.value.map(r => r.isLeave ? 'L' : r.action),
+  }, {
+    onSuccess: () => {
+      // Update the local record so "View / Edit" shows the correct entry count
+      const ts = localTimesheets.value.find(t => t.id === activeTimesheet.value.id)
+      if (ts) {
+        ts.hasEntries = true
+        ts.entries = entryRows.value.map(r => ({ ...r }))
+      }
+      showToast('Timesheet entries saved successfully.')
+      backToList()
+      // Refresh data to get updated calculations from server
+      refreshData()
+    },
+    onError: (errors) => {
+      const first = Object.values(errors)[0]
+      showToast(first || 'Failed to save entries. Please try again.', 'error')
+    },
+    onFinish: () => { isSavingEntries.value = false },
+  })
+}
+
+// ── Delete ──────────────────────────────────────────────────────────
+const deletingId = ref(null)
+
+function confirmDelete(ts) {
+  if (!confirm(`Delete the timesheet for ${ts.employeeName} (${ts.period})?\nThis cannot be undone.`)) return
+  deletingId.value = ts.id
+  router.delete(route('hr.timesheet-talent.destroy', ts.id), {
+    onSuccess: () => {
+      localTimesheets.value = localTimesheets.value.filter(t => t.id !== ts.id)
+      showToast('Timesheet deleted.')
+    },
+    onError: () => { showToast('Failed to delete timesheet.', 'error') },
+    onFinish: () => { deletingId.value = null },
+  })
+}
+
+// ── Status badge helpers ─────────────────────────────────────────────
+const STATUS_STYLE = {
+  Pending:   { bg: 'var(--mhr-warn-bg)',     color: 'var(--mhr-warn)'        },
+  Submitted: { bg: 'var(--mhr-info-bg)',     color: 'var(--mhr-info)'        },
+  Approved:  { bg: 'var(--mhr-accent-soft)', color: 'var(--mhr-accent-ink)'  },
+  Rejected:  { bg: 'var(--mhr-danger-bg)',   color: 'var(--mhr-danger)'      },
+}
+function statusStyle(title) {
+  return STATUS_STYLE[title] || { bg: 'var(--mhr-surface-2)', color: 'var(--mhr-ink-3)' }
+}
+
+const availableYears = computed(() => {
+  if (props.years.length) return props.years
+  const y = new Date().getFullYear()
+  return [y - 1, y, y + 1]
+})
+
+const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole === 'manager')
+</script>
+
+<template>
+  <div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         LIST VIEW
+    ════════════════════════════════════════════════════════════════ -->
+    <template v-if="view === 'list'">
+
+      <div class="mhr-page-head">
+        <div>
+          <h1 class="mhr-page-head__title">Timesheets</h1>
+          <p class="mhr-page-head__sub">{{ filtered.length }} record{{ filtered.length !== 1 ? 's' : '' }}</p>
+        </div>
+        <div class="mhr-page-head__actions">
+          <button class="mhr-btn mhr-btn--ghost" @click="refreshData" :disabled="isRefreshing" title="Refresh">
+            <AppIcon name="refresh" :size="14" :class="{ 'icon-spin': isRefreshing }" />
+          </button>
+          <button class="mhr-btn mhr-btn--primary" @click="openAddModal">
+            <AppIcon name="plus" :size="14" /> Add Timesheet
+          </button>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div style="display:flex;gap:10px;margin-bottom:16px;">
+        <div style="position:relative;flex:1;max-width:280px;">
+          <AppIcon name="search" :size="14" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--mhr-ink-3);" />
+          <input class="mhr-input" style="padding-left:30px;" placeholder="Filter by period…" v-model="filterPeriod" />
+        </div>
+        <select class="mhr-select" style="max-width:180px;" v-model="filterStatus">
+          <option value="">All statuses</option>
+          <option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.title }}</option>
+        </select>
+      </div>
+
+      <!-- Table -->
+      <div class="mhr-card">
+        <div class="mhr-table-container">
+          <table class="mhr-table">
+            <thead>
+              <tr>
+                <th v-if="isAdminOrManager">Employee</th>
+                <th>Period</th>
+                <th>Status</th>
+                <th style="text-align:right;">Worked</th>
+                <th style="text-align:right;">Leaves</th>
+                <th style="text-align:right;">Unpaid</th>
+                <th style="text-align:right;">Total Days</th>
+                <th style="text-align:right;">Daily Rate</th>
+                <th style="text-align:right;">Salary</th>
+                <th style="text-align:right;">Payment</th>
+                <th>Approver</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="filtered.length === 0">
+                <td :colspan="isAdminOrManager ? 13 : 12" style="text-align:center;padding:56px 20px;">
+                  <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+                    <AppIcon name="clock" :size="40" style="opacity:0.18;" />
+                    <div style="font-size:14px;font-weight:600;color:var(--mhr-ink-2);">No timesheets found</div>
+                    <div style="font-size:13px;color:var(--mhr-ink-3);">Click <strong>Add Timesheet</strong> to create the first one.</div>
+                  </div>
+                </td>
+              </tr>
+              <tr v-for="ts in filtered" :key="ts.id">
+                <td v-if="isAdminOrManager">
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    <AppAvatar :name="ts.employeeName" :c="ts.employeeColor" />
+                    <span style="font-weight:500;">{{ ts.employeeName }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span class="mhr-mono" style="font-size:12px;color:var(--mhr-ink-2);">{{ ts.period }}</span>
+                </td>
+                <td>
+                  <span class="mhr-badge" :style="{ background: statusStyle(ts.statusTitle).bg, color: statusStyle(ts.statusTitle).color }">
+                    {{ ts.statusTitle || 'Pending' }}
+                  </span>
+                </td>
+                <td style="text-align:right;color:var(--mhr-ink-2);font-size:13px;">{{ ts.daysWorked || 0 }}</td>
+                <td style="text-align:right;color:var(--mhr-ink-2);font-size:13px;">{{ ts.leaveTaken || 0 }}</td>
+                <td style="text-align:right;color:var(--mhr-ink-2);font-size:13px;">{{ ts.unpaidLeave || 0 }}</td>
+                <td style="text-align:right;color:var(--mhr-ink-2);font-size:13px;font-weight:500;">{{ ts.totalDays || 0 }}</td>
+                <td style="text-align:right;color:var(--mhr-ink-2);font-size:13px;font-family:monospace;">{{ ts.dailyRate || '0.00' }}</td>
+                <td style="text-align:right;color:var(--mhr-ink-2);font-size:13px;font-family:monospace;">{{ ts.salary || '0.00' }}</td>
+                <td style="text-align:right;color:var(--mhr-ink-2);font-size:13px;font-family:monospace;font-weight:500;">{{ ts.payment || '0.00' }}</td>
+                <td style="color:var(--mhr-ink-3);font-size:12px;">
+                  <span v-if="ts.approver" style="font-style:italic;">{{ ts.approver }}</span>
+                  <span v-else style="opacity:0.5;">—</span>
+                </td>
+                <td>
+                  <div style="display:flex;gap:6px;justify-content:flex-end;">
+                    <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="openEntries(ts)">
+                      <AppIcon name="edit" :size="13" />
+                      {{ ts.hasEntries ? 'View / Edit' : 'Add Entries' }}
+                    </button>
+                    <button v-if="isAdminOrManager" class="mhr-btn mhr-btn--sm mhr-btn--ghost" @click="openStatusModal(ts)">
+                      Status
+                    </button>
+                    <button v-if="isAdminOrManager" class="mhr-btn mhr-btn--sm mhr-btn--danger"
+                      @click="confirmDelete(ts)" :disabled="deletingId === ts.id">
+                      <AppIcon name="trash" :size="13" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </template>
+
+    <!-- ════════════════════════════════════════════════════════════
+         ENTRIES VIEW — Calendar UI (like Timesheet.vue)
+    ════════════════════════════════════════════════════════════════ -->
+    <template v-else-if="view === 'entries'">
+
+      <div class="mhr-page-head">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button class="mhr-btn mhr-btn--ghost mhr-btn--sm" @click="backToList">
+            <AppIcon name="chevron" :size="14" style="transform:rotate(180deg);" />
+            Back
+          </button>
+          <div>
+            <h1 class="mhr-page-head__title">
+              {{ activeTimesheet.employeeName }}
+              <span style="font-weight:400;color:var(--mhr-ink-3);font-size:16px;">({{ activeTimesheet.period }})</span>
+            </h1>
+            <p class="mhr-page-head__sub">Click on any day to mark it as worked or unpaid leave</p>
+          </div>
+        </div>
+        <div class="mhr-page-head__actions">
+          <button class="mhr-btn mhr-btn--ghost" @click="backToList">Cancel</button>
+          <button class="mhr-btn mhr-btn--primary" @click="saveEntries" :disabled="isSavingEntries">
+            <AppIcon name="arrowup" :size="14" />
+            {{ isSavingEntries ? 'Saving…' : 'Save Timesheet' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="mhr-grid-4" style="margin-bottom:24px;">
+        <div class="mhr-stat">
+          <div class="mhr-stat__label">Days Worked</div>
+          <div class="mhr-stat__value"><em>{{ summary.workedDays }}</em></div>
+          <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:4px;">regular working days</div>
+        </div>
+        <div class="mhr-stat">
+          <div class="mhr-stat__label">Paid Leave</div>
+          <div class="mhr-stat__value"><em>{{ summary.leaveDays }}</em></div>
+          <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:4px;">{{ summary.leaveDays ? 'approved leave' : 'none' }}</div>
+        </div>
+        <div class="mhr-stat">
+          <div class="mhr-stat__label">Unpaid Leave</div>
+          <div class="mhr-stat__value"><em>{{ summary.unpaidDays }}</em></div>
+          <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:4px;">{{ summary.unpaidDays ? summary.unpaidDays + ' days' : 'none' }}</div>
+        </div>
+        <div class="mhr-stat">
+          <div class="mhr-stat__label">Payment</div>
+          <div class="mhr-stat__value"><em>{{ activeTimesheet?.payment || '—' }}</em></div>
+          <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:4px;">total compensation</div>
+        </div>
+      </div>
+
+      <!-- Calendar -->
+      <div class="mhr-card">
+        <!-- Legend -->
+        <div class="mhr-card__hd">
+          <h3 class="mhr-card__title">{{ activeTimesheet.period }}</h3>
+          <div class="mhr-card__hd-actions">
+            <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--mhr-ink-3);">
+              <span class="ts-dot ts-dot--W" />
+              Worked
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--mhr-ink-3);">
+              <span class="ts-dot ts-dot--L" />
+              Leave
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--mhr-ink-3);">
+              <span class="ts-dot ts-dot--U" />
+              Unpaid
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--mhr-ink-3);">
+              <span class="ts-dot ts-dot--0" />
+              Weekend
+            </div>
+          </div>
+        </div>
+
+        <div style="padding:16px 20px 20px;">
+          <!-- Weekday headers -->
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;">
+            <div v-for="wd in WEEKDAYS" :key="wd"
+              style="text-align:center;font-size:11px;font-weight:600;color:var(--mhr-ink-4);text-transform:uppercase;letter-spacing:0.06em;padding:4px 0;">
+              {{ wd }}
+            </div>
+          </div>
+
+          <!-- Day grid -->
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">
+            <div v-for="i in firstDayOffset()" :key="'b'+i" class="ts-cell ts-cell--blank" style="opacity:0;" />
+            <div v-for="day in entryRows" :key="day.day"
+              class="ts-cell"
+              :class="[cellClass(day), canEdit(day) ? 'ts-cell--clickable' : '']"
+              @click="openDay(day)">
+              <span class="ts-cell__date">{{ day.day }}</span>
+              <span class="ts-cell__label">{{ cellLabel(day) }}</span>
+            </div>
+            <div v-for="i in lastDayOffset()" :key="'e'+i" class="ts-cell ts-cell--blank" style="opacity:0;" />
+          </div>
+
+          <!-- Footer summary -->
+          <div style="display:flex;align-items:center;gap:16px;margin-top:18px;padding-top:14px;border-top:1px solid var(--mhr-line-2);font-size:12px;color:var(--mhr-ink-3);">
+            <span>
+              <strong style="color:var(--mhr-ink);">{{ summary.workedDays }}</strong> days worked ·
+              <strong style="color:var(--mhr-ink);">{{ summary.leaveDays }}</strong> leave days ·
+              <strong style="color:var(--mhr-ink);">{{ summary.unpaidDays }}</strong> unpaid days
+            </span>
+            <span style="margin-left:auto;color:var(--mhr-ink-3);font-style:italic;">Click any day to edit</span>
+          </div>
+        </div>
+      </div>
+
+    </template>
+
+    <!-- ════════════════════════════════════════════════════════════
+         DAY EDIT MODAL
+    ════════════════════════════════════════════════════════════════ -->
+    <div v-if="editingDay" class="mhr-modal__scrim" @click.self="closeModal">
+      <div class="mhr-modal" style="max-width:460px;">
+        <div class="mhr-modal__hd">
+          <div>
+            <h2 class="mhr-modal__title">
+              Edit Day · <em style="color:var(--green-600);font-style:italic;">
+                {{ activeTimesheet.period }}-{{ String(editingDay.day).padStart(2, '0') }}
+              </em>
+            </h2>
+            <p class="mhr-modal__sub">Select how this day should be marked on the timesheet.</p>
+          </div>
+        </div>
+        <div class="mhr-modal__body">
+          <!-- Action type cards -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <button v-for="t in ACTION_TYPES" :key="t.key"
+              class="ts-type-card"
+              :class="{ 'ts-type-card--active': editAction === t.key }"
+              @click="editAction = t.key">
+              <strong style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;">
+                <AppIcon :name="t.icon" :size="14" />
+                {{ t.label }}
+              </strong>
+              <span style="font-size:12px;color:var(--mhr-ink-3);margin-top:3px;">{{ t.sub }}</span>
+            </button>
+          </div>
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--ghost" @click="closeModal">Cancel</button>
+          <button class="mhr-btn mhr-btn--primary" @click="saveDay">
+            <AppIcon name="check" :size="14" /> Save
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         ADD TIMESHEET MODAL
+         Fields mirror talentnest timesheet_modal.blade.php:
+           - employee_id  (admin/manager only, required)
+           - month_selected_id (required)
+           - year_selected     (required)
+    ════════════════════════════════════════════════════════════════ -->
+    <div v-if="showAddModal" class="mhr-modal__scrim" @click.self="showAddModal = false">
+      <div class="mhr-modal">
+        <div class="mhr-modal__hd">
+          <div>
+            <h2 class="mhr-modal__title">Add Employee Timesheet</h2>
+            <p class="mhr-modal__sub">Select employee, month and year to create a timesheet record.</p>
+          </div>
+        </div>
+        <div class="mhr-modal__body">
+
+          <!-- Employee selector — admin / manager only -->
+          <div v-if="isAdminOrManager" class="mhr-field">
+            <label class="mhr-field__label">Select Employee *</label>
+            <select class="mhr-select" v-model="addForm.employeeId"
+              :style="addErrors.employeeId ? 'border-color:var(--mhr-danger);' : ''">
+              <option value="">Select employee…</option>
+              <option v-for="emp in employees" :key="emp.id" :value="emp.id">{{ emp.fullName }}</option>
+            </select>
+            <p v-if="addErrors.employeeId" class="ts-field-error">{{ addErrors.employeeId }}</p>
+          </div>
+
+          <!-- Month -->
+          <div class="mhr-field">
+            <label class="mhr-field__label">Select Month *</label>
+            <select class="mhr-select" v-model="addForm.monthId"
+              :style="addErrors.monthId ? 'border-color:var(--mhr-danger);' : ''">
+              <option value="">Select month…</option>
+              <option v-for="m in monthsName" :key="m.id" :value="m.id">{{ m.monthName }}</option>
+            </select>
+            <p v-if="addErrors.monthId" class="ts-field-error">{{ addErrors.monthId }}</p>
+          </div>
+
+          <!-- Year -->
+          <div class="mhr-field">
+            <label class="mhr-field__label">Select Year *</label>
+            <select class="mhr-select" v-model="addForm.year"
+              :style="addErrors.year ? 'border-color:var(--mhr-danger);' : ''">
+              <option value="">Select year…</option>
+              <option v-for="y in availableYears" :key="y" :value="y">{{ y }}</option>
+            </select>
+            <p v-if="addErrors.year" class="ts-field-error">{{ addErrors.year }}</p>
+          </div>
+
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--ghost" @click="showAddModal = false">Close</button>
+          <button class="mhr-btn mhr-btn--primary" @click="submitAdd" :disabled="isAdding">
+            <AppIcon name="check" :size="14" />
+            {{ isAdding ? 'Saving…' : 'Save' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         CHANGE STATUS MODAL
+         Mirrors timesheetStatusModal in talentnest:
+           - status_id         (required)
+           - additional_information
+    ════════════════════════════════════════════════════════════════ -->
+    <div v-if="showStatusModal" class="mhr-modal__scrim" @click.self="showStatusModal = false">
+      <div class="mhr-modal">
+        <div class="mhr-modal__hd">
+          <div>
+            <h2 class="mhr-modal__title">Change Timesheet Status</h2>
+            <p class="mhr-modal__sub">{{ statusTarget?.employeeName }} — {{ statusTarget?.period }}</p>
+          </div>
+        </div>
+        <div class="mhr-modal__body">
+
+          <div class="mhr-field">
+            <label class="mhr-field__label">Status *</label>
+            <select class="mhr-select" v-model="statusForm.statusId"
+              :style="statusErrors.statusId ? 'border-color:var(--mhr-danger);' : ''">
+              <option value="">Select…</option>
+              <option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.title }}</option>
+            </select>
+            <p v-if="statusErrors.statusId" class="ts-field-error">{{ statusErrors.statusId }}</p>
+          </div>
+
+          <div class="mhr-field">
+            <label class="mhr-field__label">Additional Information</label>
+            <input class="mhr-input" type="text" v-model="statusForm.additionalInfo"
+              placeholder="Optional notes…" />
+          </div>
+
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--danger" @click="showStatusModal = false">Cancel</button>
+          <button class="mhr-btn mhr-btn--primary" @click="saveStatus" :disabled="isSavingStatus">
+            <AppIcon name="check" :size="14" />
+            {{ isSavingStatus ? 'Saving…' : 'Save' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         TOAST STACK
+    ════════════════════════════════════════════════════════════════ -->
+    <Teleport to=".meridian-app">
+      <div class="ts-toast-stack">
+        <transition-group name="ts-toast">
+          <div v-for="t in toasts" :key="t.id"
+            class="ts-toast"
+            :class="t.type === 'error' ? 'ts-toast--error' : 'ts-toast--success'">
+            <AppIcon :name="t.type === 'error' ? 'alert' : 'check'" :size="15" />
+            {{ t.message }}
+          </div>
+        </transition-group>
+      </div>
+    </Teleport>
+
+  </div>
+</template>
+
+<style scoped>
+/* ── Refresh icon animation ────────────────────────────────── */
+.icon-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Calendar cells ─────────────────────────────────────────── */
+.ts-cell {
+  /* aspect-ratio: 4/3; */
+  border-radius: 6px;
+  padding: 5px 7px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  border: 1px solid var(--mhr-line);
+  user-select: none;
+  transition: filter 0.12s;
+}
+.ts-cell--clickable { cursor: pointer; }
+.ts-cell--clickable:hover { filter: brightness(0.94); }
+
+.ts-cell__date {
+  font-size: 16px;
+  font-weight: 600;
+  opacity: 0.65;
+  color: inherit;
+}
+.ts-cell__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: inherit;
+}
+
+.ts-cell--worked  { background: var(--green-700);      color: #fff;                      border-color: transparent; }
+.ts-cell--leave   { background: var(--mhr-accent-soft); color: var(--mhr-accent-ink);     border-color: transparent; }
+.ts-cell--unpaid  { background: var(--mhr-warn-bg);    color: var(--mhr-warn);            border-color: transparent; }
+.ts-cell--weekend { background: var(--mhr-surface-2);  color: var(--mhr-ink-4);           border-color: var(--mhr-line); }
+.ts-cell--blank   { background: transparent;           color: var(--mhr-ink-4);           border-color: var(--mhr-line); }
+
+/* ── Legend dots ────────────────────────────────────────────── */
+.ts-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.ts-dot--W { background: var(--green-700); }
+.ts-dot--L { background: var(--mhr-accent-soft); border: 1px solid var(--mhr-accent); }
+.ts-dot--U { background: var(--mhr-warn-bg);     border: 1px solid var(--mhr-warn); }
+.ts-dot--0 { background: var(--mhr-surface-2);   border: 1px solid var(--mhr-line); }
+
+/* ── Type selector cards ────────────────────────────────────── */
+.ts-type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1.5px solid var(--mhr-line);
+  border-radius: 10px;
+  background: var(--mhr-surface);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s;
+  width: 100%;
+}
+.ts-type-card:hover { border-color: var(--mhr-accent); }
+.ts-type-card--active {
+  border-color: var(--green-700);
+  background: var(--mhr-accent-soft);
+}
+
+/* Toast stack */
+.ts-toast-stack {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.ts-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  pointer-events: auto;
+  max-width: 360px;
+}
+
+.ts-toast--success {
+  background: var(--mhr-accent);
+  color: #fff;
+}
+
+.ts-toast--error {
+  background: var(--mhr-danger);
+  color: #fff;
+}
+
+.ts-toast-enter-active,
+.ts-toast-leave-active {
+  transition: all 0.25s ease;
+}
+.ts-toast-enter-from,
+.ts-toast-leave-to {
+  opacity: 0;
+  transform: translateY(12px);
+}
+</style>

@@ -342,7 +342,7 @@ function cellLabel(day) {
 <style scoped>
 /* ── Calendar cells ─────────────────────────────────────────── */
 .ts-cell {
-  aspect-ratio: 10/3;
+  aspect-ratio: 4/3;
   border-radius: 6px;
   padding: 5px 7px;
   display: flex;
@@ -357,13 +357,13 @@ function cellLabel(day) {
 .ts-cell--clickable:hover { filter: brightness(0.94); }
 
 .ts-cell__date {
-  font-size: 16px;
+  font-size: 11px;
   font-weight: 600;
   opacity: 0.65;
   color: inherit;
 }
 .ts-cell__label {
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 500;
   color: inherit;
 }

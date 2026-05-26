@@ -5,11 +5,14 @@ use App\Http\Controllers\Auth\OtpController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Ems\EventController;
 use App\Http\Controllers\EventSessionController;
+use App\Http\Controllers\MeridianHR\BankController;
 use App\Http\Controllers\MeridianHR\EmployeeController;
 use App\Http\Controllers\MeridianHR\EmployeeLeaveRequestController;
 use App\Http\Controllers\MeridianHR\EventController as MeridianEventController;
 use App\Http\Controllers\MeridianHR\EventTeamTemplateController;
 use App\Http\Controllers\MeridianHR\LeaveTypeController;
+use App\Http\Controllers\MeridianHR\SalaryController;
+use App\Http\Controllers\MeridianHR\TimesheetController;
 use App\Http\Controllers\MeridianHR\VenueController as MeridianVenueController;
 use App\Http\Controllers\Ems\FunctionalAreaController;
 use App\Http\Controllers\Ems\VenueController;
@@ -156,8 +159,18 @@ Route::prefix('hr')->name('hr.')->middleware('auth')->group(function () {
     Route::get('/dashboard',         [EmployeeController::class, 'dashboard'])->name('dashboard');
     Route::get('/leave',             [EmployeeController::class, 'leave'])->name('leave');
     Route::post('/leave',            [EmployeeController::class, 'storeLeave'])->name('leave.store');
-    Route::get('/timesheet',         [EmployeeController::class, 'timesheet'])->name('timesheet');
-    Route::post('/timesheet/submit', [EmployeeController::class, 'submitTimesheet'])->name('timesheet.submit');
+    
+    // Timesheet Routes
+    Route::get('/timesheet',         [TimesheetController::class, 'timesheet'])->name('timesheet');
+    Route::post('/timesheet/submit', [TimesheetController::class, 'submitTimesheet'])->name('timesheet.submit');
+    Route::post('/timesheet/day',    [TimesheetController::class, 'saveTimesheetDay'])->name('timesheet.day');
+    Route::post('/timesheet/start',  [TimesheetController::class, 'startTimesheet'])->name('timesheet.start');
+    Route::get('/timesheet-talent',                [TimesheetController::class, 'timesheetTalent'])->name('timesheet-talent');
+    Route::post('/timesheet-talent/store',         [TimesheetController::class, 'timesheetTalentStore'])->name('timesheet-talent.store');
+    Route::post('/timesheet-talent/status',        [TimesheetController::class, 'timesheetTalentStatus'])->name('timesheet-talent.status');
+    Route::post('/timesheet-talent/entries/store', [TimesheetController::class, 'timesheetTalentEntriesStore'])->name('timesheet-talent.entries.store');
+    Route::delete('/timesheet-talent/{id}',        [TimesheetController::class, 'timesheetTalentDestroy'])->name('timesheet-talent.destroy');
+    
     Route::get('/documents',         [EmployeeController::class, 'documents'])->name('documents');
     Route::get('/payslips',          [EmployeeController::class, 'payslips'])->name('payslips');
     Route::get('/employee',          [EmployeeController::class, 'employee'])->name('employee');
@@ -174,7 +187,30 @@ Route::prefix('hr')->name('hr.')->middleware('auth')->group(function () {
     Route::get('/approvals/leave',   [EmployeeController::class, 'approvalsLeave'])->name('approvals.leave');
     Route::post('/approvals/leave/approve', [EmployeeController::class, 'approveLeave'])->name('approvals.leave.approve');
     Route::post('/approvals/leave/reject', [EmployeeController::class, 'rejectLeave'])->name('approvals.leave.reject');
-    Route::get('/approvals/time',    [EmployeeController::class, 'approvalsTime'])->name('approvals.time');
+    Route::get('/approvals/time',    [TimesheetController::class, 'approvalsTime'])->name('approvals.time');
+    
+    // Personal Data Management
+    Route::get('/addresses',         [EmployeeController::class, 'addresses'])->name('addresses');
+    Route::post('/addresses',        [EmployeeController::class, 'storeAddress'])->name('addresses.store');
+    Route::put('/addresses/{id}',    [EmployeeController::class, 'updateAddress'])->name('addresses.update');
+    Route::delete('/addresses/{id}', [EmployeeController::class, 'destroyAddress'])->name('addresses.destroy');
+    
+    // Bank Management
+    Route::get('/banks',             [BankController::class, 'index'])->name('banks');
+    Route::post('/banks',            [BankController::class, 'store'])->name('banks.store');
+    Route::put('/banks/{id}',        [BankController::class, 'update'])->name('banks.update');
+    Route::delete('/banks/{id}',     [BankController::class, 'destroy'])->name('banks.destroy');
+    
+    // Salary Management
+    Route::get('/salary',            [SalaryController::class, 'index'])->name('salary');
+    Route::post('/salary',           [SalaryController::class, 'store'])->name('salary.store');
+    Route::put('/salary/{id}',       [SalaryController::class, 'update'])->name('salary.update');
+    Route::delete('/salary/{id}',    [SalaryController::class, 'destroy'])->name('salary.destroy');
+    
+    Route::get('/emergency',         [EmployeeController::class, 'emergency'])->name('emergency');
+    Route::post('/emergency',        [EmployeeController::class, 'storeEmergencyContact'])->name('emergency.store');
+    Route::put('/emergency/{id}',    [EmployeeController::class, 'updateEmergencyContact'])->name('emergency.update');
+    Route::delete('/emergency/{id}', [EmployeeController::class, 'destroyEmergencyContact'])->name('emergency.destroy');
     
     // Leave Type Management (Settings)
     Route::get('/leave-types',       [LeaveTypeController::class, 'index'])->name('leave-types');

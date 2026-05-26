@@ -3,7 +3,10 @@
     "allow": [
       "Bash(Get-ChildItem -Path \"c:\\\\laragon\\\\www\\\\vue-talent\" -Force)",
       "Bash(Select-Object Name, FullName)",
-      "Bash(Format-Table -AutoSize)"
+      "Bash(Format-Table -AutoSize)",
+      "Bash(ls \"c:/laragon/www/talentnest/resources/views/hr/admin/\")",
+      "Read(//c/laragon/www/talentnest/resources/views/hr/admin/**)",
+      "Bash(php artisan *)"
     ]
   }
 }

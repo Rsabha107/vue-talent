@@ -148,6 +148,27 @@ class Employee extends Model
             ->withTimestamps();
     }
 
+    // Personal data relationships
+    public function addresses()
+    {
+        return $this->hasMany(EmployeeAddress::class, 'employee_id');
+    }
+
+    public function banks()
+    {
+        return $this->hasMany(EmployeeBank::class, 'employee_id');
+    }
+
+    public function salaries()
+    {
+        return $this->hasMany(EmployeeSalary::class, 'employee_id');
+    }
+
+    public function emergencyContacts()
+    {
+        return $this->hasMany(EmployeeEmergencyContact::class, 'employee_id');
+    }
+
     public function activeEvents()
     {
         return $this->events()->wherePivot('is_active', 1);

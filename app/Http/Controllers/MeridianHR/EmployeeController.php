@@ -11,6 +11,8 @@ use App\Models\EmployeeContractType;
 use App\Models\EmployeeEntity;
 use App\Models\EmployeeLeaveRequest;
 use App\Models\EmployeeLeaveStatus;
+use App\Models\EmployeeTimesheet;
+use App\Models\EmployeeTimesheetEntry;
 use App\Models\EmployeeType;
 use App\Models\FunctionalArea;
 use App\Models\Gender;
@@ -19,8 +21,11 @@ use App\Models\Nationality;
 use App\Models\SalaryBasis;
 use App\Models\Salutation;
 use App\Services\LeaveBalanceService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -94,55 +99,7 @@ class EmployeeController extends BaseHRController
         })->toArray();
     }
 
-    protected function pendingTimesheets(): array
-    {
-        return [
-            ['id'=>'ts-26-04-PR','emp'=>'Priya Ramaswamy','empId'=>'M-00204','c'=>2,'period'=>'April 2026','worked'=>168,'leave'=>8, 'unpaid'=>0,'projects'=>4,'submitted'=>'2026-05-01','note'=>'Logged extra hours on Atlas migration.'],
-            ['id'=>'ts-26-04-MC','emp'=>'Marcus Chen',    'empId'=>'M-00387','c'=>3,'period'=>'April 2026','worked'=>152,'leave'=>16,'unpaid'=>0,'projects'=>3,'submitted'=>'2026-05-02','note'=>''],
-            ['id'=>'ts-26-04-SV','emp'=>'Sofía Vargas',  'empId'=>'M-00401','c'=>4,'period'=>'April 2026','worked'=>160,'leave'=>8, 'unpaid'=>8,'projects'=>5,'submitted'=>'2026-05-02','note'=>'Took unpaid day for family matter.'],
-            ['id'=>'ts-26-04-AT','emp'=>'Aiko Tanaka',   'empId'=>'M-00444','c'=>6,'period'=>'April 2026','worked'=>144,'leave'=>24,'unpaid'=>0,'projects'=>2,'submitted'=>'2026-05-01','note'=>''],
-            ['id'=>'ts-26-04-TB','emp'=>'Tomás Bergström','empId'=>'M-00420','c'=>5,'period'=>'April 2026','worked'=>160,'leave'=>8, 'unpaid'=>8,'projects'=>3,'submitted'=>'2026-05-03','note'=>''],
-        ];
-    }
 
-    protected function timesheets(): array
-    {
-        return [
-            '2026-05' => [
-                'label'     => 'May 2026',
-                'submitted' => false,
-                'days'      => [
-                    ['d'=>1, 'type'=>'W','hours'=>8],['d'=>2, 'type'=>'0','hours'=>0],['d'=>3, 'type'=>'0','hours'=>0],
-                    ['d'=>4, 'type'=>'W','hours'=>8],['d'=>5, 'type'=>' ','hours'=>0],['d'=>6, 'type'=>' ','hours'=>0],
-                    ['d'=>7, 'type'=>' ','hours'=>0],['d'=>8, 'type'=>' ','hours'=>0],['d'=>9, 'type'=>'0','hours'=>0],
-                    ['d'=>10,'type'=>'0','hours'=>0],['d'=>11,'type'=>' ','hours'=>0],['d'=>12,'type'=>' ','hours'=>0],
-                    ['d'=>13,'type'=>' ','hours'=>0],['d'=>14,'type'=>' ','hours'=>0],['d'=>15,'type'=>' ','hours'=>0],
-                    ['d'=>16,'type'=>'0','hours'=>0],['d'=>17,'type'=>'0','hours'=>0],['d'=>18,'type'=>'L','hours'=>0],
-                    ['d'=>19,'type'=>'L','hours'=>0],['d'=>20,'type'=>'L','hours'=>0],['d'=>21,'type'=>'L','hours'=>0],
-                    ['d'=>22,'type'=>'L','hours'=>0],['d'=>23,'type'=>'0','hours'=>0],['d'=>24,'type'=>'0','hours'=>0],
-                    ['d'=>25,'type'=>' ','hours'=>0],['d'=>26,'type'=>' ','hours'=>0],['d'=>27,'type'=>' ','hours'=>0],
-                    ['d'=>28,'type'=>' ','hours'=>0],['d'=>29,'type'=>' ','hours'=>0],['d'=>30,'type'=>'0','hours'=>0],
-                    ['d'=>31,'type'=>'0','hours'=>0],
-                ],
-            ],
-            '2026-04' => [
-                'label'     => 'April 2026',
-                'submitted' => true,
-                'days'      => [
-                    ['d'=>1, 'type'=>'W','hours'=>8],  ['d'=>2, 'type'=>'W','hours'=>8],  ['d'=>3, 'type'=>'W','hours'=>8],
-                    ['d'=>4, 'type'=>'0','hours'=>0],  ['d'=>5, 'type'=>'0','hours'=>0],  ['d'=>6, 'type'=>'W','hours'=>8],
-                    ['d'=>7, 'type'=>'W','hours'=>9],  ['d'=>8, 'type'=>'W','hours'=>8],  ['d'=>9, 'type'=>'W','hours'=>7.5],
-                    ['d'=>10,'type'=>'W','hours'=>8],  ['d'=>11,'type'=>'0','hours'=>0],  ['d'=>12,'type'=>'0','hours'=>0],
-                    ['d'=>13,'type'=>'L','hours'=>0],  ['d'=>14,'type'=>'L','hours'=>0],  ['d'=>15,'type'=>'L','hours'=>0],
-                    ['d'=>16,'type'=>'L','hours'=>0],  ['d'=>17,'type'=>'L','hours'=>0],  ['d'=>18,'type'=>'0','hours'=>0],
-                    ['d'=>19,'type'=>'0','hours'=>0],  ['d'=>20,'type'=>'W','hours'=>8],  ['d'=>21,'type'=>'W','hours'=>8],
-                    ['d'=>22,'type'=>'W','hours'=>8.5],['d'=>23,'type'=>'W','hours'=>8],  ['d'=>24,'type'=>'W','hours'=>8],
-                    ['d'=>25,'type'=>'0','hours'=>0],  ['d'=>26,'type'=>'0','hours'=>0],  ['d'=>27,'type'=>'W','hours'=>8],
-                    ['d'=>28,'type'=>'W','hours'=>8],  ['d'=>29,'type'=>'L','hours'=>0],  ['d'=>30,'type'=>'W','hours'=>9],
-                ],
-            ],
-        ];
-    }
 
     protected function documentCategories(): array
     {
@@ -255,19 +212,7 @@ class EmployeeController extends BaseHRController
         return back()->with('success', 'Leave request submitted.');
     }
 
-    public function timesheet()
-    {
-        return Inertia::render('MeridianHR/Timesheet', array_merge($this->getCommonProps('timesheet'), [
-            'timesheets' => $this->timesheets(),
-        ]));
-    }
-
-    public function submitTimesheet(Request $request)
-    {
-        $request->validate(['month' => 'required|string']);
-        // In production: mark timesheet as submitted
-        return back()->with('success', 'Timesheet submitted.');
-    }
+    // ── Timesheet methods moved to TimesheetController ────────────────
 
     public function documents()
     {
@@ -702,9 +647,9 @@ class EmployeeController extends BaseHRController
             'marital_status_id'         => 'nullable|integer',
             'date_of_birth'             => 'nullable|date',
             'town_of_birth'             => 'nullable|string|max:100',
-            'country_of_birth'          => 'nullable|string|max:11',
+            'country_of_birth'          => 'nullable|integer',
             'nationality_id'            => 'nullable|integer',
-            'language_id'               => 'nullable|integer',
+            'language_id'               => 'nullable|string|max:50',
             
             // Identification
             'national_identifier_number'=> 'nullable|string|max:100',
@@ -1050,13 +995,6 @@ class EmployeeController extends BaseHRController
         }
     }
 
-    public function approvalsTime()
-    {
-        return Inertia::render('MeridianHR/TimesheetApprovals', array_merge($this->getCommonProps('approve-time'), [
-            'items'  => $this->pendingTimesheets(),
-        ]));
-    }
-
     public function assignToEvent(\Illuminate\Http\Request $request)
     {
         $request->validate([
@@ -1126,6 +1064,353 @@ class EmployeeController extends BaseHRController
             
             return redirect()->back()->with('error', 'Failed to assign employees to event: ' . $e->getMessage());
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Personal Data Methods
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * Display employee addresses
+     */
+    public function addresses()
+    {
+        $me = $this->me();
+        $role = $this->getHRRole();
+
+        // Get addresses based on role
+        if ($role === 'employee') {
+            $addresses = \App\Models\EmployeeAddress::with(['country'])
+                ->where('employee_id', $me['id'])
+                ->active()
+                ->orderBy('primary_address', 'desc')
+                ->orderBy('created_at', 'desc')
+                ->get();
+        } else {
+            // Admin/Manager can see all addresses
+            $addresses = \App\Models\EmployeeAddress::with(['employee', 'country'])
+                ->active()
+                ->orderBy('created_at', 'desc')
+                ->get();
+        }
+
+        // Map addresses to frontend format
+        $formattedAddresses = $addresses->map(function($address) use ($role) {
+            return [
+                'id' => $address->id,
+                'employeeId' => $address->employee_id,
+                'employeeName' => $address->employee->full_name ?? 'Unknown',
+                'employeeNumber' => $address->employee->employee_number ?? 'N/A',
+                'addressType' => $address->address_type,
+                'isPrimary' => $address->primary_address === 'Y',
+                'address1' => $address->address1,
+                'address2' => $address->address2,
+                'city' => $address->city,
+                'state' => $address->state,
+                'zipcode' => $address->zipcode,
+                'countryId' => $address->country_id,
+                'countryName' => $address->country->name ?? 'Unknown',
+                'fullAddress' => $address->full_address,
+                'createdAt' => $address->created_at->toISOString(),
+            ];
+        });
+
+        $countries = Country::all(['id', 'name'])->map(function($country) {
+            return [
+                'id' => $country->id,
+                'name' => $country->name,
+            ];
+        });
+
+        $employees = [];
+        if ($role !== 'employee') {
+            $employees = Employee::select('id', 'employee_number', 'full_name')
+                ->orderBy('full_name')
+                ->get()
+                ->toArray();
+        }
+
+        return Inertia::render('MeridianHR/Addresses', array_merge(
+            $this->getCommonProps('addresses'),
+            [
+                'addresses' => $formattedAddresses,
+                'countries' => $countries,
+                'employees' => $employees,
+                'addressTypes' => [
+                    ['id' => 1, 'name' => 'Home'],
+                    ['id' => 2, 'name' => 'Work'],
+                    ['id' => 3, 'name' => 'Mailing'],
+                    ['id' => 4, 'name' => 'Other'],
+                ],
+            ]
+        ));
+    }
+
+    /**
+     * Store a new address
+     */
+    public function storeAddress(Request $request)
+    {
+        $me = $this->me();
+        $role = $this->getHRRole();
+
+        $validated = $request->validate([
+            'employee_id' => 'required|integer|min:1|max:214748367|exists:employees_all,id',
+            'address_type' => 'required|integer',
+            'primary_address' => 'nullable|in:Y,N',
+            'address1' => 'required|string|max:250',
+            'address2' => 'nullable|string|max:250',
+            'city' => 'required|string|max:100',
+            'state' => 'nullable|string|max:10',
+            'zipcode' => 'nullable|string|max:15',
+            'country_id' => 'required|integer|min:1|max:214748367|exists:countries,id',
+        ]);
+
+        // Employees can only add their own addresses
+        if ($role === 'employee' && $validated['employee_id'] != $me['id']) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'employee_id' => 'You can only add your own addresses.'
+            ]);
+        }
+
+        // Additional validation: Check if trying to create a primary address when one already exists
+        if ($request->primary_address === 'Y') {
+            $existingPrimary = \App\Models\EmployeeAddress::where('employee_id', $validated['employee_id'])
+                ->where('primary_address', 'Y')
+                ->where('archived', 'N')
+                ->exists();
+            
+            if ($existingPrimary) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'primary_address' => 'This employee already has a primary address. Only one primary address is allowed per employee.'
+                ]);
+            }
+        }
+
+        $validated['creator_id'] = Auth::id();
+        $validated['archived'] = 'N';
+
+        \App\Models\EmployeeAddress::create($validated);
+
+        return redirect()->back()->with('success', 'Address added successfully.');
+    }
+
+    /**
+     * Update an existing address
+     */
+    public function updateAddress(Request $request, $id)
+    {
+        $me = $this->me();
+        $role = $this->getHRRole();
+
+        $address = \App\Models\EmployeeAddress::findOrFail($id);
+
+        // Employees can only update their own addresses
+        if ($role === 'employee' && $address->employee_id != $me['id']) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'employee_id' => 'You can only update your own addresses.'
+            ]);
+        }
+
+        $validated = $request->validate([
+            'address_type' => 'required|integer',
+            'primary_address' => 'nullable|in:Y,N',
+            'address1' => 'required|string|max:250',
+            'address2' => 'nullable|string|max:250',
+            'city' => 'required|string|max:100',
+            'state' => 'nullable|string|max:10',
+            'zipcode' => 'nullable|string|max:15',
+            'country_id' => 'required|integer|min:1|max:214748367|exists:countries,id',
+        ]);
+
+        // Additional validation: Check if trying to set as primary when one already exists
+        if ($request->primary_address === 'Y') {
+            $existingPrimary = \App\Models\EmployeeAddress::where('employee_id', $address->employee_id)
+                ->where('primary_address', 'Y')
+                ->where('archived', 'N')
+                ->where('id', '!=', $id)
+                ->exists();
+            
+            if ($existingPrimary) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'primary_address' => 'This employee already has a primary address. Only one primary address is allowed per employee.'
+                ]);
+            }
+        }
+
+        $address->update($validated);
+
+        return redirect()->back()->with('success', 'Address updated successfully.');
+    }
+
+    /**
+     * Archive an address
+     */
+    public function destroyAddress($id)
+    {
+        $me = $this->me();
+        $role = $this->getHRRole();
+
+        $address = \App\Models\EmployeeAddress::findOrFail($id);
+
+        // Employees can only delete their own addresses
+        if ($role === 'employee' && $address->employee_id != $me['id']) {
+            return redirect()->back()->with('error', 'You can only delete your own addresses.');
+        }
+
+        $address->update(['archived' => 'Y']);
+
+        return redirect()->back()->with('success', 'Address archived successfully.');
+    }
+
+    // ── Bank and Salary methods moved to BankController and SalaryController ──
+
+    /**
+     * Display emergency contacts
+     */
+    public function emergency()
+    {
+        $me = $this->me();
+        $role = $this->getHRRole();
+
+        // Fetch emergency contacts based on role
+        if ($role === 'employee') {
+            $contacts = \App\Models\EmployeeEmergencyContact::where('employee_id', $me['id'])
+                ->with(['employee', 'relationship'])
+                ->active()
+                ->orderBy('created_at', 'desc')
+                ->get();
+        } else {
+            $contacts = \App\Models\EmployeeEmergencyContact::with(['employee', 'relationship'])
+                ->active()
+                ->orderBy('created_at', 'desc')
+                ->get();
+        }
+
+        // Map contacts to frontend format
+        $formattedContacts = $contacts->map(function($contact) {
+            return [
+                'id' => $contact->id,
+                'employeeId' => $contact->employee_id,
+                'employeeName' => $contact->employee->full_name ?? 'Unknown',
+                'employeeNumber' => $contact->employee->employee_number ?? 'N/A',
+                'firstName' => $contact->first_name,
+                'lastName' => $contact->last_name,
+                'fullName' => $contact->full_name,
+                'relationshipId' => $contact->relationship_id,
+                'relationshipName' => $contact->relationship->title ?? 'Unknown',
+                'contactNumber' => $contact->contact_number,
+                'createdAt' => $contact->created_at->toISOString(),
+            ];
+        });
+
+        $employees = [];
+        if ($role !== 'employee') {
+            $employees = Employee::select('id', 'employee_number', 'full_name')
+                ->orderBy('full_name')
+                ->get()
+                ->toArray();
+        }
+
+        $relationships = \App\Models\EmployeeRelationship::orderBy('title')
+            ->get()
+            ->map(function($rel) {
+                return [
+                    'id' => $rel->id,
+                    'title' => $rel->title,
+                ];
+            });
+
+        return Inertia::render('MeridianHR/EmergencyContact', array_merge(
+            $this->getCommonProps('emergency'),
+            [
+                'contacts' => $formattedContacts,
+                'employees' => $employees,
+                'relationships' => $relationships,
+            ]
+        ));
+    }
+
+    /**
+     * Store a new emergency contact
+     */
+    public function storeEmergencyContact(Request $request)
+    {
+        $me = $this->me();
+        $role = $this->getHRRole();
+
+        $validated = $request->validate([
+            'employee_id' => 'required|integer|min:1|max:214748367|exists:employees_all,id',
+            'first_name' => 'required|string|max:100',
+            'last_name' => 'required|string|max:100',
+            'relationship_id' => 'required|integer|min:1|max:214748367|exists:employee_relationships,id',
+            'contact_number' => 'required|string|max:20',
+        ]);
+
+        // Employees can only add their own emergency contacts
+        if ($role === 'employee' && $validated['employee_id'] != $me['id']) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'employee_id' => 'You can only add your own emergency contacts.'
+            ]);
+        }
+
+        $validated['creator_id'] = Auth::id();
+        $validated['archived'] = 'N';
+
+        \App\Models\EmployeeEmergencyContact::create($validated);
+
+        return redirect()->back()->with('success', 'Emergency contact added successfully.');
+    }
+
+    /**
+     * Update an existing emergency contact
+     */
+    public function updateEmergencyContact(Request $request, $id)
+    {
+        $me = $this->me();
+        $role = $this->getHRRole();
+
+        $contact = \App\Models\EmployeeEmergencyContact::findOrFail($id);
+
+        // Employees can only update their own emergency contacts
+        if ($role === 'employee' && $contact->employee_id != $me['id']) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'employee_id' => 'You can only update your own emergency contacts.'
+            ]);
+        }
+
+        $validated = $request->validate([
+            'first_name' => 'required|string|max:100',
+            'last_name' => 'required|string|max:100',
+            'relationship_id' => 'required|integer|min:1|max:214748367|exists:employee_relationships,id',
+            'contact_number' => 'required|string|max:20',
+        ]);
+
+        $contact->update($validated);
+
+        return redirect()->back()->with('success', 'Emergency contact updated successfully.');
+    }
+
+    /**
+     * Archive an emergency contact
+     */
+    public function destroyEmergencyContact($id)
+    {
+        $me = $this->me();
+        $role = $this->getHRRole();
+
+        $contact = \App\Models\EmployeeEmergencyContact::findOrFail($id);
+
+        // Employees can only delete their own emergency contacts
+        if ($role === 'employee' && $contact->employee_id != $me['id']) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'employee_id' => 'You can only delete your own emergency contacts.'
+            ]);
+        }
+
+        $contact->update(['archived' => 'Y']);
+
+        return redirect()->back()->with('success', 'Emergency contact archived successfully.');
     }
 }
 
