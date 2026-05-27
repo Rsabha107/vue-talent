@@ -10,7 +10,13 @@
       "Bash(grep -o '\"<!DOCTYPE[^\"]*</html>\"' \"C:\\\\Users\\\\r.sabha\\\\Downloads\\\\Meridian HR _standalone_ \\(5\\).html\")",
       "Read(//tmp/**)",
       "Bash(python3)",
-      "Bash(sed 's/\\\\\\\\n/\\\\n/g')"
+      "Bash(sed 's/\\\\\\\\n/\\\\n/g')",
+      "Bash(node)",
+      "Bash(powershell -Command \"\\(Get-Content 'C:\\\\Users\\\\r.sabha\\\\Downloads\\\\Meridian HR _standalone_ \\(5\\).html'\\) -match 'employee' -join ' ' | Select-String -Pattern 'role.*employee|role.*===.*employee' -AllMatches | Measure-Object\")",
+      "Bash(grep -aoP '\\(?<=const Dashboard = \\).{0,50000}?\\(?=function|const [A-Z]\\)' \"C:\\\\Users\\\\r.sabha\\\\Downloads\\\\Meridian HR _standalone_ \\(5\\).html\")",
+      "Bash(python3 -c ' *)",
+      "Bash(ls -lh \"C:\\\\Users\\\\r.sabha\\\\Downloads\\\\\" | grep -i \"meridian\\\\|figma\" | head -20)",
+      "Read(//c/Users/r.sabha/**)"
     ]
   }
 }

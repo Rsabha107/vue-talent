@@ -36,12 +36,101 @@ class EmployeeController extends BaseHRController
 
     protected function leaveBalance(): array
     {
-        return [
-            'annual'   => ['used' => 8,  'total' => 25, 'pending' => 2],
-            'sick'     => ['used' => 3,  'total' => 10, 'pending' => 0],
-            'personal' => ['used' => 1,  'total' => 5,  'pending' => 0],
-            'unpaid'   => ['used' => 0,  'total' => null, 'pending' => 0],
+        $result = [
+            'annual'   => ['used' => 0, 'total' => 0, 'pending' => 0],
+            'sick'     => ['used' => 0, 'total' => 0, 'pending' => 0],
+            'personal' => ['used' => 0, 'total' => 0, 'pending' => 0],
         ];
+
+        $employee = Employee::where('user_id', auth()->id())->first();
+        if (!$employee) {
+            return $result;
+        }
+
+        $eventId = $this->getSelectedEventId();
+        $balances = LeaveBalanceService::getEmployeeBalanceSummary($employee->id, $eventId);
+
+        foreach ($balances as $balance) {
+            $title = strtolower($balance->leaveType->title ?? '');
+            if (str_contains($title, 'annual')) {
+                $key = 'annual';
+            } elseif (str_contains($title, 'sick')) {
+                $key = 'sick';
+            } elseif (str_contains($title, 'personal')) {
+                $key = 'personal';
+            } else {
+                continue;
+            }
+            $result[$key] = [
+                'used'    => (int) ($balance->used_days ?? 0),
+                'total'   => (int) ($balance->allocated_days ?? 0),
+                'pending' => (int) ($balance->pending_days ?? 0),
+            ];
+        }
+
+        return $result;
+    }
+
+    protected function upcomingLeaves(): array
+    {
+        $employee = Employee::where('user_id', auth()->id())->first();
+        if (!$employee) {
+            return [];
+        }
+
+        $eventId  = $this->getSelectedEventId();
+        $today    = Carbon::today();
+        $cutoff   = Carbon::today()->addDays(14);
+
+        return EmployeeLeaveRequest::with(['leaveType', 'status'])
+            ->where('employee_id', $employee->id)
+            ->where('archived', 'N')
+            ->where('date_from', '>=', $today)
+            ->where('date_from', '<=', $cutoff)
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->orderBy('date_from')
+            ->get()
+            ->map(fn ($r) => [
+                'id'     => $r->id,
+                'type'   => $r->leaveType->title ?? 'Leave',
+                'from'   => $r->date_from?->format('Y-m-d'),
+                'to'     => $r->date_to?->format('Y-m-d'),
+                'days'   => $r->number_of_days ?? 1,
+                'status' => $r->status->title ?? 'Pending',
+            ])
+            ->toArray();
+    }
+
+    protected function employeeActivity(): array
+    {
+        $employee = Employee::where('user_id', auth()->id())->first();
+        if (!$employee) {
+            return [];
+        }
+
+        $eventId = $this->getSelectedEventId();
+
+        return EmployeeLeaveRequest::with(['leaveType', 'status'])
+            ->where('employee_id', $employee->id)
+            ->where('archived', 'N')
+            ->when($eventId, fn ($q) => $q->where('event_id', $eventId))
+            ->orderBy('updated_at', 'desc')
+            ->limit(5)
+            ->get()
+            ->map(fn ($r) => [
+                'id'     => 'lr-' . $r->id,
+                'who'    => $r->status->title ?? 'System',
+                'c'      => null,
+                'action' => strtolower($r->status->title ?? 'updated') . ' your ' . ($r->leaveType->title ?? 'leave') . ' request',
+                'target' => trim(
+                    ($r->date_from ? $r->date_from->format('d M') : '') .
+                    ($r->date_from && $r->date_to && !$r->date_from->eq($r->date_to)
+                        ? ' – ' . $r->date_to->format('d M')
+                        : '')
+                ),
+                'when'   => $r->updated_at?->diffForHumans() ?? '',
+            ])
+            ->toArray();
     }
 
     protected function leaves(): array
@@ -59,7 +148,7 @@ class EmployeeController extends BaseHRController
 
     protected function pendingLeaves(): array
     {
-        $leaveRequests = EmployeeLeaveRequest::with(['employee', 'leaveType', 'status'])
+        $leaveRequests = EmployeeLeaveRequest::with(['employee', 'leaveType', 'status', 'event'])
             ->forEvent() // Filter by selected event from session
             ->where('status_id', EmployeeLeaveStatus::pendingId())
             ->active()
@@ -91,6 +180,7 @@ class EmployeeController extends BaseHRController
                 'days'       => $leave->number_of_days,
                 'filed'      => $leave->created_at->format('Y-m-d'),
                 'note'       => $leave->reason ?? '',
+                'eventName'  => $leave->event ? $leave->event->name : null,
                 'hasOverlap' => false, // TODO: Implement overlap detection
                 'balance'    => null, // TODO: Fetch remaining balance if needed
             ];
@@ -99,7 +189,7 @@ class EmployeeController extends BaseHRController
 
     protected function pendingTimesheets(): array
     {
-        $timesheets = \App\Models\EmployeeTimesheet::with(['employee', 'status'])
+        $timesheets = \App\Models\EmployeeTimesheet::with(['employee', 'status', 'event'])
             ->forEvent() // Filter by selected event from session
             ->where('status_id', \App\Models\EmployeeTimesheetStatus::submittedId())
             ->active()
@@ -123,6 +213,7 @@ class EmployeeController extends BaseHRController
                 'projects'  => 0, // Not tracked in current schema
                 'submitted' => $timesheet->created_at ? $timesheet->created_at->format('Y-m-d') : 'N/A',
                 'note'      => $timesheet->description ?? '',
+                'eventName' => $timesheet->event ? $timesheet->event->name : null,
             ];
         })->toArray();
     }
@@ -362,23 +453,24 @@ class EmployeeController extends BaseHRController
         // Get real headcount from database
         $eventId = $this->getSelectedEventId();
         $headcount = Employee::where('archived', 'N')
-            ->when($eventId, function ($query) use ($eventId) {
-                return $query->where('event_id', $eventId);
-            })
+            ->forEvent($eventId)
             ->count();
 
         Log::debug('onleave breakdown: ' . json_encode($onLeaveData['breakdown']));
         
+        $isEmployee = !in_array($this->getHRRole(), ['admin', 'manager']);
+
         return Inertia::render('MeridianHR/Dashboard', array_merge($this->getCommonProps('dashboard'), [
             'stats'               => [
-                'headcount' => $headcount, 
-                'onLeaveToday' => $onLeaveData['total'], 
+                'headcount'        => $headcount,
+                'onLeaveToday'     => $onLeaveData['total'],
                 'onLeaveBreakdown' => $onLeaveData['breakdown'],
-                'pendingRequests' => $totalPendingRequests, 
-                'nextPayDate' => 'Friday, May 29', 
-                'nextPayFormatted' => '$7,312'
+                'pendingRequests'  => $totalPendingRequests,
+                'nextPayDate'      => 'Friday, May 29',
+                'nextPayFormatted' => '$7,312',
             ],
-            'activity'            => $this->activity(),
+            'activity'            => $isEmployee ? $this->employeeActivity() : $this->activity(),
+            'upcomingLeaves'      => $isEmployee ? $this->upcomingLeaves() : [],
             'pendingLeaves'       => $this->pendingLeaves(),
             'pendingTimesheets'   => $this->pendingTimesheets(),
             'leaveBalance'        => $this->leaveBalance(),
@@ -853,7 +945,7 @@ class EmployeeController extends BaseHRController
             'join_date'                 => 'nullable|date',
             
             // Personal Information
-            'gender_id'                 => 'nullable|string|max:11',
+            'gender_id'                 => 'nullable|integer',
             'marital_status_id'         => 'nullable|integer',
             'date_of_birth'             => 'nullable|date',
             'town_of_birth'             => 'nullable|string|max:100',
@@ -945,7 +1037,7 @@ class EmployeeController extends BaseHRController
             'join_date'                     => 'nullable|date',
             
             // Personal Information
-            'gender_id'                     => 'nullable|string|max:11',
+            'gender_id'                     => 'nullable|integer',
             'marital_status_id'             => 'nullable|integer',
             'date_of_birth'                 => 'nullable|date',
             'town_of_birth'                 => 'nullable|string|max:100',
@@ -1106,16 +1198,57 @@ class EmployeeController extends BaseHRController
 
     public function profile()
     {
+        $me = $this->me();
+        $employee = Employee::with([
+            'addresses' => fn($q) => $q->where('archived', 'N')->orderBy('created_at', 'desc'),
+            'emergencyContacts' => fn($q) => $q->where('archived', 'N')->orderBy('created_at', 'desc'),
+            'banks' => fn($q) => $q->where('archived', 'N')->orderBy('created_at', 'desc'),
+            'nationality',
+            'reportingTo',
+            'functionalArea',
+        ])->find($me['id']);
+
+        if (!$employee) {
+            return Inertia::render('MeridianHR/Profile', array_merge($this->getCommonProps('profile'), [
+                'profile' => [],
+            ]));
+        }
+
+        // Get primary address
+        $primaryAddress = $employee->addresses->first();
+        $addressParts = array_filter([
+            $primaryAddress?->address_line_1,
+            $primaryAddress?->address_line_2,
+            $primaryAddress?->city,
+            $primaryAddress?->state_province,
+            $primaryAddress?->postal_code,
+        ]);
+        $fullAddress = !empty($addressParts) ? implode(', ', $addressParts) : null;
+
+        // Get primary emergency contact
+        $emergencyContact = $employee->emergencyContacts->first();
+        $emergencyName = $emergencyContact 
+            ? trim($emergencyContact->first_name . ' ' . $emergencyContact->last_name)
+            : null;
+        
+        // Get primary bank
+        $bank = $employee->banks->first();
+        $accountNumber = $bank && $bank->iban 
+            ? '••••' . substr($bank->iban, -4)
+            : null;
+
         return Inertia::render('MeridianHR/Profile', array_merge($this->getCommonProps('profile'), [
             'profile' => [
-                'phone'          => '+1 (347) 555-0182',
-                'location'       => 'Brooklyn HQ · 4F',
-                'dob'            => '14 April 1992',
-                'nationality'    => 'Lebanese / American',
-                'address'        => '148 Berry St, Brooklyn NY 11211',
-                'emergencyName'  => 'Karim Haddad (brother)',
-                'emergencyPhone' => '+1 (347) 555-0144',
-                'bank'           => 'Capital One Bank',
+                'phone'          => $employee->phone_number,
+                'location'       => $employee->functionalArea?->name,
+                'dob'            => $employee->date_of_birth ? date('d F Y', strtotime($employee->date_of_birth)) : null,
+                'nationality'    => $employee->nationality?->nationality,
+                'address'        => $fullAddress,
+                'emergencyName'  => $emergencyName,
+                'emergencyPhone' => $emergencyContact?->contact_number,
+                'bank'           => $bank?->bank_branch_name,
+                'accountNumber'  => $accountNumber,
+                'routingNumber'  => $bank && $bank->swift_code ? '••••' . substr($bank->swift_code, -4) : null,
             ],
         ]));
     }
@@ -1472,19 +1605,33 @@ class EmployeeController extends BaseHRController
     {
         $me = $this->me();
         $role = $this->getHRRole();
+        $eventId = $this->getSelectedEventId();
 
         // Fetch emergency contacts based on role
         if ($role === 'employee') {
+            // Employees see only their own emergency contacts
             $contacts = \App\Models\EmployeeEmergencyContact::where('employee_id', $me['id'])
                 ->with(['employee', 'relationship'])
                 ->active()
                 ->orderBy('created_at', 'desc')
                 ->get();
         } else {
-            $contacts = \App\Models\EmployeeEmergencyContact::with(['employee', 'relationship'])
+            // Admin/Manager: filter by event if selected
+            $query = \App\Models\EmployeeEmergencyContact::with(['employee', 'relationship'])
                 ->active()
-                ->orderBy('created_at', 'desc')
-                ->get();
+                ->orderBy('created_at', 'desc');
+            
+            // Filter by employees assigned to the selected event
+            if ($eventId) {
+                $query->whereHas('employee', function ($q) use ($eventId) {
+                    $q->whereHas('events', function ($eq) use ($eventId) {
+                        $eq->where('events.id', $eventId)
+                           ->where('employee_events.is_active', 1);
+                    });
+                });
+            }
+            
+            $contacts = $query->get();
         }
 
         // Map contacts to frontend format
@@ -1506,10 +1653,15 @@ class EmployeeController extends BaseHRController
 
         $employees = [];
         if ($role !== 'employee') {
-            $employees = Employee::select('id', 'employee_number', 'full_name')
-                ->orderBy('full_name')
-                ->get()
-                ->toArray();
+            // For admin/manager, show employees filtered by event
+            $employeeQuery = Employee::select('id', 'employee_number', 'full_name')
+                ->orderBy('full_name');
+            
+            if ($eventId) {
+                $employeeQuery->forEvent($eventId);
+            }
+            
+            $employees = $employeeQuery->get()->toArray();
         }
 
         $relationships = \App\Models\EmployeeRelationship::orderBy('title')
@@ -1521,12 +1673,23 @@ class EmployeeController extends BaseHRController
                 ];
             });
 
+        // Pass current employee info for employee role
+        $currentEmployee = null;
+        if (!in_array($role, ['admin', 'manager'])) {
+            $currentEmployee = [
+                'id' => $me['id'],
+                'full_name' => $me['name'],
+                'employee_number' => $me['empNumber'] ?? 'N/A',
+            ];
+        }
+
         return Inertia::render('MeridianHR/EmergencyContact', array_merge(
             $this->getCommonProps('emergency'),
             [
                 'contacts' => $formattedContacts,
                 'employees' => $employees,
                 'relationships' => $relationships,
+                'currentEmployee' => $currentEmployee,
             ]
         ));
     }
@@ -1538,6 +1701,7 @@ class EmployeeController extends BaseHRController
     {
         $me = $this->me();
         $role = $this->getHRRole();
+        $eventId = $this->getSelectedEventId();
 
         $validated = $request->validate([
             'employee_id' => 'required|integer|min:1|max:214748367|exists:employees_all,id',
@@ -1554,7 +1718,23 @@ class EmployeeController extends BaseHRController
             ]);
         }
 
-        $validated['creator_id'] = Auth::id();
+        // Admin/Manager: verify employee belongs to selected event
+        if ($role !== 'employee' && $eventId) {
+            $employee = Employee::find($validated['employee_id']);
+            $belongsToEvent = $employee->events()
+                ->where('events.id', $eventId)
+                ->where('employee_events.is_active', 1)
+                ->exists();
+            
+            if (!$belongsToEvent) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'employee_id' => 'This employee does not belong to the selected event.'
+                ]);
+            }
+        }
+
+        $validated['created_by'] = Auth::id();
+        $validated['updated_by'] = Auth::id();
         $validated['archived'] = 'N';
 
         \App\Models\EmployeeEmergencyContact::create($validated);
@@ -1569,6 +1749,7 @@ class EmployeeController extends BaseHRController
     {
         $me = $this->me();
         $role = $this->getHRRole();
+        $eventId = $this->getSelectedEventId();
 
         $contact = \App\Models\EmployeeEmergencyContact::findOrFail($id);
 
@@ -1579,12 +1760,29 @@ class EmployeeController extends BaseHRController
             ]);
         }
 
+        // Admin/Manager: verify employee belongs to selected event
+        if ($role !== 'employee' && $eventId) {
+            $employee = $contact->employee;
+            $belongsToEvent = $employee->events()
+                ->where('events.id', $eventId)
+                ->where('employee_events.is_active', 1)
+                ->exists();
+            
+            if (!$belongsToEvent) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'employee_id' => 'This employee does not belong to the selected event.'
+                ]);
+            }
+        }
+
         $validated = $request->validate([
             'first_name' => 'required|string|max:100',
             'last_name' => 'required|string|max:100',
             'relationship_id' => 'required|integer|min:1|max:214748367|exists:employee_relationships,id',
             'contact_number' => 'required|string|max:20',
         ]);
+
+        $validated['updated_by'] = Auth::id();
 
         $contact->update($validated);
 
@@ -1598,6 +1796,7 @@ class EmployeeController extends BaseHRController
     {
         $me = $this->me();
         $role = $this->getHRRole();
+        $eventId = $this->getSelectedEventId();
 
         $contact = \App\Models\EmployeeEmergencyContact::findOrFail($id);
 
@@ -1608,7 +1807,25 @@ class EmployeeController extends BaseHRController
             ]);
         }
 
-        $contact->update(['archived' => 'Y']);
+        // Admin/Manager: verify employee belongs to selected event
+        if ($role !== 'employee' && $eventId) {
+            $employee = $contact->employee;
+            $belongsToEvent = $employee->events()
+                ->where('events.id', $eventId)
+                ->where('employee_events.is_active', 1)
+                ->exists();
+            
+            if (!$belongsToEvent) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'employee_id' => 'This employee does not belong to the selected event.'
+                ]);
+            }
+        }
+
+        $contact->update([
+            'archived' => 'Y',
+            'updated_by' => Auth::id()
+        ]);
 
         return redirect()->back()->with('success', 'Emergency contact archived successfully.');
     }

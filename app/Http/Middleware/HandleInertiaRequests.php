@@ -39,15 +39,53 @@ class HandleInertiaRequests extends Middleware
                 'error'   => fn() => $request->session()->get('error'),
             ],
             'dateFormat' => config('settings.date_format', 'DD/MM/YYYY'),
-            'availableEvents' => fn() => \App\Models\Ems\Event::where('active_flag', 1)
+            'availableEvents' => fn() => $this->getAvailableEventsForUser($request->user()),
+            'selectedEvent' => fn() => $request->session()->get('selected_event_id'),
+        ];
+    }
+
+    /**
+     * Get available events based on user role
+     * Admin/Manager: All active events
+     * Employees: Only assigned events
+     */
+    protected function getAvailableEventsForUser($user)
+    {
+        if (!$user) {
+            return collect([]);
+        }
+
+        // Check if user has admin or manager role
+        $isAdminOrManager = $user->hasAnyRole(['admin', 'administrator', 'hr-admin', 'manager', 'supervisor']);
+
+        if ($isAdminOrManager) {
+            // Admin/Manager see all events
+            return \App\Models\Ems\Event::where('active_flag', 1)
                 ->orderBy('name')
                 ->get(['id', 'name', 'event_logo'])
                 ->map(fn($e) => [
                     'id' => $e->id,
                     'name' => $e->name,
                     'logo' => $e->event_logo ? asset('storage/event-logos/' . $e->event_logo) : null,
-                ]),
-            'selectedEvent' => fn() => $request->session()->get('selected_event_id'),
-        ];
+                ]);
+        }
+
+        // Employees see only their assigned events
+        $employee = \App\Models\Employee::where('user_id', $user->id)->first();
+
+        if (!$employee) {
+            return collect([]);
+        }
+
+        return $employee->events()
+            ->where('events.active_flag', 1)
+            ->where('employee_events.is_active', 1)
+            ->orderBy('name')
+            ->get(['events.id', 'events.name', 'events.event_logo'])
+            ->map(fn($e) => [
+                'id' => $e->id,
+                'name' => $e->name,
+                'logo' => $e->event_logo ? asset('storage/event-logos/' . $e->event_logo) : null,
+            ]);
     }
 }

@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call(SettingsSeeder::class);
         $this->call(EmployeeTimesheetStatusSeeder::class);
+        $this->call(EmployeeLeaveStatusSeeder::class);
         $this->call(DocumentCategorySeeder::class);
     }
 }

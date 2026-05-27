@@ -18,7 +18,8 @@ class EmployeeEmergencyContact extends Model
         'last_name',
         'relationship_id',
         'contact_number',
-        'creator_id',
+        'created_by',
+        'updated_by',
     ];
 
     // Relationships
@@ -30,11 +31,6 @@ class EmployeeEmergencyContact extends Model
     public function relationship()
     {
         return $this->belongsTo(EmployeeRelationship::class, 'relationship_id');
-    }
-
-    public function creator()
-    {
-        return $this->belongsTo(User::class, 'creator_id');
     }
 
     // Scopes

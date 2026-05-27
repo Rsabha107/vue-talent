@@ -4,6 +4,7 @@ import { router, useForm, usePage } from '@inertiajs/vue3'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
+import EventBanner from '@/Components/MeridianHR/EventBanner.vue'
 
 defineOptions({ layout: MeridianLayout })
 
@@ -12,10 +13,18 @@ const props = defineProps({
   contacts: { type: Array, default: () => [] },
   employees: { type: Array, default: () => [] },
   relationships: { type: Array, default: () => [] },
+  currentEmployee: { type: Object, default: null },
 })
 
 const page = usePage()
-const currentEmployeeId = computed(() => page.props.me?.id)
+const isEmployee = computed(() => !['admin', 'manager'].includes(props.hrRole))
+
+const selectedEventId = computed(() => page.props.selectedEvent)
+const availableEvents = computed(() => page.props.availableEvents || [])
+const selectedEventData = computed(() => {
+  if (!selectedEventId.value) return null
+  return availableEvents.value.find(e => e.id === selectedEventId.value)
+})
 
 const q = ref('')
 const showAddModal = ref(false)
@@ -30,7 +39,7 @@ const employeeSearch = ref('')
 const showEmployeeDropdown = ref(false)
 
 const form = useForm({
-  employee_id: props.hrRole === 'employee' ? currentEmployeeId.value : null,
+  employee_id: props.currentEmployee?.id || null,
   first_name: '',
   last_name: '',
   relationship_id: null,
@@ -81,7 +90,7 @@ function toggleMenu(id) {
 
 function resetAddForm() {
   form.reset()
-  form.employee_id = props.hrRole === 'employee' ? currentEmployeeId.value : null
+  form.employee_id = props.currentEmployee?.id || null
   employeeSearch.value = ''
   showEmployeeDropdown.value = false
 }
@@ -205,6 +214,12 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- Event Context Banner -->
+    <EventBanner 
+      v-if="selectedEventData"
+      :event-data="selectedEventData"
+    />
+
     <!-- Search Filter -->
     <div style="display:flex;gap:10px;margin-bottom:14px;">
       <div style="position:relative;flex:1;max-width:360px;">
@@ -219,7 +234,7 @@ onBeforeUnmount(() => {
         <table class="mhr-table">
           <thead>
             <tr>
-              <th v-if="hrRole !== 'employee'">EMPLOYEE</th>
+              <th v-if="['admin', 'manager'].includes(hrRole)">EMPLOYEE</th>
               <th>CONTACT NAME</th>
               <th>RELATIONSHIP</th>
               <th>PHONE NUMBER</th>
@@ -228,12 +243,12 @@ onBeforeUnmount(() => {
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td :colspan="hrRole !== 'employee' ? 5 : 4" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
+              <td :colspan="['admin', 'manager'].includes(hrRole) ? 5 : 4" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
                 No emergency contacts found
               </td>
             </tr>
             <tr v-for="contact in filtered" :key="contact.id">
-              <td v-if="hrRole !== 'employee'">
+              <td v-if="['admin', 'manager'].includes(hrRole)">
                 <div style="font-weight:500;">{{ contact.employeeName }}</div>
                 <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:2px;">{{ contact.employeeNumber }}</div>
               </td>
@@ -287,7 +302,8 @@ onBeforeUnmount(() => {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div v-if="hrRole !== 'employee'" class="mhr-field" style="grid-column:1/-1;position:relative;" data-employee-dropdown>
+            <!-- Employee field for admin/manager: searchable dropdown -->
+            <div v-if="['admin', 'manager'].includes(hrRole)" class="mhr-field" style="grid-column:1/-1;position:relative;" data-employee-dropdown>
               <label class="mhr-field__label">EMPLOYEE *</label>
               <div style="position:relative;">
                 <input
@@ -330,6 +346,15 @@ onBeforeUnmount(() => {
                     <span style="font-size:12px;opacity:0.8;">{{ emp.employee_number }}</span>
                   </button>
                 </div>
+              </div>
+            </div>
+
+            <!-- Employee field for employee role: fixed display -->
+            <div v-else class="mhr-field" style="grid-column:1/-1;">
+              <label class="mhr-field__label">EMPLOYEE</label>
+              <div style="padding:12px 16px;background:var(--mhr-surface-2);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
+                <div style="font-weight:500;font-size:14px;">{{ currentEmployee?.full_name || 'N/A' }}</div>
+                <div style="font-size:13px;margin-top:2px;opacity:0.8;">{{ currentEmployee?.employee_number || '' }}</div>
               </div>
             </div>
 

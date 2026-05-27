@@ -90,10 +90,10 @@ class TimesheetController extends BaseHRController
     protected function timesheetStatuses(): array
     {
         return [
-            ['id' => 1, 'title' => 'Pending'  ],
-            ['id' => 2, 'title' => 'Submitted'],
-            ['id' => 3, 'title' => 'Approved' ],
-            ['id' => 4, 'title' => 'Rejected' ],
+            ['id' => 1, 'title' => 'Pending',   'color' => '#f59e0b'],
+            ['id' => 2, 'title' => 'Submitted', 'color' => '#3b82f6'],
+            ['id' => 3, 'title' => 'Approved',  'color' => '#10b981'],
+            ['id' => 4, 'title' => 'Rejected',  'color' => '#ef4444'],
         ];
     }
 
@@ -161,6 +161,199 @@ class TimesheetController extends BaseHRController
         // In production: create timesheet record and generate day rows
         return redirect()->route('hr.timesheet', ['role' => $request->query('role', 'employee')])
             ->with('success', 'Timesheet started.');
+    }
+
+    // ── My Timesheets (Employee viewing their own) ────────────────────
+
+    public function myTimesheets()
+    {
+        // Get current employee
+        $employee = Employee::where('user_id', auth()->id())->first();
+        
+        if (!$employee) {
+            return Inertia::render('MeridianHR/TimesheetTalent', array_merge($this->getCommonProps('my-timesheets'), [
+                'timesheets' => [],
+                'employees' => [],
+                'statuses' => $this->timesheetStatuses(),
+            ]));
+        }
+
+        $eventId  = $this->getSelectedEventId();
+        $statuses = $this->timesheetStatuses();
+        $statusMap = collect($statuses)->keyBy('id');
+
+        // Only show current employee in the dropdown (read-only context)
+        $employees = collect([[
+            'id' => $employee->id,
+            'full_name' => $employee->full_name,
+            'employee_number' => $employee->employee_number
+        ]]);
+
+        // Timesheets with entries - filtered by current employee
+        $tsQuery = EmployeeTimesheet::active()
+            ->with([
+                'employee' => function ($query) use ($eventId) {
+                    if ($eventId) {
+                        $query->with(['events' => function ($q) use ($eventId) {
+                            $q->where('events.id', $eventId);
+                        }]);
+                    }
+                },
+                'event',
+                'entries',
+                'performer:id,full_name'
+            ])
+            ->where('employee_id', $employee->id)  // Filter by current employee
+            ->forEvent($eventId)
+            ->orderByDesc('year')
+            ->orderByDesc('month_id');
+
+        $DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        $monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                       'July', 'August', 'September', 'October', 'November', 'December'];
+
+        // Approved leave dates keyed by employee_id → [Y-m-d => true]
+        $approvedStatusId = EmployeeLeaveStatus::approvedId();
+        $leaveDays = [];
+        if ($approvedStatusId) {
+            EmployeeLeaveRequest::active()
+                ->where('status_id', $approvedStatusId)
+                ->where('employee_id', $employee->id)  // Only for current employee
+                ->forEvent($eventId)
+                ->get(['employee_id', 'date_from', 'date_to'])
+                ->each(function ($lr) use (&$leaveDays) {
+                    $cur = $lr->date_from->copy();
+                    while ($cur->lte($lr->date_to)) {
+                        $leaveDays[$lr->employee_id][$cur->format('Y-m-d')] = true;
+                        $cur->addDay();
+                    }
+                });
+        }
+
+        $timesheets = $tsQuery->get()->map(function ($ts) use ($statusMap, $DAYS, $monthNames, $leaveDays, $eventId, $employee) {
+            $emp         = $ts->employee;
+            $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $ts->month_id, $ts->year);
+            $startDay    = 1;
+            $endDay      = $daysInMonth;
+
+            // Narrow to contract / event assignment window if applicable
+            if ($eventId && $emp) {
+                $eventPivot = null;
+                
+                if ($emp->relationLoaded('events') && $emp->events->isNotEmpty()) {
+                    $eventPivot = $emp->events->first()->pivot;
+                } else {
+                    $eventRelation = $emp->events()->where('events.id', $eventId)->first();
+                    $eventPivot = $eventRelation?->pivot;
+                }
+                
+                if ($eventPivot) {
+                    if ($eventPivot->assigned_at) {
+                        $a = \Carbon\Carbon::parse($eventPivot->assigned_at);
+                        if ($a->year == $ts->year && $a->month == $ts->month_id) {
+                            $startDay = max($startDay, $a->day);
+                        } elseif ($a->year > $ts->year || ($a->year == $ts->year && $a->month > $ts->month_id)) {
+                            $startDay = $daysInMonth + 1;
+                        }
+                    }
+                    if ($eventPivot->released_at) {
+                        $r = \Carbon\Carbon::parse($eventPivot->released_at);
+                        if ($r->year == $ts->year && $r->month == $ts->month_id) {
+                            $endDay = min($endDay, $r->day);
+                        } elseif ($r->year < $ts->year || ($r->year == $ts->year && $r->month < $ts->month_id)) {
+                            $endDay = 0;
+                        }
+                    }
+                }
+            }
+
+            $empLeave = $leaveDays[$ts->employee_id] ?? [];
+            
+            // Build entries for ALL days in the valid range, not just saved ones
+            $savedEntries = $ts->entries->keyBy('calendar_day');
+            $entries = [];
+            
+            for ($d = $startDay; $d <= $endDay; $d++) {
+                $date = new \DateTime("{$ts->year}-{$ts->month_id}-{$d}");
+                $dow = (int) $date->format('w'); // 0=Sun, 5=Fri, 6=Sat
+                $isWeekend = $dow === 5 || $dow === 6; // Friday or Saturday
+                $isLeave = isset($empLeave[$date->format('Y-m-d')]);
+                
+                // If there's a saved entry for this day, use its action; otherwise default
+                $savedEntry = $savedEntries[$d] ?? null;
+                $action = $savedEntry ? $savedEntry->day_action : ($isWeekend ? '0' : 'W');
+                
+                $entries[] = [
+                    'day'       => $d,
+                    'dayName'   => $DAYS[$dow],
+                    'isWeekend' => $isWeekend,
+                    'action'    => $action,
+                    'isLeave'   => $isLeave,
+                ];
+            }
+
+            $period     = $monthNames[$ts->month_id] . '-' . $ts->year;
+            $statusId   = $ts->status_id;
+            $status     = $statusMap->get($statusId, ['title' => 'Unknown', 'color' => '#999']);
+            $statusTitle = $status['title'];
+
+            return [
+                'id'            => $ts->id,
+                'employeeId'    => $ts->employee_id,
+                'employeeName'  => $emp?->full_name ?? 'Unknown',
+                'employeeNumber' => $emp?->employee_number,
+                'employeeColor' => $emp?->avatar_color ?? 0,
+                'eventId'       => $ts->event_id,
+                'eventName'     => $ts->event?->name,
+                'period'        => $period,
+                'monthNumber'   => $ts->month_id,
+                'year'          => $ts->year,
+                'daysInMonth'   => $daysInMonth,
+                'startDay'      => $startDay,
+                'endDay'        => $endDay,
+                'statusId'      => $statusId,
+                'statusTitle'   => $statusTitle,
+                'hasEntries'    => count($entries) > 0,
+                'entries'       => $entries,
+                // Payment calculation fields
+                'daysWorked'    => $ts->days_worked ?? 0,
+                'leaveTaken'    => $ts->leave_taken ?? 0,
+                'unpaidLeave'   => $ts->unpaid_leave_taken ?? 0,
+                'totalDays'     => $ts->total_days_eligible_for_payment ?? 0,
+                'dailyRate'     => $ts->daily_rate ? number_format($ts->daily_rate, 2) : '0.00',
+                'salary'        => $ts->salary ? number_format($ts->salary, 2) : '0.00',
+                'payment'       => $ts->total_payment ? number_format($ts->total_payment, 2) : '0.00',
+                'approver'      => $ts->performer?->full_name ?? null,
+            ];
+        });
+
+        // Calculate timesheet submission cutoff
+        $cutoffDay = config('settings.timesheet_cutoff_day', 21);
+        $disableSubmission = false;
+        $formattedCutoff = null;
+        
+        if ($cutoffDay != 0) {
+            $today = \Carbon\Carbon::today();
+            $cutoff = \Carbon\Carbon::createFromDate(null, null, $cutoffDay);
+            $formattedCutoff = $cutoff->format('jS');
+            $disableSubmission = $today->greaterThanOrEqualTo($cutoff);
+        }
+
+        return Inertia::render('MeridianHR/TimesheetTalent', array_merge($this->getCommonProps('my-timesheets'), [
+            'timesheets' => $timesheets,
+            'employees'  => $employees,
+            'monthsName' => $this->monthsName(),
+            'years'      => [2024, 2025, 2026],
+            'statuses'   => $statuses,
+            'currentEmployee' => [
+                'id' => $employee->id,
+                'full_name' => $employee->full_name,
+                'employee_number' => $employee->employee_number,
+            ],
+            'cutoffDay' => $cutoffDay,
+            'disableSubmission' => $disableSubmission,
+            'formattedCutoff' => $formattedCutoff,
+        ]));
     }
 
     // ── TimesheetTalent (Admin/Manager) ───────────────────────────────
@@ -333,12 +526,27 @@ class TimesheetController extends BaseHRController
             ];
         });
 
+        // Calculate timesheet submission cutoff
+        $cutoffDay = config('settings.timesheet_cutoff_day', 21);
+        $disableSubmission = false;
+        $formattedCutoff = null;
+        
+        if ($cutoffDay != 0) {
+            $today = \Carbon\Carbon::today();
+            $cutoff = \Carbon\Carbon::createFromDate(null, null, $cutoffDay);
+            $formattedCutoff = $cutoff->format('jS');
+            $disableSubmission = $today->greaterThanOrEqualTo($cutoff);
+        }
+
         return Inertia::render('MeridianHR/TimesheetTalent', array_merge($this->getCommonProps('timesheet-talent'), [
             'employees'  => $employees,
             'monthsName' => $this->monthsName(),
             'years'      => [2024, 2025, 2026],
             'statuses'   => $statuses,
             'timesheets' => $timesheets,
+            'cutoffDay' => $cutoffDay,
+            'disableSubmission' => $disableSubmission,
+            'formattedCutoff' => $formattedCutoff,
         ]));
     }
 
@@ -699,6 +907,26 @@ class TimesheetController extends BaseHRController
     public function timesheetTalentDestroy($id)
     {
         $ts = EmployeeTimesheet::findOrFail($id);
+        
+        // Authorization: Check if user has permission to delete this timesheet
+        $hrRole = $this->getHRRole();
+        $isEmployee = !in_array($hrRole, ['admin', 'manager']);
+        
+        if ($isEmployee) {
+            // Get current employee
+            $currentEmployee = Employee::where('user_id', auth()->id())->first();
+            
+            // Ensure employee can only delete their own timesheets
+            if (!$currentEmployee || $ts->employee_id !== $currentEmployee->id) {
+                return back()->with('error', 'You can only delete your own timesheets.');
+            }
+            
+            // Ensure timesheet is not approved
+            if ($ts->status_id === EmployeeTimesheetStatus::approvedId()) {
+                return back()->with('error', 'Cannot delete approved timesheets.');
+            }
+        }
+        
         $ts->update(['archived' => 'Y']);
         return back()->with('success', 'Timesheet deleted.');
     }

@@ -74,14 +74,34 @@ abstract class BaseHRController extends Controller
 
     /**
      * Get all available events for the current user
+     * Admin/Manager: All active events
+     * Employees: Only events they're assigned to
      * 
      * @return \Illuminate\Database\Eloquent\Collection
      */
     protected function getAvailableEvents()
     {
-        return Event::where('active_flag', 1)
+        $hrRole = $this->getHRRole();
+        
+        // Admin and Manager can see all events
+        if (in_array($hrRole, ['admin', 'manager'])) {
+            return Event::where('active_flag', 1)
+                ->orderBy('name')
+                ->get(['id', 'name', 'event_logo']);
+        }
+        
+        // Employees only see their assigned events
+        $employee = Employee::where('user_id', auth()->id())->first();
+        
+        if (!$employee) {
+            return collect([]); // No employee record = no events
+        }
+        
+        return $employee->events()
+            ->where('events.active_flag', 1)
+            ->where('employee_events.is_active', 1)
             ->orderBy('name')
-            ->get(['id', 'name', 'event_logo']);
+            ->get(['events.id', 'events.name', 'events.event_logo']);
     }
 
     /**
@@ -171,7 +191,7 @@ abstract class BaseHRController extends Controller
     protected function me(): array
     {
         $user = auth()->user();
-        $employee = Employee::where('user_id', $user->id)->first();
+        $employee = Employee::where('user_id', $user->id)->with(['designation', 'department', 'reportingTo'])->first();
         
         if ($employee) {
             return [
@@ -183,6 +203,8 @@ abstract class BaseHRController extends Controller
                 'empNumber' => $employee->employee_number,
                 'avatarColor' => $employee->avatarColor,
                 'initials' => $employee->initials,
+                'joinDate' => $employee->join_date,
+                'manager' => $employee->reportingTo?->full_name,
             ];
         }
         
@@ -195,6 +217,8 @@ abstract class BaseHRController extends Controller
             'empNumber' => null,
             'avatarColor' => $user->id % 7,
             'initials' => strtoupper(substr($user->name, 0, 2)),
+            'joinDate' => null,
+            'manager' => null,
         ];
     }
 

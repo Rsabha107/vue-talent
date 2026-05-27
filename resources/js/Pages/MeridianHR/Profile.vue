@@ -42,8 +42,8 @@ function fmtDate(s) {
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px;text-align:left;">
           <div v-for="item in [
             { icon: 'mail',     v: me.email },
-            { icon: 'phone',    v: profile.phone || '+1 (347) 555-0182' },
-            { icon: 'building', v: profile.location || 'Brooklyn HQ · 4F' },
+            { icon: 'phone',    v: profile.phone || 'N/A' },
+            { icon: 'building', v: profile.location || 'N/A' },
             { icon: 'user',     v: 'Reports to ' + (me.manager || 'N/A') },
           ]" :key="item.icon"
             style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--mhr-ink-2);">
@@ -59,12 +59,12 @@ function fmtDate(s) {
           <div class="mhr-card__hd"><h3 class="mhr-card__title">Employment</h3></div>
           <div style="padding:8px 20px 16px;">
             <div v-for="row in [
-              { k: 'Employee ID',      v: me.empNumber,          mono: true },
-              { k: 'Department',       v: me.department },
-              { k: 'Manager',          v: me.manager },
-              { k: 'Start date',       v: fmtDate(me.joinDate) },
+              { k: 'Employee ID',      v: me.empNumber || 'N/A',          mono: true },
+              { k: 'Department',       v: me.department || 'N/A' },
+              { k: 'Manager',          v: me.manager || 'N/A' },
+              { k: 'Start date',       v: fmtDate(me.joinDate) || 'N/A' },
               { k: 'Employment type',  v: 'Full-time · Permanent' },
-              { k: 'Work location',    v: profile.location || 'Brooklyn HQ · Hybrid' },
+              { k: 'Work location',    v: profile.location || 'N/A' },
             ]" :key="row.k"
               style="display:grid;grid-template-columns:180px 1fr;gap:16px;padding:10px 0;border-bottom:1px solid var(--mhr-line-2);font-size:13.5px;">
               <div style="color:var(--mhr-ink-3);">{{ row.k }}</div>
@@ -78,9 +78,9 @@ function fmtDate(s) {
           <div class="mhr-card__hd"><h3 class="mhr-card__title">Personal</h3></div>
           <div style="padding:8px 20px 16px;">
             <div v-for="row in [
-              { k: 'Date of birth', v: profile.dob || '14 April 1992' },
-              { k: 'Nationality',   v: profile.nationality || 'Lebanese / American' },
-              { k: 'Address',       v: profile.address || '148 Berry St, Brooklyn NY 11211' },
+              { k: 'Date of birth', v: profile.dob || 'N/A' },
+              { k: 'Nationality',   v: profile.nationality || 'N/A' },
+              { k: 'Address',       v: profile.address || 'N/A' },
             ]" :key="row.k"
               style="display:grid;grid-template-columns:180px 1fr;gap:16px;padding:10px 0;border-bottom:1px solid var(--mhr-line-2);font-size:13.5px;">
               <div style="color:var(--mhr-ink-3);">{{ row.k }}</div>
@@ -94,8 +94,8 @@ function fmtDate(s) {
           <div class="mhr-card__hd"><h3 class="mhr-card__title">Emergency contact</h3></div>
           <div style="padding:8px 20px 16px;">
             <div v-for="row in [
-              { k: 'Name',  v: profile.emergencyName  || 'Karim Haddad (brother)' },
-              { k: 'Phone', v: profile.emergencyPhone || '+1 (347) 555-0144' },
+              { k: 'Name',  v: profile.emergencyName  || 'N/A' },
+              { k: 'Phone', v: profile.emergencyPhone || 'N/A' },
             ]" :key="row.k"
               style="display:grid;grid-template-columns:180px 1fr;gap:16px;padding:10px 0;border-bottom:1px solid var(--mhr-line-2);font-size:13.5px;">
               <div style="color:var(--mhr-ink-3);">{{ row.k }}</div>
@@ -109,9 +109,9 @@ function fmtDate(s) {
           <div class="mhr-card__hd"><h3 class="mhr-card__title">Banking</h3></div>
           <div style="padding:8px 20px 16px;">
             <div v-for="row in [
-              { k: 'Bank',    v: profile.bank || 'Capital One Bank' },
-              { k: 'Account', v: '••••3421', mono: true },
-              { k: 'Routing', v: '••••0421', mono: true },
+              { k: 'Bank',    v: profile.bank || 'N/A' },
+              { k: 'Account', v: profile.accountNumber || 'N/A', mono: true },
+              { k: 'Routing', v: profile.routingNumber || 'N/A', mono: true },
             ]" :key="row.k"
               style="display:grid;grid-template-columns:180px 1fr;gap:16px;padding:10px 0;border-bottom:1px solid var(--mhr-line-2);font-size:13.5px;">
               <div style="color:var(--mhr-ink-3);">{{ row.k }}</div>

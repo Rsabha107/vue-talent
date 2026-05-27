@@ -1,11 +1,12 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import AppAvatar from '@/Components/MeridianHR/AppAvatar.vue'
 import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
 import EventBanner from '@/Components/MeridianHR/EventBanner.vue'
 import EmployeeSelector from '@/Components/MeridianHR/EmployeeSelector.vue'
+import SubmitButton from '@/Components/MeridianHR/SubmitButton.vue'
 import { router, usePage } from '@inertiajs/vue3'
 
 // ── Toast ────────────────────────────────────────────────────────────
@@ -24,10 +25,14 @@ const props = defineProps({
   hrRole:     { type: String, default: 'admin' },
   hrPage:     { type: String, default: 'timesheet-talent' },
   employees:  { type: Array,  default: () => [] },
+  currentEmployee: { type: Object, default: null },
   monthsName: { type: Array,  default: () => [] },  // [{ id, monthName, monthNumber }]
   years:      { type: Array,  default: () => [] },  // [2024, 2025, 2026]
   statuses:   { type: Array,  default: () => [] },  // [{ id, title }]
   timesheets: { type: Array,  default: () => [] },
+  cutoffDay:  { type: [Number, String], default: 21 },
+  disableSubmission: { type: Boolean, default: false },
+  formattedCutoff: { type: String, default: null },
   /*
     timesheets item shape:
     {
@@ -56,9 +61,18 @@ const props = defineProps({
 // ── Event context ───────────────────────────────────────────────────
 const selectedEventId = computed(() => usePage().props.selectedEvent)
 const availableEvents = computed(() => usePage().props.availableEvents || [])
+const isEmployee = computed(() => props.currentEmployee !== null)
 const selectedEventData = computed(() => {
   if (!selectedEventId.value) return null
   return availableEvents.value.find(e => e.id === selectedEventId.value)
+})
+
+// Normalize cutoffDay to number for comparisons
+const cutoffDayNumber = computed(() => Number(props.cutoffDay) || 0)
+
+// Check if active timesheet is approved and should be read-only for employees
+const isApprovedReadOnly = computed(() => {
+  return isEmployee.value && activeTimesheet.value?.statusTitle === 'Approved'
 })
 
 // ── View state ──────────────────────────────────────────────────────
@@ -73,12 +87,12 @@ watch(() => props.timesheets, (newTimesheets) => {
 
 // ── Filters ─────────────────────────────────────────────────────────
 const filterPeriod = ref('')
-const filterStatus = ref('')
+const filterStatus = ref('all')
 
 const filtered = computed(() =>
   localTimesheets.value.filter(t => {
     const okPeriod = !filterPeriod.value || t.period.toLowerCase().includes(filterPeriod.value.toLowerCase())
-    const okStatus = !filterStatus.value || String(t.statusId) === String(filterStatus.value)
+    const okStatus = filterStatus.value === 'all' || t.statusTitle.toLowerCase() === filterStatus.value.toLowerCase()
     return okPeriod && okStatus
   })
 )
@@ -107,6 +121,10 @@ const addErrors    = ref({})
 
 function openAddModal() {
   addForm.value   = { employeeId: '', monthId: '', year: '' }
+  // Auto-populate employee ID for employees
+  if (isEmployee.value && props.currentEmployee) {
+    addForm.value.employeeId = props.currentEmployee.id
+  }
   addErrors.value = {}
   showAddModal.value = true
 }
@@ -125,7 +143,8 @@ function validateAdd() {
 function submitAdd() {
   if (!validateAdd()) return
   isAdding.value = true
-  router.post(route('hr.timesheet-talent.store'), {
+  const routeName = isEmployee.value ? 'hr.my-timesheets.store' : 'hr.timesheet-talent.store'
+  router.post(route(routeName), {
     employee_id:       addForm.value.employeeId || null,
     month_selected_id: addForm.value.monthId,
     year_selected:     addForm.value.year,
@@ -278,12 +297,26 @@ const editingDay = ref(null)
 const editAction = ref('W')
 
 function canEdit(day) {
+  // Employees cannot edit approved timesheets
+  if (isApprovedReadOnly.value) return false
+  // Employees cannot edit when submission is disabled
+  if (isEmployee.value && props.disableSubmission) return false
   if (day.isWeekend) return false  // Can't edit weekends (non-working days)
   if (day.isLeave) return false    // Can't edit days with approved leave
   return true
 }
 
 function openDay(day) {
+  // Prevent editing approved timesheets for employees
+  if (isApprovedReadOnly.value) {
+    showToast('This timesheet is approved and cannot be edited.', 'error')
+    return
+  }
+  // Prevent editing for employees when submission is disabled
+  if (isEmployee.value && props.disableSubmission) {
+    showToast('Timesheet submission is closed. Entries are read-only.', 'error')
+    return
+  }
   if (day.isWeekend) {
     showToast('Weekends are non-working days and cannot be edited', 'error')
     return
@@ -304,14 +337,39 @@ function saveDay() {
   const day = editingDay.value
   if (!day) return
   
-  // Update the day in entryRows
-  const entry = entryRows.value.find(r => r.day === day.day)
-  if (entry) {
-    entry.action = editAction.value
+  const dayNumber = day.day
+  const newAction = editAction.value
+  
+  console.log('Saving day:', dayNumber, 'with action:', newAction)
+  console.log('Before update:', entryRows.value.length, 'rows')
+  
+  // Find and update the row
+  const index = entryRows.value.findIndex(r => r.day === dayNumber)
+  if (index !== -1) {
+    // Create completely new array with updated row
+    const newRows = [
+      ...entryRows.value.slice(0, index),
+      { ...entryRows.value[index], action: newAction },
+      ...entryRows.value.slice(index + 1)
+    ]
+    entryRows.value = newRows
+    
+    const newCounts = {
+      worked: newRows.filter(r => r.action === 'W' && !r.isLeave && !r.isWeekend).length,
+      leave: newRows.filter(r => (r.action === 'L' || r.isLeave) && !r.isWeekend).length,
+      unpaid: newRows.filter(r => r.action === 'U' && !r.isWeekend).length
+    }
+    
+    console.log('After update - row', index, ':', newRows[index])
+    console.log('Summary should update:', newCounts)
+    console.log('Unpaid days:', newCounts.unpaid, '- Payment will recalculate automatically')
   }
   
   closeModal()
-  showToast('Day updated. Remember to save your timesheet.', 'success')
+  
+  nextTick(() => {
+    showToast('Day updated. Remember to save your timesheet.', 'success')
+  })
 }
 
 // ── Summary computed ────────────────────────────────────────────────
@@ -322,6 +380,36 @@ const summary = computed(() => {
   const unpaid = entryRows.value.filter(r => r.action === 'U' && !r.isWeekend).length
   const weekend = entryRows.value.filter(r => r.isWeekend).length
   return { workedDays: worked, leaveDays: leave, unpaidDays: unpaid, weekend }
+})
+
+// ── Calculated payment based on unpaid days ────────────────────────
+const calculatedPayment = computed(() => {
+  if (!activeTimesheet.value) return '—'
+  
+  const unpaidDays = summary.value.unpaidDays
+  if (unpaidDays === 0) {
+    // No unpaid days, return original payment
+    return activeTimesheet.value.payment || '0.00'
+  }
+  
+  // Parse the salary (remove currency symbols and commas)
+  const salaryStr = activeTimesheet.value.salary || '0'
+  const salary = parseFloat(salaryStr.replace(/[^0-9.-]/g, ''))
+  
+  if (isNaN(salary) || salary === 0) return '0.00'
+  
+  // Use fixed 30 working days for daily rate calculation
+  const totalWorkingDays = 30
+  
+  // Calculate daily rate
+  const dailyRate = salary / totalWorkingDays
+  
+  // Deduct unpaid days
+  const deduction = dailyRate * unpaidDays
+  const finalPayment = salary - deduction
+  
+  // Format with 2 decimal places and comma separator
+  return finalPayment.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 })
 
 // ── Cell helpers ────────────────────────────────────────────────────
@@ -426,7 +514,9 @@ function deleteTimesheet() {
   if (!ts) return
   
   deletingId.value = ts.id
-  router.delete(route('hr.timesheet-talent.destroy', ts.id), {
+  const routeName = isEmployee.value ? 'hr.my-timesheets.destroy' : 'hr.timesheet-talent.destroy'
+  
+  router.delete(route(routeName, ts.id), {
     onSuccess: () => {
       localTimesheets.value = localTimesheets.value.filter(t => t.id !== ts.id)
       showToast('Timesheet deleted.')
@@ -473,7 +563,11 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         </div>
         <div class="mhr-page-head__actions">
           <RefreshButton variant="ghost" :is-refreshing="isRefreshing" @refresh="refreshData" />
-          <button class="mhr-btn mhr-btn--primary" @click="openAddModal">
+          <button 
+            class="mhr-btn mhr-btn--primary" 
+            @click="openAddModal"
+            :disabled="isEmployee && disableSubmission"
+            :title="isEmployee && disableSubmission ? 'Timesheet submission is closed' : ''">
             <AppIcon name="plus" :size="14" /> Add Timesheet
           </button>
         </div>
@@ -485,16 +579,49 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         :event-data="selectedEventData"
       />
 
+      <!-- Timesheet Submission Cutoff Banner -->
+      <div v-if="cutoffDayNumber !== 0 && formattedCutoff && isEmployee" 
+        style="padding:14px 18px;border-radius:var(--mhr-r);margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;font-weight:500;border:2px solid;"
+        :style="disableSubmission 
+          ? 'background:#fee;border-color:#f44;color:#900;' 
+          : 'background:#e7f5ff;border-color:#0077cc;color:#004080;'">
+        <AppIcon :name="disableSubmission ? 'alert' : 'check'" :size="18" style="margin-top:2px;flex-shrink:0;" />
+        <div style="flex:1;">
+          <div style="font-size:14px;margin-bottom:4px;">
+            <template v-if="disableSubmission">
+              <strong>Timesheet Submission Window Closed</strong>
+            </template>
+            <template v-else>
+              <strong>Timesheet Submission Window Open</strong>
+            </template>
+          </div>
+          <div style="font-size:13px;font-weight:400;line-height:1.5;">
+            <template v-if="disableSubmission">
+              The monthly cutoff date ({{ formattedCutoff }}) has passed. New timesheet submissions are no longer accepted for this month. 
+              You can still view your previously submitted timesheets below, but cannot create or modify entries until the next month begins.
+            </template>
+            <template v-else>
+              Submit your timesheets before the {{ formattedCutoff }} of this month. After this date, the submission window will close 
+              and you will not be able to create new timesheets until the next month. Make sure all your hours are recorded and submitted on time.
+            </template>
+          </div>
+        </div>
+      </div>
+
       <!-- Filters -->
-      <div style="display:flex;gap:10px;margin-bottom:16px;">
-        <div style="position:relative;flex:1;max-width:280px;">
+      <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;justify-content:space-between;">
+        <div style="position:relative;max-width:280px;">
           <AppIcon name="search" :size="14" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--mhr-ink-3);" />
           <input class="mhr-input" style="padding-left:30px;" placeholder="Filter by period…" v-model="filterPeriod" />
         </div>
-        <select class="mhr-select" style="max-width:180px;" v-model="filterStatus">
-          <option value="">All statuses</option>
-          <option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.title }}</option>
-        </select>
+        <div style="display:flex;gap:4px;padding:3px;background:var(--mhr-surface-2);border:1px solid var(--mhr-line);border-radius:9px;">
+          <button v-for="f in ['all','pending','submitted','approved','rejected']" :key="f"
+            class="mhr-btn mhr-btn--sm"
+            :style="filterStatus === f ? 'background:var(--green-700);color:#fff;' : 'background:transparent;color:var(--mhr-ink-2);'"
+            @click="filterStatus = f">
+            {{ f.charAt(0).toUpperCase() + f.slice(1) }}
+          </button>
+        </div>
       </div>
 
       <!-- Table -->
@@ -563,13 +690,18 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
                 <td>
                   <div style="display:flex;gap:6px;justify-content:flex-end;">
                     <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="openEntries(ts)">
-                      <AppIcon name="edit" :size="13" />
-                      {{ ts.hasEntries ? 'View / Edit' : 'Add Entries' }}
+                      <AppIcon :name="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) ? 'eye' : 'edit'" :size="13" />
+                      <template v-if="isEmployee && (disableSubmission || ts.statusTitle === 'Approved')">
+                        View
+                      </template>
+                      <template v-else>
+                        {{ ts.hasEntries ? 'View / Edit' : 'Add Entries' }}
+                      </template>
                     </button>
                     <button v-if="isAdminOrManager" class="mhr-btn mhr-btn--sm mhr-btn--ghost" @click="openStatusModal(ts)">
                       Status
                     </button>
-                    <button v-if="isAdminOrManager" class="mhr-btn mhr-btn--sm mhr-btn--danger"
+                    <button v-if="isAdminOrManager || (isEmployee && ts.statusTitle !== 'Approved')" class="mhr-btn mhr-btn--sm mhr-btn--danger"
                       @click="confirmDelete(ts)" :disabled="deletingId === ts.id">
                       <AppIcon name="trash" :size="13" />
                     </button>
@@ -649,13 +781,18 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <!-- Actions -->
           <div class="ts-card__actions">
             <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="openEntries(ts)" style="flex:1;">
-              <AppIcon name="edit" :size="13" />
-              {{ ts.hasEntries ? 'View / Edit' : 'Add Entries' }}
+              <AppIcon :name="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) ? 'eye' : 'edit'" :size="13" />
+              <template v-if="isEmployee && (disableSubmission || ts.statusTitle === 'Approved')">
+                View
+              </template>
+              <template v-else>
+                {{ ts.hasEntries ? 'View / Edit' : 'Add Entries' }}
+              </template>
             </button>
             <button v-if="isAdminOrManager" class="mhr-btn mhr-btn--sm mhr-btn--ghost" @click="openStatusModal(ts)">
               Status
             </button>
-            <button v-if="isAdminOrManager" class="mhr-btn mhr-btn--sm mhr-btn--danger"
+            <button v-if="isAdminOrManager || (isEmployee && ts.statusTitle !== 'Approved')" class="mhr-btn mhr-btn--sm mhr-btn--danger"
               @click="confirmDelete(ts)" :disabled="deletingId === ts.id">
               <AppIcon name="trash" :size="13" />
             </button>
@@ -676,16 +813,32 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
             {{ activeTimesheet.employeeName }}
             <span style="font-weight:400;color:var(--mhr-ink-3);font-size:16px;">({{ activeTimesheet.period }})</span>
           </h1>
-          <p class="mhr-page-head__sub">Click on any day to mark it as worked or unpaid leave</p>
+          <p class="mhr-page-head__sub">
+            <template v-if="isApprovedReadOnly">
+              Viewing approved timesheet entries (read-only)
+            </template>
+            <template v-else-if="isEmployee && disableSubmission">
+              Viewing timesheet entries (read-only)
+            </template>
+            <template v-else>
+              Click on any day to mark it as worked or unpaid leave
+            </template>
+          </p>
         </div>
         <div class="mhr-page-head__actions">
-          <button class="mhr-btn mhr-btn--ghost" @click="backToList">Cancel</button>
-          <button class="mhr-btn mhr-btn--outline" @click="saveEntries" :disabled="isSavingEntries || isSubmitting">
+          <button class="mhr-btn mhr-btn--ghost" @click="backToList">
+            {{ (isApprovedReadOnly || (isEmployee && disableSubmission)) ? 'Close' : 'Cancel' }}
+          </button>
+          <button 
+            v-if="!isApprovedReadOnly && !(isEmployee && disableSubmission)"
+            class="mhr-btn mhr-btn--outline" 
+            @click="saveEntries" 
+            :disabled="isSavingEntries || isSubmitting">
             <AppIcon name="check" :size="14" />
             {{ isSavingEntries ? 'Saving…' : 'Save' }}
           </button>
           <button 
-            v-if="activeTimesheet?.statusId === 1" 
+            v-if="activeTimesheet?.statusId === 1 && !isApprovedReadOnly && !(isEmployee && disableSubmission)" 
             class="mhr-btn mhr-btn--primary" 
             @click="submitForApproval" 
             :disabled="isSavingEntries || isSubmitting">
@@ -714,8 +867,8 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         </div>
         <div class="mhr-stat">
           <div class="mhr-stat__label">Payment</div>
-          <div class="mhr-stat__value"><em>{{ activeTimesheet?.payment || '—' }}</em></div>
-          <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:4px;">total compensation</div>
+          <div class="mhr-stat__value"><em>{{ calculatedPayment }}</em></div>
+          <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:4px;">{{ summary.unpaidDays > 0 ? 'after unpaid deductions' : 'total compensation' }}</div>
         </div>
       </div>
 
@@ -812,9 +965,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         </div>
         <div class="mhr-modal__ft">
           <button class="mhr-btn mhr-btn--ghost" @click="closeModal">Cancel</button>
-          <button class="mhr-btn mhr-btn--primary" @click="saveDay">
-            <AppIcon name="check" :size="14" /> Save
-          </button>
+          <SubmitButton text="Save" @click="saveDay" />
         </div>
       </div>
     </div>
@@ -848,6 +999,14 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
             <p v-if="addErrors.employeeId" class="ts-field-error">{{ addErrors.employeeId }}</p>
           </div>
 
+          <!-- Employee display for employees (read-only) -->
+          <div v-else-if="isEmployee && currentEmployee" class="mhr-field">
+            <label class="mhr-field__label">Employee</label>
+            <div style="padding:10px 12px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
+              {{ currentEmployee.full_name }} ({{ currentEmployee.employee_number }})
+            </div>
+          </div>
+
           <!-- Month -->
           <div class="mhr-field">
             <label class="mhr-field__label">Select Month *</label>
@@ -873,10 +1032,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         </div>
         <div class="mhr-modal__ft">
           <button class="mhr-btn mhr-btn--ghost" @click="showAddModal = false">Close</button>
-          <button class="mhr-btn mhr-btn--primary" @click="submitAdd" :disabled="isAdding">
-            <AppIcon name="check" :size="14" />
-            {{ isAdding ? 'Saving…' : 'Save' }}
-          </button>
+          <SubmitButton text="Save" processing-text="Saving…" :processing="isAdding" @click="submitAdd" />
         </div>
       </div>
     </div>
@@ -916,10 +1072,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         </div>
         <div class="mhr-modal__ft">
           <button class="mhr-btn mhr-btn--danger" @click="showStatusModal = false">Cancel</button>
-          <button class="mhr-btn mhr-btn--primary" @click="saveStatus" :disabled="isSavingStatus">
-            <AppIcon name="check" :size="14" />
-            {{ isSavingStatus ? 'Saving…' : 'Save' }}
-          </button>
+          <SubmitButton text="Save" processing-text="Saving…" :processing="isSavingStatus" @click="saveStatus" />
         </div>
       </div>
     </div>
@@ -970,7 +1123,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
               <div style="height:1px;background:var(--mhr-accent);opacity:0.2;margin:4px 0;"></div>
               <div style="display:flex;justify-content:space-between;">
                 <span style="font-weight:600;">Total Payment:</span>
-                <strong style="color:var(--mhr-accent);font-size:15px;">{{ activeTimesheet?.payment || '—' }}</strong>
+                <strong style="color:var(--mhr-accent);font-size:15px;">{{ calculatedPayment }}</strong>
               </div>
             </div>
           </div>
@@ -983,10 +1136,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <button class="mhr-btn mhr-btn--ghost" @click="showSubmitModal = false" :disabled="isSubmitting">
             Cancel
           </button>
-          <button class="mhr-btn mhr-btn--primary" @click="confirmSubmit" :disabled="isSubmitting">
-            <AppIcon name="arrowup" :size="14" />
-            {{ isSubmitting ? 'Submitting…' : 'Submit for Approval' }}
-          </button>
+          <SubmitButton text="Submit for Approval" processing-text="Submitting…" :processing="isSubmitting" @click="confirmSubmit" />
         </div>
       </div>
     </div>
@@ -1046,6 +1196,13 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
 </template>
 
 <style scoped>
+/* ── Disabled button ──────────────────────────────────────── */
+.mhr-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* ── Calendar cells ─────────────────────────────────────────── */
 .ts-cell {
   /* aspect-ratio: 4/3; */

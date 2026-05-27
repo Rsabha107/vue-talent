@@ -16,6 +16,13 @@ class EmployeeLeaveRequestController extends BaseHRController
     public function index()
     {
         $eventId = $this->getSelectedEventId();
+        $hrRole = $this->getHRRole();
+        
+        // For employees, get their employee record
+        $currentEmployee = null;
+        if (!in_array($hrRole, ['admin', 'manager'])) {
+            $currentEmployee = Employee::where('user_id', auth()->id())->first();
+        }
         
         // Build query with optional event filtering
         $query = EmployeeLeaveRequest::with([
@@ -32,6 +39,11 @@ class EmployeeLeaveRequestController extends BaseHRController
         // Apply event scope if event is selected
         if ($eventId) {
             $query->forEvent($eventId);
+        }
+        
+        // Filter by employee for non-admin/manager users
+        if ($currentEmployee) {
+            $query->where('employee_id', $currentEmployee->id);
         }
         
         $leaveRequests = $query->get()
@@ -86,8 +98,13 @@ class EmployeeLeaveRequestController extends BaseHRController
             });
 
         return Inertia::render('MeridianHR/LeaveRequest', array_merge($this->getCommonProps('leave-requests'), [
-            'leaveRequests'  => $leaveRequests,
-            'employees'      => $employees,
+            'leaveRequests'   => $leaveRequests,
+            'employees'       => $employees,
+            'currentEmployee' => $currentEmployee ? [
+                'id'              => $currentEmployee->id,
+                'full_name'       => $currentEmployee->full_name,
+                'employee_number' => $currentEmployee->employee_number,
+            ] : null,
             'leaveTypes'     => LeaveType::active()->orderBy('title')->get(['id', 'title']),
             'statuses'       => EmployeeLeaveStatus::active()->orderBy('title')->get(['id', 'title', 'color']),
             'leaveBalances'  => $leaveBalances,
@@ -107,12 +124,40 @@ class EmployeeLeaveRequestController extends BaseHRController
             'additional_information' => 'nullable|string|max:4000',
         ]);
 
+        // Determine event_id
+        $eventId = $this->getSelectedEventId();
+        
+        // For employees creating their own leave request, ensure we have an event
+        $hrRole = $this->getHRRole();
+        if (!in_array($hrRole, ['admin', 'manager'])) {
+            // If no event selected, try to get employee's active event
+            if (!$eventId) {
+                $employee = Employee::find($validated['employee_id']);
+                $activeEvents = $employee->events()
+                    ->wherePivot('is_active', 1)
+                    ->get();
+                
+                if ($activeEvents->count() === 1) {
+                    // Auto-select the only active event
+                    $eventId = $activeEvents->first()->id;
+                } elseif ($activeEvents->count() === 0) {
+                    return redirect()->back()
+                        ->withInput()
+                        ->withErrors(['employee_id' => 'This employee is not assigned to any active event. Please contact your administrator.']);
+                } else {
+                    return redirect()->back()
+                        ->withInput()
+                        ->withErrors(['employee_id' => 'Please select an event from the sidebar before creating a leave request.']);
+                }
+            }
+        }
+
         // Check for overlapping leave dates
         $hasOverlap = $this->checkDateOverlap(
             $validated['employee_id'],
             $validated['date_from'],
             $validated['date_to'],
-            $this->getSelectedEventId()
+            $eventId
         );
 
         if ($hasOverlap) {
@@ -124,7 +169,7 @@ class EmployeeLeaveRequestController extends BaseHRController
         $leaveRequest = EmployeeLeaveRequest::create([
             'archived'               => 'N',
             'employee_id'            => $validated['employee_id'],
-            'event_id'               => $this->getSelectedEventId(), // Add event context
+            'event_id'               => $eventId,
             'user_id'                => Auth::id() ?? 0,
             'leave_type_id'          => $validated['leave_type_id'],
             'number_of_days'         => $validated['number_of_days'],

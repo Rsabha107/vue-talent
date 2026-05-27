@@ -469,12 +469,12 @@ function addEmployee() {
     contract_end_date: toMySQLDate(form.value.contractEndDate),
     date_of_hire: toMySQLDate(form.value.dateOfHire),
     join_date: toMySQLDate(form.value.joinDate),
-    gender_id: form.value.genderId || null,
-    marital_status_id: form.value.maritalStatusId || null,
+    gender_id: form.value.genderId ? Number(form.value.genderId) : null,
+    marital_status_id: form.value.maritalStatusId ? Number(form.value.maritalStatusId) : null,
     date_of_birth: toMySQLDate(form.value.dateOfBirth),
     town_of_birth: form.value.townOfBirth || '',
-    country_of_birth: form.value.countryOfBirth || null,
-    nationality_id: form.value.nationalityId || null,
+    country_of_birth: form.value.countryOfBirth ? Number(form.value.countryOfBirth) : null,
+    nationality_id: form.value.nationalityId ? Number(form.value.nationalityId) : null,
     language_id: form.value.languageId ? String(form.value.languageId) : '',
     national_identifier_number: form.value.nationalIdNumber || '',
     passport_number: form.value.passportNumber || '',
@@ -771,12 +771,12 @@ function updateEmployee() {
     join_date: toMySQLDate(editForm.value.joinDate),
     
     // Personal Information
-    gender_id: editForm.value.genderId || null,
-    marital_status_id: editForm.value.maritalStatusId || null,
+    gender_id: editForm.value.genderId ? Number(editForm.value.genderId) : null,
+    marital_status_id: editForm.value.maritalStatusId ? Number(editForm.value.maritalStatusId) : null,
     date_of_birth: toMySQLDate(editForm.value.dateOfBirth),
     town_of_birth: editForm.value.townOfBirth || '',
-    country_of_birth: editForm.value.countryOfBirth || null,
-    nationality_id: editForm.value.nationalityId || null,
+    country_of_birth: editForm.value.countryOfBirth ? Number(editForm.value.countryOfBirth) : null,
+    nationality_id: editForm.value.nationalityId ? Number(editForm.value.nationalityId) : null,
     language_id: editForm.value.languageId ? String(editForm.value.languageId) : '',
     
     // Identification

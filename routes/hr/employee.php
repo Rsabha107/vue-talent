@@ -32,6 +32,11 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::post('/timesheet/day', [TimesheetController::class, 'saveTimesheetDay'])->name('timesheet.day');
     Route::post('/timesheet/start', [TimesheetController::class, 'startTimesheet'])->name('timesheet.start');
     
+    // My Timesheets - View all timesheets for current employee (Everyone)
+    Route::get('/my-timesheets', [TimesheetController::class, 'myTimesheets'])->name('my-timesheets');
+    Route::post('/my-timesheets/store', [TimesheetController::class, 'timesheetTalentStore'])->name('my-timesheets.store');
+    Route::delete('/my-timesheets/{id}', [TimesheetController::class, 'timesheetTalentDestroy'])->name('my-timesheets.destroy');
+    
     // Emergency Contacts (Everyone)
     Route::get('/emergency', [EmployeeController::class, 'emergency'])->name('emergency');
     Route::post('/emergency', [EmployeeController::class, 'storeEmergencyContact'])->name('emergency.store');

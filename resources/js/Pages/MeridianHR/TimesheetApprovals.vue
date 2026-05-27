@@ -12,6 +12,7 @@ defineOptions({ layout: MeridianLayout })
 const props = defineProps({
   items:   { type: Array,  default: () => [] },
   hrRole:  { type: String, default: 'manager' },
+  selectedEvent: { type: Number, default: null },
 })
 
 const selected  = ref(new Set())
@@ -163,12 +164,11 @@ function refreshData() {
                 @click="toggle(item.id)" />
             </td>
             <td>
-              <div style="display:flex;align-items:center;gap:10px;">
-                <AppAvatar :name="item.emp" :c="item.c" />
-                <div>
-                  <div style="font-weight:500;">{{ item.emp }}</div>
-                  <div class="mhr-mono" style="font-size:11.5px;color:var(--mhr-ink-3);">{{ item.empId }}</div>
-                </div>
+              <div style="font-weight:500;color:var(--mhr-ink);">{{ item.emp }}</div>
+              <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:2px;">{{ item.empId }}</div>
+              <div v-if="!selectedEvent && item.eventName" style="font-size:11px;color:var(--mhr-ink-3);margin-top:2px;display:flex;align-items:center;gap:4px;">
+                <AppIcon name="calendar" :size="10" style="opacity:0.6;" />
+                <span>{{ item.eventName }}</span>
               </div>
             </td>
             <td>{{ item.period }}</td>

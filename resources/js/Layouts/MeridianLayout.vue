@@ -26,19 +26,23 @@ const selectedEventData = computed(() => {
   return availableEvents.value.find(e => e.id === selectedEvent.value) || null
 })
 
+const isEmployee = computed(() => !['admin', 'manager'].includes(hrRole.value))
+
 const activeEventLabel = computed(() => {
-  if (!selectedEvent.value) return 'All Events'
+  if (!selectedEvent.value) {
+    return isEmployee.value ? 'Select Event' : 'All Events'
+  }
   const ev = availableEvents.value.find(e => e.id === selectedEvent.value)
-  return ev ? ev.name : 'All Events'
+  return ev ? ev.name : (isEmployee.value ? 'Select Event' : 'All Events')
 })
 
 // Navigation structure - now a function to use dynamic badge counts
 const getNavStructure = (counts) => ({
   'employee-basic': [
     { group: 'Workspace', items: [
-      { id: 'dashboard', label: 'Home',       icon: 'home' },
-      { id: 'leave',     label: 'Time off',   icon: 'calendar' },
-      { id: 'timesheet', label: 'Timesheet',  icon: 'clock' },
+      { id: 'dashboard',      label: 'Home',            icon: 'home' },
+      { id: 'leave-requests', label: 'Leave Requests',  icon: 'inbox' },
+      { id: 'my-timesheets',  label: 'My Timesheets',   icon: 'inbox' },
     ]},
     { group: 'Personal', items: [
       { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
@@ -47,9 +51,9 @@ const getNavStructure = (counts) => ({
   ],
   'employee-full': [
     { group: 'Workspace', items: [
-      { id: 'dashboard', label: 'Home',       icon: 'home' },
-      { id: 'leave',     label: 'Time off',   icon: 'calendar' },
-      { id: 'timesheet', label: 'Timesheet',  icon: 'clock' },
+      { id: 'dashboard',      label: 'Home',            icon: 'home' },
+      { id: 'leave-requests', label: 'Leave Requests',  icon: 'inbox' },
+      { id: 'my-timesheets',  label: 'My Timesheets',   icon: 'inbox' },
     ]},
     { group: 'Personal', items: [
       { id: 'addresses', label: 'Addresses',        icon: 'pin' },
@@ -63,9 +67,9 @@ const getNavStructure = (counts) => ({
   ],
   employee: [
     { group: 'Workspace', items: [
-      { id: 'dashboard', label: 'Home',       icon: 'home' },
-      { id: 'leave',     label: 'Time off',   icon: 'calendar' },
-      { id: 'timesheet', label: 'Timesheet',  icon: 'clock' },
+      { id: 'dashboard',      label: 'Home',            icon: 'home' },
+      { id: 'leave-requests', label: 'Leave Requests',  icon: 'inbox' },
+      { id: 'my-timesheets',  label: 'My Timesheets',   icon: 'inbox' },
     ]},
     { group: 'Personal', items: [
       { id: 'addresses', label: 'Addresses',        icon: 'pin' },
@@ -83,7 +87,6 @@ const getNavStructure = (counts) => ({
   manager: [
     { group: 'Workspace', items: [
       { id: 'dashboard', label: 'Home',       icon: 'home' },
-      { id: 'leave',     label: 'Time off',   icon: 'calendar' },
       { id: 'timesheet', label: 'Timesheet',  icon: 'clock' },
     ]},
     { group: 'Approvals', items: [
@@ -129,6 +132,7 @@ const getNavStructure = (counts) => ({
       { id: 'profile',   label: 'My profile', icon: 'user' },
     ]},
     { group: 'Settings', items: [
+      { id: 'application-settings', label: 'Application Settings', icon: 'settings' },
       { id: 'leave-types', label: 'Leave Types', icon: 'settings' },
       { id: 'events', label: 'Events', icon: 'calendar' },
       { id: 'event-templates', label: 'Event Templates', icon: 'users' },
@@ -152,8 +156,10 @@ const PAGE_TITLES = {
   employee:       'Employee',
   'master-employee': 'Employee Master List',
   profile:        'My profile',
+  'application-settings': 'Application Settings',
   'leave-types':  'Leave Types',
   'leave-requests':    'Leave Requests',
+  'my-timesheets':     'My Timesheets',
   'timesheet-talent':  'Timesheet Talent',
   events:         'Events',
   'event-templates': 'Event Templates',
@@ -191,8 +197,10 @@ const ROUTE_MAP = {
   employee:       'hr.employee',
   'master-employee': 'hr.master-employee',
   profile:        'hr.profile',
+  'application-settings': 'hr.settings',
   'leave-types':  'hr.leave-types',
   'leave-requests':    'hr.leave-requests',
+  'my-timesheets':     'hr.my-timesheets',
   'timesheet-talent':  'hr.timesheet-talent',
   'event-templates': 'hr.event-templates',
   events:         'hr.events',
@@ -222,6 +230,8 @@ function logout() {
 function selectEvent(eventId) {
   eventSelectorOpen.value = false
   if (!eventId) {
+    // Only admin/manager can clear event selection
+    if (isEmployee.value) return
     router.post(route('event.clear'), {}, {
       preserveScroll: true,
       onSuccess: () => showToast('Showing all events'),
@@ -276,6 +286,11 @@ onMounted(() => {
   window.addEventListener('resize', handleResize)
   // Auto-collapse on initial mount if mobile
   handleResize()
+  
+  // Auto-select first event for employees if no event selected
+  if (isEmployee.value && !selectedEvent.value && availableEvents.value.length === 1) {
+    selectEvent(availableEvents.value[0].id)
+  }
 })
 
 onUnmounted(() => {
@@ -365,6 +380,7 @@ defineExpose({ showToast })
             <div v-if="eventSelectorOpen" class="event-dropdown">
               <div class="event-dropdown-header">Switch Event</div>
               <button
+                v-if="!isEmployee"
                 class="event-dropdown-item"
                 :class="{ 'event-dropdown-item--active': !selectedEvent }"
                 @click="selectEvent(null)"

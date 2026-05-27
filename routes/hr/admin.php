@@ -9,6 +9,7 @@ use App\Http\Controllers\MeridianHR\EventController as MeridianEventController;
 use App\Http\Controllers\MeridianHR\EventTeamTemplateController;
 use App\Http\Controllers\MeridianHR\LeaveTypeController;
 use App\Http\Controllers\MeridianHR\SalaryController;
+use App\Http\Controllers\MeridianHR\SettingsController;
 use App\Http\Controllers\MeridianHR\TimesheetController;
 use App\Http\Controllers\MeridianHR\RolesPermissionsController;
 use App\Http\Controllers\MeridianHR\UserManagementController;
@@ -65,6 +66,12 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::post('/leave-types', [LeaveTypeController::class, 'store'])->name('leave-types.store');
     Route::put('/leave-types/{id}', [LeaveTypeController::class, 'update'])->name('leave-types.update');
     Route::delete('/leave-types/{id}', [LeaveTypeController::class, 'destroy'])->name('leave-types.destroy');
+    
+    // Application Settings Management
+    Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
+    Route::post('/settings', [SettingsController::class, 'store'])->name('settings.store');
+    Route::put('/settings/{id}', [SettingsController::class, 'update'])->name('settings.update');
+    Route::delete('/settings/{id}', [SettingsController::class, 'destroy'])->name('settings.destroy');
     
     // Leave Request Management (Admin View)
     Route::get('/leave-requests', [EmployeeLeaveRequestController::class, 'index'])->name('leave-requests');

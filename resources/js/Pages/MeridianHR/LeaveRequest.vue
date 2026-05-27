@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { router, useForm, usePage } from '@inertiajs/vue3'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
@@ -13,13 +13,16 @@ import 'v-calendar/style.css'
 defineOptions({ layout: MeridianLayout })
 
 const props = defineProps({
-  hrRole:         { type: String, default: 'admin' },
-  leaveRequests:  { type: Array,  default: () => [] },
-  employees:      { type: Array,  default: () => [] },
-  leaveTypes:     { type: Array,  default: () => [] },
-  statuses:       { type: Array,  default: () => [] },
-  leaveBalances:  { type: Array,  default: () => [] },
+  hrRole:          { type: String, default: 'admin' },
+  leaveRequests:   { type: Array,  default: () => [] },
+  employees:       { type: Array,  default: () => [] },
+  currentEmployee: { type: Object, default: null },
+  leaveTypes:      { type: Array,  default: () => [] },
+  statuses:        { type: Array,  default: () => [] },
+  leaveBalances:   { type: Array,  default: () => [] },
 })
+
+const isEmployee = computed(() => !['admin', 'manager'].includes(props.hrRole))
 
 const dateFormat = computed(() => usePage().props.dateFormat || 'DD/MM/YYYY')
 
@@ -48,7 +51,7 @@ function applyFormat(d, fmt) {
 }
 
 const q = ref('')
-const statusFilter = ref('All')
+const statusFilter = ref('all')
 const showAddModal = ref(false)
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
@@ -59,6 +62,8 @@ const requestToDelete = ref(null)
 const toast = ref(null)
 const openMenuId = ref(null)
 const isRefreshing = ref(false)
+const isCalculatingFromDates = ref(false)
+const isCalculatingFromDatesEdit = ref(false)
 
 const getPendingStatusId = () => {
   const pending = props.statuses.find(s => s.title?.toLowerCase() === 'pending')
@@ -89,8 +94,6 @@ const editForm = useForm({
   additional_information: '',
 })
 
-const statusOptions = computed(() => ['All', ...new Set(props.leaveRequests.map(r => r.statusTitle).filter(Boolean))])
-
 // Get leave balance for selected employee and leave type (Add modal)
 const currentBalance = computed(() => {
   if (!form.employee_id || !form.leave_type_id) return null
@@ -114,8 +117,8 @@ const isApproved = computed(() => {
 const filtered = computed(() => {
   let results = props.leaveRequests
   
-  if (statusFilter.value !== 'All') {
-    results = results.filter(r => r.statusTitle === statusFilter.value)
+  if (statusFilter.value !== 'all') {
+    results = results.filter(r => r.statusTitle.toLowerCase() === statusFilter.value.toLowerCase())
   }
   
   if (q.value) {
@@ -144,27 +147,89 @@ function fmtDate(s) {
 
 function calculateDays() {
   if (form.date_from && form.date_to) {
+    isCalculatingFromDates.value = true
     const from = new Date(form.date_from)
     const to = new Date(form.date_to)
     const diffTime = Math.abs(to - from)
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
     form.number_of_days = diffDays
+    isCalculatingFromDates.value = false
   }
 }
 
 function calculateDaysEdit() {
   if (editForm.date_from && editForm.date_to) {
+    isCalculatingFromDatesEdit.value = true
     const from = new Date(editForm.date_from)
     const to = new Date(editForm.date_to)
     const diffTime = Math.abs(to - from)
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
     editForm.number_of_days = diffDays
+    isCalculatingFromDatesEdit.value = false
   }
+}
+
+function calculateDateTo() {
+  if (form.date_from && form.number_of_days && form.number_of_days > 0) {
+    const from = new Date(form.date_from)
+    const days = parseInt(form.number_of_days)
+    const to = new Date(from)
+    to.setDate(from.getDate() + days - 1)
+    form.date_to = toDateStr(to)
+  }
+}
+
+function calculateDateToEdit() {
+  if (editForm.date_from && editForm.number_of_days && editForm.number_of_days > 0) {
+    const from = new Date(editForm.date_from)
+    const days = parseInt(editForm.number_of_days)
+    const to = new Date(from)
+    to.setDate(from.getDate() + days - 1)
+    editForm.date_to = toDateStr(to)
+  }
+}
+
+// Watch for number_of_days changes and update date_to
+watch(() => form.number_of_days, (newVal) => {
+  if (newVal && form.date_from && !isCalculatingFromDates.value) {
+    calculateDateTo()
+  }
+})
+
+watch(() => editForm.number_of_days, (newVal) => {
+  if (newVal && editForm.date_from && !isCalculatingFromDatesEdit.value) {
+    calculateDateToEdit()
+  }
+})
+
+// Watch for date_from changes and update date_to if number_of_days is set
+watch(() => form.date_from, (newVal) => {
+  if (newVal && form.number_of_days && !isCalculatingFromDates.value) {
+    calculateDateTo()
+  }
+})
+
+watch(() => editForm.date_from, (newVal) => {
+  if (newVal && editForm.number_of_days && !isCalculatingFromDatesEdit.value) {
+    calculateDateToEdit()
+  }
+})
+
+function openAddModal() {
+  // For employees, auto-set their employee_id
+  if (isEmployee.value && props.currentEmployee) {
+    form.employee_id = props.currentEmployee.id
+  }
+  showAddModal.value = true
 }
 
 function resetAddForm() {
   form.reset()
   form.status_id = getPendingStatusId()
+  // Restore employee_id for employee roles
+  if (isEmployee.value && props.currentEmployee) {
+    form.employee_id = props.currentEmployee.id
+  }
 }
 
 function resetEditForm() {
@@ -192,9 +257,13 @@ function toDateObj(str) {
 }
 function toDateStr(d) {
   if (!d) return ''
-  return d instanceof Date
-    ? d.toISOString().split('T')[0]
-    : String(d).split('T')[0]
+  if (d instanceof Date) {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  return String(d).split('T')[0]
 }
 
 const addDateFrom = computed({
@@ -221,10 +290,10 @@ function addLeaveRequest() {
       showToast('Leave request created successfully')
     },
     onError: (errors) => {
-      if (errors.date_from) {
-        showToast(errors.date_from, true)
-      } else {
-        showToast('Failed to create leave request', true)
+      // Show first error in toast, but keep form errors visible inline
+      const firstError = Object.values(errors)[0]
+      if (firstError) {
+        showToast(firstError, true)
       }
     },
   })
@@ -319,7 +388,7 @@ function refreshLeaveRequests() {
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
         <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshLeaveRequests" />
-        <button class="mhr-btn mhr-btn--primary" @click="showAddModal = true">
+        <button class="mhr-btn mhr-btn--primary" @click="openAddModal">
           <AppIcon name="plus" /> Add Leave Request
         </button>
       </div>
@@ -332,14 +401,19 @@ function refreshLeaveRequests() {
     />
 
     <!-- Filters -->
-    <div style="display:flex;gap:10px;margin-bottom:14px;">
-      <div style="position:relative;flex:1;max-width:360px;">
+    <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;justify-content:space-between;">
+      <div style="position:relative;max-width:360px;">
         <AppIcon name="search" :size="14" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--mhr-ink-3);" />
         <input class="mhr-input" style="padding-left:32px;" placeholder="Search by employee, leave type, or reason…" v-model="q" />
       </div>
-      <select class="mhr-select" style="width:180px;" v-model="statusFilter">
-        <option v-for="st in statusOptions" :key="st" :value="st">{{ st }}</option>
-      </select>
+      <div style="display:flex;gap:4px;padding:3px;background:var(--mhr-surface-2);border:1px solid var(--mhr-line);border-radius:9px;">
+        <button v-for="f in ['all','pending','approved','rejected']" :key="f"
+          class="mhr-btn mhr-btn--sm"
+          :style="statusFilter === f ? 'background:var(--green-700);color:#fff;' : 'background:transparent;color:var(--mhr-ink-2);'"
+          @click="statusFilter = f">
+          {{ f.charAt(0).toUpperCase() + f.slice(1) }}
+        </button>
+      </div>
     </div>
 
     <!-- Leave Requests Table -->
@@ -444,7 +518,8 @@ function refreshLeaveRequests() {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div class="mhr-field" style="grid-column:1/-1;">
+            <!-- Employee field: Show selector for admin/manager, read-only for employees -->
+            <div v-if="!isEmployee" class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">EMPLOYEE *</label>
               <EmployeeSelector
                 v-model="form.employee_id"
@@ -452,6 +527,18 @@ function refreshLeaveRequests() {
                 :required="true"
                 placeholder="Search employee..."
               />
+              <div v-if="form.errors.employee_id" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
+                {{ form.errors.employee_id }}
+              </div>
+            </div>
+            <div v-else class="mhr-field" style="grid-column:1/-1;">
+              <label class="mhr-field__label">EMPLOYEE</label>
+              <div style="padding:10px 12px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
+                {{ currentEmployee?.full_name }} ({{ currentEmployee?.employee_number }})
+              </div>
+              <div v-if="form.errors.employee_id" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
+                {{ form.errors.employee_id }}
+              </div>
             </div>
             
             <div class="mhr-field" style="grid-column:1/-1;">
@@ -462,6 +549,9 @@ function refreshLeaveRequests() {
                   {{ type.title }}
                 </option>
               </select>
+              <div v-if="form.errors.leave_type_id" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
+                {{ form.errors.leave_type_id }}
+              </div>
             </div>
 
             <!-- Leave Balance Display -->
@@ -542,11 +632,17 @@ function refreshLeaveRequests() {
                   </div>
                 </template>
               </DatePicker>
+              <div v-if="form.errors.date_to" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
+                {{ form.errors.date_to }}
+              </div>
             </div>
 
             <div class="mhr-field">
               <label class="mhr-field__label">NUMBER OF DAYS *</label>
               <input class="mhr-input" type="number" v-model="form.number_of_days" min="1" />
+              <div v-if="form.errors.number_of_days" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
+                {{ form.errors.number_of_days }}
+              </div>
             </div>
 
             <div class="mhr-field">
@@ -557,16 +653,25 @@ function refreshLeaveRequests() {
                   {{ status.title }}
                 </option>
               </select>
+              <div v-if="form.errors.status_id" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
+                {{ form.errors.status_id }}
+              </div>
             </div>
 
             <div class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">REASON *</label>
               <textarea class="mhr-input" v-model="form.reason" rows="3" placeholder="Reason for leave request..."></textarea>
+              <div v-if="form.errors.reason" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
+                {{ form.errors.reason }}
+              </div>
             </div>
 
             <div class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">ADDITIONAL INFORMATION</label>
               <textarea class="mhr-input" v-model="form.additional_information" rows="2" placeholder="Any additional notes..."></textarea>
+              <div v-if="form.errors.additional_information" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
+                {{ form.errors.additional_information }}
+              </div>
             </div>
           </div>
         </div>

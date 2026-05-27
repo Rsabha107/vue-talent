@@ -14,6 +14,7 @@ const props = defineProps({
   pendingLeaves:     { type: Array, default: () => [] },
   pendingTimesheets: { type: Array, default: () => [] },
   leaveBalance:      { type: Object, default: () => ({}) },
+  upcomingLeaves:    { type: Array,  default: () => [] },
   employees:         { type: Array,  default: () => [] },
   headcountByDept:   { type: Array,  default: () => [] },
 })
@@ -84,7 +85,7 @@ const maxHeadcount = computed(() => {
     </div>
 
     <!-- Employee view -->
-    <template v-if="hrRole === 'employee'">
+    <template v-if="!['admin', 'manager'].includes(hrRole)">
       <div class="mhr-grid-4" style="margin-bottom:24px;">
         <!-- Leave balance tiles -->
         <div class="mhr-stat" v-for="(bal, type) in { Annual: lb.annual, Sick: lb.sick, Personal: lb.personal }" :key="type">
@@ -126,8 +127,23 @@ const maxHeadcount = computed(() => {
               <a :href="route('hr.leave')" class="mhr-btn mhr-btn--ghost mhr-btn--sm">View all</a>
             </div>
           </div>
-          <div class="mhr-card__body" style="padding:16px 20px;">
-            <p style="color:var(--mhr-ink-3);font-size:13px;">No upcoming absences in the next 14 days.</p>
+          <div class="mhr-card__body" style="padding:0;">
+            <p v-if="!upcomingLeaves.length" style="color:var(--mhr-ink-3);font-size:13px;padding:16px 20px;">
+              No upcoming absences in the next 14 days.
+            </p>
+            <div v-for="r in upcomingLeaves" :key="r.id"
+              style="display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--mhr-line-2);">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13.5px;font-weight:500;">{{ r.type }}</div>
+                <div style="font-size:12px;color:var(--mhr-ink-3);">{{ fmtRange(r.from, r.to) }} · {{ r.days }}d</div>
+              </div>
+              <span class="mhr-pill"
+                :class="{
+                  'mhr-pill--success': r.status === 'Approved',
+                  'mhr-pill--warn':    r.status === 'Pending',
+                  'mhr-pill--danger':  r.status === 'Rejected',
+                }">{{ r.status }}</span>
+            </div>
           </div>
         </div>
 

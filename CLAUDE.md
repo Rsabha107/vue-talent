@@ -94,9 +94,64 @@ HR controllers return data shaped for the page via `Inertia::render()`. Eligibil
 
 Singular model names (`Employee`, `LeaveType`), plural snake_case table names (`employee_leave_types`, `leave_eligibilities`). Most models use `active_flag` (integer 0/1) rather than soft deletes. Deactivation is done by setting `active_flag = 0`.
 
+## Design Reference: HTML Prototype
+
+The canonical design reference is `C:\Users\r.sabha\Downloads\Meridian HR _standalone_ (5).html` — a self-contained React prototype (compiled, not source). Open in a browser; use the **Tweaks panel** (bottom-right corner) to switch between `employee`, `manager`, and `admin` roles. There are also theme, density, accent colour, and font options there.
+
+### Pages in the prototype
+
+`dashboard`, `leave`, `timesheet`, `approve-leave`, `approve-time`, `documents`, `payslips`, `directory`, `profile`
+
+### Dashboard layouts by role
+
+**Employee** — 4-col stat row + 2-col (1.5fr / 1fr) cards:
+- Stat tiles: Annual leave (remaining/total + progress bar), Sick leave, Personal leave, Next pay (dark green gradient, amount + date)
+- Leave tile detail: progress bar split into used (dark green) + pending (light green); delta shows "X used · Y pending"
+- Cards: "Upcoming time off" (your team's next 14 days) + "Recent activity" (personal feed, last 5 items with avatars)
+
+**Manager** — 4-col stat row + 2-col (1.5fr / 1fr) cards:
+- Stat tiles: Leave requests (clickable → approvals queue), Timesheets (clickable → timesheet approvals), Team out today, Team utilization (% with delta)
+- Cards: "Pending leave approvals" (list with overlap warnings + Review button) + "Team out next 14 days"
+
+**Admin** — 4-col stat row + 2-col charts + full-width activity log:
+- Stat tiles: Headcount, On leave today (with type breakdown), Pending requests (clickable), Payroll · Month Year
+- Charts: "Headcount by department" (horizontal bar, dept color-coded) + "Org utilization" (vertical bar, last 6 months)
+- Full-width: "Recent system activity" log (cross-org, last 24 h, with Export button)
+
+### CSS class mapping (prototype → our implementation)
+
+| Prototype class | Our `.mhr-*` equivalent |
+|---|---|
+| `.stat` / `.stat__label` / `.stat__value` / `.stat__unit` / `.stat__delta` | `.mhr-stat` and its `__*` variants |
+| `.card` / `.card__hd` / `.card__body` | `.mhr-card` / `.mhr-card__hd` / `.mhr-card__body` |
+| `.grid-4` / `.grid-2` | `.mhr-grid-4` / `.mhr-grid-2` |
+| `.pill--success/warn/danger/info` | `.mhr-pill--success/warn/danger` |
+| `.avatar` | `<AppAvatar>` component |
+
+## Meridian HR Role System
+
+`BaseHRController::getHRRole()` maps Spatie roles to one of four strings: `admin`, `manager`, `employee-full`, `employee-basic`. It never returns the plain string `'employee'`.
+
+**Priority order:** admin > manager > employee-full > employee-basic (default for any authenticated user).
+
+When branching on role in Vue templates, always guard against all variants — never check `hrRole === 'employee'` because that will never match. Use `!['admin', 'manager'].includes(hrRole)` to target all employee variants. The same pattern is used in PHP: `!in_array($this->getHRRole(), ['admin', 'manager'])`.
+
+The `hrRole` prop is passed to every Meridian HR page via `BaseHRController::getCommonProps()`. `MeridianLayout` uses it for sidebar navigation (separate nav structures for `employee-basic`, `employee-full`, `manager`, `admin`).
+
+### Dashboard role views (`Dashboard.vue`)
+
+Three template blocks share one page:
+- **Employee** (`!['admin', 'manager'].includes(hrRole)`) — personal leave balances, next pay tile, upcoming own leaves, personal activity feed
+- **Manager** (`hrRole === 'manager'`) — team pending approvals, team out today, approval queue
+- **Admin** (`v-else`) — org headcount, on-leave breakdown, pending requests, dept chart, utilization chart
+
+### Leave Balance Data
+
+`LeaveBalanceService::getEmployeeBalanceSummary($employeeId, $eventId)` returns `EmployeeLeaveBalance` records with a `leaveType` relation. Map to dashboard shape by matching `strtolower($balance->leaveType->title)` containing `'annual'`, `'sick'`, or `'personal'`. The linked employee is found via `Employee::where('user_id', auth()->id())->first()`.
+
 ## Authentication
 
 - Standard Laravel Breeze email/password flow (`routes/auth.php`)
 - Microsoft SSO via Laravel Socialite (`MicrosoftController`)
 - OTP middleware (`otp.pending`) sits between login and app access
-- Spatie Permission guards roles/permissions; `hrRole` passed to pages is derived from `request()->query('role', 'admin')` in HR controllers
+- Spatie Permission guards roles/permissions; `hrRole` passed to pages is derived from `BaseHRController::getHRRole()` which checks Spatie roles in priority order
