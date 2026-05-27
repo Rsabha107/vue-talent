@@ -108,26 +108,61 @@ abstract class BaseHRController extends Controller
 
     /**
      * Get HR role from authenticated user's Spatie roles
-     * Priority: admin > manager > employee
+     * Returns granular role for permission-based access control
+     * Priority: admin > manager > employee-full > employee-basic
      */
     protected function getHRRole(): string
     {
         $user = auth()->user();
         
         if (!$user) {
-            return 'employee';
+            return 'employee-basic';
         }
         
         // Check Spatie roles in priority order
-        if ($user->hasRole('admin') || $user->hasRole('administrator') || $user->hasRole('hr-admin')) {
+        if ($user->hasRole(['admin', 'administrator', 'hr-admin'])) {
             return 'admin';
         }
         
-        if ($user->hasRole('manager') || $user->hasRole('supervisor')) {
+        if ($user->hasRole(['manager', 'supervisor'])) {
             return 'manager';
         }
         
-        return 'employee';
+        // Check for employee variants
+        if ($user->hasRole('employee-full')) {
+            return 'employee-full';
+        }
+        
+        if ($user->hasRole('employee-basic')) {
+            return 'employee-basic';
+        }
+        
+        // Check legacy 'employee' role - treat as employee-full
+        if ($user->hasRole('employee')) {
+            return 'employee-full';
+        }
+        
+        // Default to basic employee for any authenticated user
+        return 'employee-basic';
+    }
+    
+    /**
+     * Check if user has extended employee access
+     * Returns true for employee-full, manager, or admin
+     */
+    protected function hasExtendedAccess(): bool
+    {
+        $role = $this->getHRRole();
+        return in_array($role, ['employee-full', 'manager', 'admin']);
+    }
+    
+    /**
+     * Check if user is admin or manager
+     */
+    protected function isManagerOrAdmin(): bool
+    {
+        $role = $this->getHRRole();
+        return in_array($role, ['manager', 'admin']);
     }
 
     /**

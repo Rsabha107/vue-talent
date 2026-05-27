@@ -60,6 +60,11 @@ class EmployeeTimesheet extends Model
         return $this->belongsTo(Employee::class);
     }
 
+    public function event(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Ems\Event::class);
+    }
+
     public function performer(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Employee::class, 'performer_id');

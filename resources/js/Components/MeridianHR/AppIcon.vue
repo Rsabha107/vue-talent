@@ -54,6 +54,7 @@ const ICONS = {
   pin:        `<path d="M12 2v8m0 0L8 6m4 4 4-4M8 14l-3 8 8-3 7 7V8L8 14Z"/>`,
   image:      `<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L9 18"/>`,
   close:      `<path d="M6 6 18 18M6 18 18 6"/>`,
+  shield:     `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/>`,
 }
 </script>
 

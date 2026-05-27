@@ -178,11 +178,26 @@ class TimesheetController extends BaseHRController
                 $q->where('events.id', $eventId)->where('employee_events.is_active', 1);
             });
         }
-        $employees = $empQuery->get()->map(fn($e) => ['id' => $e->id, 'fullName' => $e->full_name]);
+        $employees = $empQuery->get()->map(fn($e) => [
+            'id' => $e->id,
+            'full_name' => $e->full_name,
+            'employee_number' => $e->employee_number
+        ]);
 
         // Timesheets with entries
         $tsQuery = EmployeeTimesheet::active()
-            ->with(['employee', 'entries', 'performer:id,full_name'])
+            ->with([
+                'employee' => function ($query) use ($eventId) {
+                    if ($eventId) {
+                        $query->with(['events' => function ($q) use ($eventId) {
+                            $q->where('events.id', $eventId);
+                        }]);
+                    }
+                },
+                'event',
+                'entries',
+                'performer:id,full_name'
+            ])
             ->forEvent($eventId)
             ->orderByDesc('year')
             ->orderByDesc('month_id');
@@ -216,19 +231,45 @@ class TimesheetController extends BaseHRController
 
             // Narrow to contract / event assignment window if applicable
             if ($eventId && $emp) {
-                $pivot = $emp->events()->where('events.id', $eventId)->first()?->pivot;
-                if ($pivot) {
-                    if ($pivot->assigned_at) {
-                        $a = \Carbon\Carbon::parse($pivot->assigned_at);
-                        if ($a->year === $ts->year && $a->month === $ts->month_id) {
+                // Event context: use event assignment dates (assigned_at/released_at)
+                // Use eagerly loaded events instead of fresh query
+                $eventPivot = null;
+                
+                // Try to get from eagerly loaded relationship first
+                if ($emp->relationLoaded('events') && $emp->events->isNotEmpty()) {
+                    $eventPivot = $emp->events->first()->pivot;
+                } else {
+                    // Fallback to fresh query if relationship not loaded
+                    $eventRelation = $emp->events()->where('events.id', $eventId)->first();
+                    $eventPivot = $eventRelation?->pivot;
+                }
+                
+                if ($eventPivot) {
+                    if ($eventPivot->assigned_at) {
+                        $a = \Carbon\Carbon::parse($eventPivot->assigned_at);
+                        if ($a->year == $ts->year && $a->month == $ts->month_id) {
                             $startDay = max($startDay, $a->day);
                         }
                     }
-                    if ($pivot->released_at) {
-                        $r = \Carbon\Carbon::parse($pivot->released_at);
-                        if ($r->year === $ts->year && $r->month === $ts->month_id) {
+                    if ($eventPivot->released_at) {
+                        $r = \Carbon\Carbon::parse($eventPivot->released_at);
+                        if ($r->year == $ts->year && $r->month == $ts->month_id) {
                             $endDay = min($endDay, $r->day);
                         }
+                    }
+                }
+            } elseif ($emp) {
+                // No event context: use employee contract dates (contract_start_date/contract_end_date)
+                if ($emp->contract_start_date) {
+                    $contractStart = \Carbon\Carbon::parse($emp->contract_start_date);
+                    if ($contractStart->year == $ts->year && $contractStart->month == $ts->month_id) {
+                        $startDay = max($startDay, $contractStart->day);
+                    }
+                }
+                if ($emp->contract_end_date) {
+                    $contractEnd = \Carbon\Carbon::parse($emp->contract_end_date);
+                    if ($contractEnd->year == $ts->year && $contractEnd->month == $ts->month_id) {
+                        $endDay = min($endDay, $contractEnd->day);
                     }
                 }
             }
@@ -266,7 +307,10 @@ class TimesheetController extends BaseHRController
                 'id'            => $ts->id,
                 'employeeId'    => $ts->employee_id,
                 'employeeName'  => $emp?->full_name ?? 'Unknown',
+                'employeeNumber' => $emp?->employee_number,
                 'employeeColor' => $emp?->avatar_color ?? 0,
+                'eventId'       => $ts->event_id,
+                'eventName'     => $ts->event?->name,
                 'period'        => $period,
                 'monthNumber'   => $ts->month_id,
                 'year'          => $ts->year,
@@ -486,6 +530,70 @@ class TimesheetController extends BaseHRController
         $actions    = $request->day_action;
 
         DB::transaction(function () use ($tsId, $employeeId, $days, $actions) {
+            // Get the timesheet and employee
+            $timesheet = EmployeeTimesheet::with('employee')->findOrFail($tsId);
+            $employee = $timesheet->employee;
+            $eventId = $timesheet->event_id;
+            
+            // Determine valid day range based on contract dates
+            $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $timesheet->month_id, $timesheet->year);
+            $validStartDay = 1;
+            $validEndDay = $daysInMonth;
+            
+            if ($eventId && $employee) {
+                // Event context: use event assignment dates
+                $pivot = $employee->events()->where('events.id', $eventId)->first()?->pivot;
+                if ($pivot) {
+                    if ($pivot->assigned_at) {
+                        $assignedAt = \Carbon\Carbon::parse($pivot->assigned_at);
+                        if ($assignedAt->year == $timesheet->year && $assignedAt->month == $timesheet->month_id) {
+                            $validStartDay = max($validStartDay, $assignedAt->day);
+                        }
+                    }
+                    if ($pivot->released_at) {
+                        $releasedAt = \Carbon\Carbon::parse($pivot->released_at);
+                        if ($releasedAt->year == $timesheet->year && $releasedAt->month == $timesheet->month_id) {
+                            $validEndDay = min($validEndDay, $releasedAt->day);
+                        }
+                    }
+                }
+            } elseif ($employee) {
+                // No event: use employee contract dates
+                if ($employee->contract_start_date) {
+                    $contractStart = \Carbon\Carbon::parse($employee->contract_start_date);
+                    if ($contractStart->year == $timesheet->year && $contractStart->month == $timesheet->month_id) {
+                        $validStartDay = max($validStartDay, $contractStart->day);
+                    }
+                }
+                if ($employee->contract_end_date) {
+                    $contractEnd = \Carbon\Carbon::parse($employee->contract_end_date);
+                    if ($contractEnd->year == $timesheet->year && $contractEnd->month == $timesheet->month_id) {
+                        $validEndDay = min($validEndDay, $contractEnd->day);
+                    }
+                }
+            }
+            
+            // Validate all submitted days are within valid range
+            $invalidDays = [];
+            foreach ($days as $day) {
+                if ($day < $validStartDay || $day > $validEndDay) {
+                    $invalidDays[] = $day;
+                }
+            }
+            
+            if (!empty($invalidDays)) {
+                $contractInfo = '';
+                if ($eventId) {
+                    $contractInfo = 'Event assignment period';
+                } else {
+                    $contractInfo = 'Employee contract period';
+                }
+                throw new \Exception(
+                    "Cannot save entries for day(s) " . implode(', ', $invalidDays) . ". " .
+                    "{$contractInfo} allows only days {$validStartDay} to {$validEndDay} for this month."
+                );
+            }
+            
             // Delete existing entries for this timesheet then re-insert
             EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->delete();
 
@@ -546,11 +654,6 @@ class TimesheetController extends BaseHRController
             $startDay = $firstDay->calendar_day;
             $endDay = $lastDay->calendar_day;
 
-            // Adjust end day to 30 for month-end calculations
-            if ($endDay === 31 || ($timesheet->month_id == 2 && in_array($endDay, [28, 29]))) {
-                $endDay = 30;
-            }
-
             // Count actions
             $countWorked = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'W')->count();
             $countLeaves = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'L')->count();
@@ -559,9 +662,21 @@ class TimesheetController extends BaseHRController
             // Calculate payment
             $monthlySalary = $salary?->net_salary ?? 0;
             $dailyRate = $monthlySalary / 30;
-            $workedDays = $endDay - $startDay + 1;
-            $paidDays = max(0, $workedDays - $countUnpaid);
-            $totalPayment = $dailyRate * $paidDays;
+            
+            // Determine if this is a full month (contract goes to month-end)
+            $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $timesheet->month_id, $timesheet->year);
+            $isFullMonth = ($startDay <= 5 && $endDay >= $daysInMonth - 2); // Covers substantially full month
+            
+            if ($isFullMonth) {
+                // Full month: pay full salary minus unpaid days only
+                $totalPayment = $monthlySalary - ($countUnpaid * $dailyRate);
+                $paidDays = 30 - $countUnpaid;
+            } else {
+                // Partial month: prorate based on actual calendar days worked
+                $workedDays = $endDay - $startDay + 1; // Actual days in range
+                $paidDays = max(0, $workedDays - $countUnpaid);
+                $totalPayment = $dailyRate * $paidDays;
+            }
 
             // Update timesheet with calculated values
             $timesheet->update([

@@ -6,7 +6,11 @@
       "Bash(Format-Table -AutoSize)",
       "Bash(ls \"c:/laragon/www/talentnest/resources/views/hr/admin/\")",
       "Read(//c/laragon/www/talentnest/resources/views/hr/admin/**)",
-      "Bash(php artisan *)"
+      "Bash(php artisan *)",
+      "Bash(grep -o '\"<!DOCTYPE[^\"]*</html>\"' \"C:\\\\Users\\\\r.sabha\\\\Downloads\\\\Meridian HR _standalone_ \\(5\\).html\")",
+      "Read(//tmp/**)",
+      "Bash(python3)",
+      "Bash(sed 's/\\\\\\\\n/\\\\n/g')"
     ]
   }
 }

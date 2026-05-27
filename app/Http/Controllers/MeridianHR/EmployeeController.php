@@ -450,7 +450,7 @@ class EmployeeController extends BaseHRController
         
         // Base query for active employees
         $query = Employee::active()
-            ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType'])
+            ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType', 'reportingTo'])
             ->withCount(['documents as documents_count' => function ($query) use ($eventId) {
                 $query->where('active_flag', 1)
                       ->where('event_id', $eventId);
@@ -516,6 +516,7 @@ class EmployeeController extends BaseHRController
                     'contractType'      => $emp->contractType->title ?? null,
                     'contractTypeId'    => $emp->contract_type_id,
                     'reporting_to_id'   => $emp->reporting_to_id,
+                    'reportingTo'       => $emp->reportingTo->full_name ?? null,
                     
                     // Contract & Dates (show event assignment dates if in event context)
                     'contractStart'     => $eventId && $emp->events->isNotEmpty()
@@ -651,7 +652,7 @@ class EmployeeController extends BaseHRController
         
         // Get ALL active employees without event filtering
         $employees = Employee::active()
-            ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType'])
+            ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType', 'reportingTo'])
             ->withCount(['documents as documents_count' => function ($query) {
                 $query->where('active_flag', 1);
             }])
@@ -692,6 +693,7 @@ class EmployeeController extends BaseHRController
                     'contractType'      => $emp->contractType->title ?? null,
                     'contractTypeId'    => $emp->contract_type_id,
                     'reporting_to_id'   => $emp->reporting_to_id,
+                    'reportingTo'       => $emp->reportingTo->full_name ?? null,
                     
                     // Contract & Dates
                     'contractStart'     => $emp->contract_start_date?->format('Y-m-d'),

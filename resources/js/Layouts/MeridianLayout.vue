@@ -34,6 +34,33 @@ const activeEventLabel = computed(() => {
 
 // Navigation structure - now a function to use dynamic badge counts
 const getNavStructure = (counts) => ({
+  'employee-basic': [
+    { group: 'Workspace', items: [
+      { id: 'dashboard', label: 'Home',       icon: 'home' },
+      { id: 'leave',     label: 'Time off',   icon: 'calendar' },
+      { id: 'timesheet', label: 'Timesheet',  icon: 'clock' },
+    ]},
+    { group: 'Personal', items: [
+      { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
+      { id: 'profile',   label: 'My profile', icon: 'user' },
+    ]},
+  ],
+  'employee-full': [
+    { group: 'Workspace', items: [
+      { id: 'dashboard', label: 'Home',       icon: 'home' },
+      { id: 'leave',     label: 'Time off',   icon: 'calendar' },
+      { id: 'timesheet', label: 'Timesheet',  icon: 'clock' },
+    ]},
+    { group: 'Personal', items: [
+      { id: 'addresses', label: 'Addresses',        icon: 'pin' },
+      { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
+    ]},
+    { group: 'Records', items: [
+      { id: 'documents', label: 'Documents',  icon: 'doc' },
+      { id: 'payslips',  label: 'Payslips',   icon: 'wallet' },
+      { id: 'profile',   label: 'My profile', icon: 'user' },
+    ]},
+  ],
   employee: [
     { group: 'Workspace', items: [
       { id: 'dashboard', label: 'Home',       icon: 'home' },
@@ -65,8 +92,6 @@ const getNavStructure = (counts) => ({
     ]},
     { group: 'Personal', items: [
       { id: 'addresses', label: 'Addresses',        icon: 'pin' },
-      { id: 'banks',     label: 'Banks',            icon: 'wallet' },
-      { id: 'salary',    label: 'Salary',           icon: 'wallet' },
       { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
     ]},
     { group: 'Records', items: [
@@ -109,6 +134,10 @@ const getNavStructure = (counts) => ({
       { id: 'event-templates', label: 'Event Templates', icon: 'users' },
       { id: 'venues', label: 'Venues', icon: 'pin' },
     ]},
+    { group: 'Security/Privacy', items: [
+      { id: 'manager-users',      label: 'User Management',     icon: 'users' },
+      { id: 'roles-permissions',  label: 'Roles & Permissions', icon: 'shield' },
+    ]},
   ],
 })
 
@@ -133,11 +162,14 @@ const PAGE_TITLES = {
   banks:          'Bank Details',
   salary:         'Salary Information',
   emergency:      'Emergency Contact',
+  'manager-users':      'User Management',
+  'roles-permissions':  'Roles & Permissions',
 }
 
 const navGroups = computed(() => {
   const nav = getNavStructure(pendingCounts.value)
-  return nav[hrRole.value] || nav.employee
+  // Fallback to employee-basic for unknown roles
+  return nav[hrRole.value] || nav['employee-basic'] || nav.employee
 })
 const pageTitle = computed(() => PAGE_TITLES[hrPage.value] || 'Home')
 const breadcrumbGroup = computed(() => {
@@ -152,6 +184,8 @@ const ROUTE_MAP = {
   timesheet:      'hr.timesheet',
   'approve-leave':'hr.approvals.leave',
   'approve-time': 'hr.approvals.time',
+  'manager-users':     'hr.manager-users',
+  'roles-permissions': 'hr.roles-permissions',
   documents:      'hr.documents',
   payslips:       'hr.payslips',
   employee:       'hr.employee',

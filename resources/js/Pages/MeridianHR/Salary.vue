@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed } from 'vue'
 import { router, useForm, usePage } from '@inertiajs/vue3'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
+import EmployeeSelector from '@/Components/MeridianHR/EmployeeSelector.vue'
 import { DatePicker } from 'v-calendar'
 import 'v-calendar/style.css'
 
@@ -45,8 +46,6 @@ const salaryToDelete = ref(null)
 const toast = ref(null)
 const openMenuId = ref(null)
 const isRefreshing = ref(false)
-const employeeSearch = ref('')
-const showEmployeeDropdown = ref(false)
 
 const form = useForm({
   employee_id: null,
@@ -73,18 +72,7 @@ const filtered = computed(() => {
   )
 })
 
-const selectedEmployee = computed(() => {
-  return props.employees.find(emp => emp.id === form.employee_id)
-})
 
-const filteredEmployees = computed(() => {
-  if (!employeeSearch.value) return props.employees
-  const query = employeeSearch.value.toLowerCase()
-  return props.employees.filter(emp =>
-    emp.full_name?.toLowerCase().includes(query) ||
-    emp.employee_number?.toLowerCase().includes(query)
-  )
-})
 
 const canManage = computed(() => {
   return props.hrRole === 'admin' || props.hrRole === 'manager'
@@ -119,13 +107,6 @@ function resetAddForm() {
   form.reset()
   form.employee_id = props.hrRole === 'employee' ? currentEmployeeId.value : null
   form.effective_start_date = new Date().toISOString().split('T')[0]
-  employeeSearch.value = ''
-  showEmployeeDropdown.value = false
-}
-
-function clearEmployee() {
-  form.employee_id = null
-  employeeSearch.value = ''
 }
 
 function resetEditForm() {
@@ -237,21 +218,7 @@ function refreshSalaries() {
   })
 }
 
-// Close dropdowns when clicking outside
-function handleClickOutside(event) {
-  const employeeDropdown = event.target.closest('[data-employee-dropdown]')
-  if (!employeeDropdown) {
-    showEmployeeDropdown.value = false
-  }
-}
 
-onMounted(() => {
-  document.addEventListener('click', handleClickOutside)
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClickOutside)
-})
 </script>
 
 <template>
@@ -361,50 +328,15 @@ onBeforeUnmount(() => {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div class="mhr-field" style="grid-column:1/-1;position:relative;" data-employee-dropdown>
+            <div class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">EMPLOYEE *</label>
-              <div style="position:relative;">
-                <input
-                  type="text"
-                  class="mhr-input"
-                  :value="showEmployeeDropdown ? employeeSearch : (selectedEmployee ? `${selectedEmployee.full_name} (${selectedEmployee.employee_number})` : '')"
-                  @focus="showEmployeeDropdown = true; employeeSearch = ''"
-                  @input="employeeSearch = $event.target.value; showEmployeeDropdown = true"
-                  placeholder="Search employee..."
-                  :style="selectedEmployee && !showEmployeeDropdown ? 'cursor:pointer;padding-right:36px;' : 'cursor:pointer;'"
-                />
-                <button
-                  v-if="selectedEmployee && !showEmployeeDropdown"
-                  type="button"
-                  @click.stop="clearEmployee"
-                  class="mhr-icon-btn"
-                  style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:24px;height:24px;padding:0;"
-                  title="Clear selection"
-                >
-                  <AppIcon name="x" :size="14" />
-                </button>
-                <div v-if="showEmployeeDropdown" style="position:absolute;top:100%;left:0;right:0;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);margin-top:4px;max-height:250px;overflow-y:auto;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.1);">
-                  <div
-                    v-if="filteredEmployees.length === 0"
-                    style="padding:12px;color:var(--mhr-ink-3);font-size:13px;text-align:center;"
-                  >
-                    No employees found
-                  </div>
-                  <button
-                    v-for="emp in filteredEmployees"
-                    :key="emp.id"
-                    type="button"
-                    @click="form.employee_id = emp.id; showEmployeeDropdown = false; employeeSearch = ''"
-                    style="width:100%;padding:10px 12px;border:none;background:transparent;text-align:left;cursor:pointer;font-size:13px;color:var(--mhr-ink);display:flex;flex-direction:column;gap:2px;"
-                    :style="form.employee_id === emp.id ? 'background:var(--mhr-accent);color:white;' : ''"
-                    @mouseenter="$event.currentTarget.style.background = form.employee_id === emp.id ? 'var(--mhr-accent)' : 'var(--mhr-surface-2)'"
-                    @mouseleave="$event.currentTarget.style.background = form.employee_id === emp.id ? 'var(--mhr-accent)' : 'transparent'"
-                  >
-                    <span style="font-weight:500;">{{ emp.full_name }}</span>
-                    <span style="font-size:12px;opacity:0.8;">{{ emp.employee_number }}</span>
-                  </button>
-                </div>
-              </div>
+              <EmployeeSelector
+                v-model="form.employee_id"
+                :employees="employees"
+                placeholder="Search employee..."
+                required
+              />
+              <p v-if="form.errors.employee_id" class="mhr-field__error">{{ form.errors.employee_id }}</p>
             </div>
 
             <div class="mhr-field" style="grid-column:1/-1;">

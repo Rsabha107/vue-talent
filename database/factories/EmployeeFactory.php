@@ -3,7 +3,9 @@
 namespace Database\Factories;
 
 use App\Models\Employee;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Employee>
@@ -37,7 +39,17 @@ class EmployeeFactory extends Factory
             fake()->dateTimeBetween('now', '+5 years')->format('Y-m-d')
         );
         
+        // Create user account with employee-basic role
+        $workEmail = strtolower($firstName . '.' . $lastName . '@company.com');
+        $user = User::create([
+            'name' => $fullName,
+            'email' => $workEmail,
+            'password' => Hash::make('password'), // Default password
+        ]);
+        $user->assignRole('employee-basic');
+        
         return [
+            'user_id' => $user->id,
             'archived' => 'N',
             'employee_number' => 'EMP-' . fake()->unique()->numerify('#####'),
             'national_identifier_number' => fake()->numerify('###########'),
@@ -58,7 +70,7 @@ class EmployeeFactory extends Factory
             'town_of_birth' => fake()->city(),
             'country_of_birth' => (string) fake()->numberBetween(1, 246),
             'personal_email_address' => fake()->safeEmail(),
-            'work_email_address' => strtolower($firstName . '.' . $lastName . '@company.com'),
+            'work_email_address' => $workEmail,
             'phone_number' => fake()->numerify('+965########'),
             'alt_phone_number' => fake()->optional(0.5)->numerify('+965########'),
             'nationality_id' => fake()->numberBetween(1, 246),

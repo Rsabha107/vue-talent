@@ -1,10 +1,12 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import AppAvatar from '@/Components/MeridianHR/AppAvatar.vue'
 import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
-import { router } from '@inertiajs/vue3'
+import EventBanner from '@/Components/MeridianHR/EventBanner.vue'
+import EmployeeSelector from '@/Components/MeridianHR/EmployeeSelector.vue'
+import { router, usePage } from '@inertiajs/vue3'
 
 // ── Toast ────────────────────────────────────────────────────────────
 const toasts = ref([])
@@ -51,10 +53,23 @@ const props = defineProps({
   */
 })
 
+// ── Event context ───────────────────────────────────────────────────
+const selectedEventId = computed(() => usePage().props.selectedEvent)
+const availableEvents = computed(() => usePage().props.availableEvents || [])
+const selectedEventData = computed(() => {
+  if (!selectedEventId.value) return null
+  return availableEvents.value.find(e => e.id === selectedEventId.value)
+})
+
 // ── View state ──────────────────────────────────────────────────────
 const view            = ref('list')   // 'list' | 'entries'
 const activeTimesheet = ref(null)
 const localTimesheets = ref(JSON.parse(JSON.stringify(props.timesheets)))
+
+// Sync localTimesheets when props.timesheets changes (after reload)
+watch(() => props.timesheets, (newTimesheets) => {
+  localTimesheets.value = JSON.parse(JSON.stringify(newTimesheets))
+}, { deep: true })
 
 // ── Filters ─────────────────────────────────────────────────────────
 const filterPeriod = ref('')
@@ -115,33 +130,12 @@ function submitAdd() {
     month_selected_id: addForm.value.monthId,
     year_selected:     addForm.value.year,
   }, {
+    preserveScroll: true,
     onSuccess: () => {
-      // Optimistic list update so the user sees the new record immediately
-      const month = props.monthsName.find(m => String(m.id) === String(addForm.value.monthId))
-      const emp   = props.employees.find(e => String(e.id) === String(addForm.value.employeeId))
-      const period = month ? `${month.monthName}-${addForm.value.year}` : String(addForm.value.year)
-      const monthNumber = month?.monthNumber || 1
-      const year = Number(addForm.value.year)
-      const daysInMonth = getDaysInMonth(year, monthNumber)
-      
-      localTimesheets.value.push({
-        id:            Date.now(),
-        employeeId:    addForm.value.employeeId || null,
-        employeeName:  emp?.fullName || 'Me',
-        employeeColor: 0,
-        period,
-        monthNumber,
-        year,
-        daysInMonth,
-        startDay:      1,
-        endDay:        daysInMonth,
-        statusId:      1,
-        statusTitle:   'Pending',
-        hasEntries:    false,
-        entries:       [],
-      })
       showAddModal.value = false
       showToast('Timesheet created successfully.')
+      // Reload to get fresh data with leave entries calculated
+      router.reload({ preserveScroll: true })
     },
     onError: (errors) => {
       // Map server validation keys to form error fields
@@ -485,6 +479,12 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         </div>
       </div>
 
+      <!-- Event Context Banner -->
+      <EventBanner 
+        v-if="selectedEventData"
+        :event-data="selectedEventData"
+      />
+
       <!-- Filters -->
       <div style="display:flex;gap:10px;margin-bottom:16px;">
         <div style="position:relative;flex:1;max-width:280px;">
@@ -531,7 +531,14 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
                 <td v-if="isAdminOrManager">
                   <div style="display:flex;align-items:center;gap:10px;">
                     <AppAvatar :name="ts.employeeName" :c="ts.employeeColor" />
-                    <span style="font-weight:500;">{{ ts.employeeName }}</span>
+                    <div>
+                      <div style="font-weight:500;">{{ ts.employeeName }}</div>
+                      <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:2px;">{{ ts.employeeNumber }}</div>
+                      <div v-if="!selectedEventId && ts.eventName" style="font-size:11px;color:var(--mhr-ink-3);margin-top:2px;display:flex;align-items:center;gap:4px;">
+                        <AppIcon name="calendar" :size="10" style="opacity:0.6;" />
+                        <span>{{ ts.eventName }}</span>
+                      </div>
+                    </div>
                   </div>
                 </td>
                 <td>
@@ -832,11 +839,12 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <!-- Employee selector — admin / manager only -->
           <div v-if="isAdminOrManager" class="mhr-field">
             <label class="mhr-field__label">Select Employee *</label>
-            <select class="mhr-select" v-model="addForm.employeeId"
-              :style="addErrors.employeeId ? 'border-color:var(--mhr-danger);' : ''">
-              <option value="">Select employee…</option>
-              <option v-for="emp in employees" :key="emp.id" :value="emp.id">{{ emp.fullName }}</option>
-            </select>
+            <EmployeeSelector
+              v-model="addForm.employeeId"
+              :employees="employees"
+              placeholder="Select employee…"
+              :required="true"
+            />
             <p v-if="addErrors.employeeId" class="ts-field-error">{{ addErrors.employeeId }}</p>
           </div>
 

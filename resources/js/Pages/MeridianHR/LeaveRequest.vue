@@ -6,6 +6,7 @@ import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
 import StatusPill from '@/Components/MeridianHR/StatusPill.vue'
 import EmployeeSelector from '@/Components/MeridianHR/EmployeeSelector.vue'
+import EventBanner from '@/Components/MeridianHR/EventBanner.vue'
 import { DatePicker } from 'v-calendar'
 import 'v-calendar/style.css'
 
@@ -21,6 +22,14 @@ const props = defineProps({
 })
 
 const dateFormat = computed(() => usePage().props.dateFormat || 'DD/MM/YYYY')
+
+// Event context
+const selectedEventId = computed(() => usePage().props.selectedEvent)
+const availableEvents = computed(() => usePage().props.availableEvents || [])
+const selectedEventData = computed(() => {
+  if (!selectedEventId.value) return null
+  return availableEvents.value.find(e => e.id === selectedEventId.value)
+})
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
@@ -316,6 +325,12 @@ function refreshLeaveRequests() {
       </div>
     </div>
 
+    <!-- Event Context Banner -->
+    <EventBanner 
+      v-if="selectedEventData"
+      :event-data="selectedEventData"
+    />
+
     <!-- Filters -->
     <div style="display:flex;gap:10px;margin-bottom:14px;">
       <div style="position:relative;flex:1;max-width:360px;">
@@ -359,6 +374,10 @@ function refreshLeaveRequests() {
                   {{ request.employeeName }}
                 </div>
                 <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:2px;">{{ request.employeeNumber }}</div>
+                <div v-if="!selectedEventId && request.eventName" style="font-size:11px;color:var(--mhr-ink-3);margin-top:2px;display:flex;align-items:center;gap:4px;">
+                  <AppIcon name="calendar" :size="10" style="opacity:0.6;" />
+                  <span>{{ request.eventName }}</span>
+                </div>
               </td>
               <td>
                 <span class="mhr-badge mhr-badge--neutral">{{ request.leaveTypeTitle }}</span>

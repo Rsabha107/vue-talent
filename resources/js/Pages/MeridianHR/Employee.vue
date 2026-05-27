@@ -1,9 +1,11 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import AppAvatar from '@/Components/MeridianHR/AppAvatar.vue'
 import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
+import EventBanner from '@/Components/MeridianHR/EventBanner.vue'
+import SubmitButton from '@/Components/MeridianHR/SubmitButton.vue'
 import { router, usePage } from '@inertiajs/vue3'
 import { DatePicker } from 'v-calendar'
 import 'v-calendar/style.css'
@@ -87,10 +89,11 @@ const assignEventId = ref(null)
 const isAssigning = ref(false)
 
 const visibleColumns = ref({
-  employeeNumber: true,
+  employeeNumber: false,
   role: true,
   department: true,
-  email: true,
+  reportingTo: true,
+  email: false,
   contractStart: true,
   contractEnd: true,
   agreementNumber: false,
@@ -267,6 +270,23 @@ watch([q, dept, () => props.employees], () => {
   openMenuId.value = null
 })
 
+// Close column dropdown when clicking outside
+const columnMenuRef = ref(null)
+
+function handleClickOutside(event) {
+  if (showColumnMenu.value && columnMenuRef.value && !columnMenuRef.value.contains(event.target)) {
+    showColumnMenu.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
+
 const someSelected = computed(() => {
   return filtered.value.some(emp => selectedEmployees.value.has(emp.id)) && !allSelected.value
 })
@@ -315,13 +335,23 @@ function confirmAssignToEvent() {
     employee_ids: selectedIds,
     event_id: assignEventId.value
   }, {
+    preserveState: false,
+    preserveScroll: true,
     onSuccess: () => {
       isAssigning.value = false
       showAssignEventModal.value = false
       assignEventId.value = null
       selectedEmployees.value.clear()
-      toast.value = `Successfully assigned ${selectedIds.length} employee(s) to event`
-      setTimeout(() => { toast.value = null }, 3000)
+      // Navigate back to the correct page (master-employee or regular employee)
+      const targetRoute = props.hrPage === 'master-employee' ? 'hr.master-employee' : 'hr.employee'
+      router.get(route(targetRoute), {}, {
+        preserveState: false,
+        preserveScroll: true,
+        onSuccess: () => {
+          toast.value = `Successfully assigned ${selectedIds.length} employee(s) to event`
+          setTimeout(() => { toast.value = null }, 3000)
+        }
+      })
     },
     onError: (errors) => {
       isAssigning.value = false
@@ -352,6 +382,7 @@ const columnPreview = computed(() => {
     employeeNumber: first.empNumber,
     role: first.role,
     department: first.dept,
+    reportingTo: first.reportingTo || 'N/A',
     email: first.email,
     personalEmail: first.personalEmail || 'N/A',
     phone: first.phone || 'N/A',
@@ -454,10 +485,20 @@ function addEmployee() {
     manager_flag: form.value.managerFlag,
     administrator_flag: form.value.administratorFlag,
   }, {
+    preserveState: false,
+    preserveScroll: true,
     onSuccess: () => {
       showAddModal.value = false
-      toast.value = 'Employee added successfully'
-      setTimeout(() => { toast.value = null }, 3000)
+      // Navigate back to the correct page (master-employee or regular employee)
+      const targetRoute = props.hrPage === 'master-employee' ? 'hr.master-employee' : 'hr.employee'
+      router.get(route(targetRoute), {}, {
+        preserveState: false,
+        preserveScroll: true,
+        onSuccess: () => {
+          toast.value = 'Employee added successfully'
+          setTimeout(() => { toast.value = null }, 3000)
+        }
+      })
       // Reset form
       form.value = {
         firstName: '', middleName: '', lastName: '', salutationId: null, employeeNumber: '', agreementNumber: '',
@@ -594,11 +635,22 @@ function confirmDelete() {
   if (!employeeToDelete.value) return
   
   router.delete(route('hr.employee.destroy', employeeToDelete.value.id), {
+    preserveState: false,
+    preserveScroll: true,
     onSuccess: () => {
-      toast.value = `${employeeToDelete.value.name} archived successfully`
-      setTimeout(() => { toast.value = null }, 3000)
       showDeleteModal.value = false
+      const empName = employeeToDelete.value.name
       employeeToDelete.value = null
+      // Navigate back to the correct page (master-employee or regular employee)
+      const targetRoute = props.hrPage === 'master-employee' ? 'hr.master-employee' : 'hr.employee'
+      router.get(route(targetRoute), {}, {
+        preserveState: false,
+        preserveScroll: true,
+        onSuccess: () => {
+          toast.value = `${empName} archived successfully`
+          setTimeout(() => { toast.value = null }, 3000)
+        }
+      })
     }
   })
 }
@@ -741,11 +793,21 @@ function updateEmployee() {
     manager_flag: editForm.value.managerFlag,
     administrator_flag: editForm.value.administratorFlag,
   }, {
+    preserveState: false,
+    preserveScroll: true,
     onSuccess: () => {
       isUpdating.value = false
       showEditModal.value = false
-      toast.value = 'Employee updated successfully'
-      setTimeout(() => { toast.value = null }, 3000)
+      // Navigate back to the correct page (master-employee or regular employee)
+      const targetRoute = props.hrPage === 'master-employee' ? 'hr.master-employee' : 'hr.employee'
+      router.get(route(targetRoute), {}, {
+        preserveState: false,
+        preserveScroll: true,
+        onSuccess: () => {
+          toast.value = 'Employee updated successfully'
+          setTimeout(() => { toast.value = null }, 3000)
+        }
+      })
     },
     onError: (errors) => {
       isUpdating.value = false
@@ -805,35 +867,10 @@ function updateEmployee() {
     </div>
 
     <!-- Event Context Banner (when viewing event-filtered employees) -->
-    <div
+    <EventBanner 
       v-if="selectedEventData && hrPage !== 'master-employee'"
-      class="mhr-card"
-      style="margin-bottom:12px;background:linear-gradient(135deg,var(--green-700),var(--green-800));color:#fff;border:none;padding:8px 12px;"
-    >
-      <div style="display:flex;align-items:center;gap:8px;">
-        <div
-          v-if="selectedEventData.logo"
-          style="width:24px;height:24px;border-radius:4px;background:rgba(255,255,255,0.15);padding:3px;flex-shrink:0;"
-        >
-          <img
-            :src="selectedEventData.logo"
-            :alt="selectedEventData.name"
-            style="width:100%;height:100%;object-fit:contain;"
-          />
-        </div>
-        <AppIcon
-          v-else
-          name="calendar"
-          :size="14"
-          style="opacity:0.8;"
-        />
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:10px;opacity:0.75;text-transform:uppercase;letter-spacing:0.5px;font-weight:500;line-height:1;">Viewing Event</div>
-          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">{{ selectedEventData.name }}</div>
-        </div>
-        <AppIcon name="check" :size="14" style="opacity:0.75;flex-shrink:0;" />
-      </div>
-    </div>
+      :event-data="selectedEventData"
+    />
 
     <!-- Bulk Actions Bar -->
     <div v-if="selectedEmployees.size > 0" class="mhr-card" style="margin-bottom:14px;padding:12px 16px;display:flex;align-items:center;gap:12px;background:var(--mhr-accent-soft);border:1px solid var(--mhr-accent);">
@@ -856,7 +893,7 @@ function updateEmployee() {
         <AppIcon name="search" :size="14" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--mhr-ink-3);" />
         <input class="mhr-input" style="padding-left:32px;" placeholder="Search employees by name, email, phone, ID…" v-model="q" />
       </div>
-      <div style="position:relative;">
+      <div ref="columnMenuRef" style="position:relative;">
         <button class="mhr-btn mhr-btn--outline" @click.stop="showColumnMenu = !showColumnMenu" style="min-width:120px;">
           <AppIcon name="settings" :size="14" /> Columns
         </button>
@@ -881,6 +918,13 @@ function updateEmployee() {
             <div style="flex:1;">
               <span>Department</span>
               <div v-if="visibleColumns.department" style="font-size:11px;color:var(--mhr-ink-3);margin-top:2px;">{{ columnPreview.department }}</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
+            <input type="checkbox" v-model="visibleColumns.reportingTo" style="cursor:pointer;" />
+            <div style="flex:1;">
+              <span>Reporting To</span>
+              <div v-if="visibleColumns.reportingTo" style="font-size:11px;color:var(--mhr-ink-3);margin-top:2px;">{{ columnPreview.reportingTo }}</div>
             </div>
           </label>
           <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
@@ -1096,6 +1140,7 @@ function updateEmployee() {
               <th v-if="visibleColumns.employeeNumber">Employee #</th>
               <th v-if="visibleColumns.role">Role</th>
               <th v-if="visibleColumns.department">Department</th>
+              <th v-if="visibleColumns.reportingTo">Reporting To</th>
             <th v-if="visibleColumns.email">Work Email</th>
             <th v-if="visibleColumns.personalEmail">Personal Email</th>
             <th v-if="visibleColumns.phone">Phone</th>
@@ -1152,12 +1197,17 @@ function updateEmployee() {
             <td>
               <div style="display:flex;align-items:center;gap:12px;">
                 <AppAvatar :name="p.name" :c="p.c" />
-                <div style="font-weight:500;">{{ p.name }}</div>
+                <div>
+                  <div style="font-weight:500;color:var(--mhr-ink);">{{ p.name }}</div>
+                  <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:2px;">{{ p.empNumber }}</div>
+                  <div style="font-size:11px;color:var(--mhr-ink-3);margin-top:2px;">{{ p.email }}</div>
+                </div>
               </div>
             </td>
             <td v-if="visibleColumns.employeeNumber"><span class="mhr-mono" style="font-size:12px;color:var(--mhr-ink-2);">{{ p.empNumber }}</span></td>
             <td v-if="visibleColumns.role">{{ p.role }}</td>
             <td v-if="visibleColumns.department"><span class="mhr-pill mhr-pill--plain">{{ p.dept }}</span></td>
+            <td v-if="visibleColumns.reportingTo" style="color:var(--mhr-ink-3);">{{ p.reportingTo || '—' }}</td>
             <td v-if="visibleColumns.email" style="color:var(--mhr-ink-3);">{{ p.email }}</td>
             <td v-if="visibleColumns.personalEmail" style="color:var(--mhr-ink-3);">{{ p.personalEmail }}</td>
             <td v-if="visibleColumns.phone" style="color:var(--mhr-ink-3);">{{ p.phone }}</td>
@@ -1914,21 +1964,12 @@ function updateEmployee() {
         </div>
         <div class="mhr-modal__ft">
           <button class="mhr-btn mhr-btn--ghost" @click="showEditModal = false" :disabled="isUpdating">Cancel</button>
-          <button 
-            class="mhr-btn mhr-btn--primary" 
+          <SubmitButton
             @click="updateEmployee"
-            :disabled="isUpdating"
-            :style="isUpdating ? 'opacity:0.6;cursor:not-allowed;' : ''"
-          >
-            <span v-if="isUpdating" style="display:flex;align-items:center;gap:8px;">
-              <svg style="animation:spin 1s linear infinite;width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10" opacity="0.25"/>
-                <path d="M12 2a10 10 0 0 1 10 10" opacity="0.75"/>
-              </svg>
-              Saving...
-            </span>
-            <span v-else>Save changes</span>
-          </button>
+            :processing="isUpdating"
+            text="Save changes"
+            processing-text="Saving..."
+          />
         </div>
       </div>
     </div>
