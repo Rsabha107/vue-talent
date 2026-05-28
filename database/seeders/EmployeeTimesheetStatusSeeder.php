@@ -28,6 +28,13 @@ class EmployeeTimesheetStatusSeeder extends Seeder
                 'updated_at' => now(),
             ],
             [
+                'title' => 'Pending Payroll',
+                'color' => 'primary',
+                'active_flag' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
                 'title' => 'Approved',
                 'color' => 'success',
                 'active_flag' => 1,

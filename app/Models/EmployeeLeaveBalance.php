@@ -72,11 +72,15 @@ class EmployeeLeaveBalance extends Model
     {
         $eventId = $eventId ?? session('selected_event_id');
         
-        if ($eventId) {
-            return $query->where('event_id', $eventId);
+        if ($eventId === null) {
+            return $query; // No filter - show all
         }
         
-        return $query;
+        if (is_array($eventId)) {
+            return $query->whereIn('event_id', $eventId);
+        }
+        
+        return $query->where('event_id', $eventId);
     }
 
     /**

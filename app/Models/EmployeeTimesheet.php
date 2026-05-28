@@ -85,12 +85,18 @@ class EmployeeTimesheet extends Model
         return $query->where('archived', 'N');
     }
 
-    public function scopeForEvent(\Illuminate\Database\Eloquent\Builder $query, ?int $eventId = null): \Illuminate\Database\Eloquent\Builder
+    public function scopeForEvent(\Illuminate\Database\Eloquent\Builder $query, $eventId = null): \Illuminate\Database\Eloquent\Builder
     {
         $eventId = $eventId ?? session('selected_event_id');
-        if ($eventId) {
-            return $query->where('event_id', $eventId);
+        
+        if ($eventId === null) {
+            return $query; // No filter - show all
         }
-        return $query;
+        
+        if (is_array($eventId)) {
+            return $query->whereIn('event_id', $eventId);
+        }
+        
+        return $query->where('event_id', $eventId);
     }
 }

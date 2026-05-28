@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { usePage, router } from '@inertiajs/vue3'
+import { Head, usePage, router } from '@inertiajs/vue3'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import AppAvatar from '@/Components/MeridianHR/AppAvatar.vue'
 import '@/../css/meridian.css'
@@ -27,13 +27,20 @@ const selectedEventData = computed(() => {
 })
 
 const isEmployee = computed(() => !['admin', 'manager'].includes(hrRole.value))
+const isAdmin = computed(() => hrRole.value === 'admin')
+const isManager = computed(() => hrRole.value === 'manager')
 
 const activeEventLabel = computed(() => {
   if (!selectedEvent.value) {
-    return isEmployee.value ? 'Select Event' : 'All Events'
+    if (isAdmin.value) return 'All Events'
+    if (isManager.value) return 'All My Events'
+    return 'Select Event'
   }
   const ev = availableEvents.value.find(e => e.id === selectedEvent.value)
-  return ev ? ev.name : (isEmployee.value ? 'Select Event' : 'All Events')
+  if (ev) return ev.name
+  if (isAdmin.value) return 'All Events'
+  if (isManager.value) return 'All My Events'
+  return 'Select Event'
 })
 
 // Navigation structure - now a function to use dynamic badge counts
@@ -41,23 +48,24 @@ const getNavStructure = (counts) => ({
   'employee-basic': [
     { group: 'Workspace', items: [
       { id: 'dashboard',      label: 'Home',            icon: 'home' },
-      { id: 'leave-requests', label: 'Leave Requests',  icon: 'inbox' },
-      { id: 'my-timesheets',  label: 'My Timesheets',   icon: 'inbox' },
+      { id: 'leave-requests', label: 'My leaves',  icon: 'inbox' },
+      { id: 'my-timesheets',  label: 'My timesheets',   icon: 'inbox' },
     ]},
     { group: 'Personal', items: [
-      { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
+      { id: 'documents', label: 'Documents',        icon: 'doc' },
+      { id: 'emergency', label: 'Emergency contact', icon: 'user' },
       { id: 'profile',   label: 'My profile', icon: 'user' },
     ]},
   ],
   'employee-full': [
     { group: 'Workspace', items: [
       { id: 'dashboard',      label: 'Home',            icon: 'home' },
-      { id: 'leave-requests', label: 'Leave Requests',  icon: 'inbox' },
-      { id: 'my-timesheets',  label: 'My Timesheets',   icon: 'inbox' },
+      { id: 'leave-requests', label: 'My leaves',  icon: 'inbox' },
+      { id: 'my-timesheets',  label: 'My timesheets',   icon: 'inbox' },
     ]},
     { group: 'Personal', items: [
       { id: 'addresses', label: 'Addresses',        icon: 'pin' },
-      { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
+      { id: 'emergency', label: 'Emergency contact', icon: 'user' },
     ]},
     { group: 'Records', items: [
       { id: 'documents', label: 'Documents',  icon: 'doc' },
@@ -68,14 +76,14 @@ const getNavStructure = (counts) => ({
   employee: [
     { group: 'Workspace', items: [
       { id: 'dashboard',      label: 'Home',            icon: 'home' },
-      { id: 'leave-requests', label: 'Leave Requests',  icon: 'inbox' },
-      { id: 'my-timesheets',  label: 'My Timesheets',   icon: 'inbox' },
+      { id: 'leave-requests', label: 'My Leaves',  icon: 'inbox' },
+      { id: 'my-timesheets',  label: 'My timesheets',   icon: 'inbox' },
     ]},
     { group: 'Personal', items: [
       { id: 'addresses', label: 'Addresses',        icon: 'pin' },
       { id: 'banks',     label: 'Banks',            icon: 'wallet' },
       { id: 'salary',    label: 'Salary',           icon: 'wallet' },
-      { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
+      { id: 'emergency', label: 'Emergency contact', icon: 'user' },
     ]},
     { group: 'Records', items: [
       { id: 'documents', label: 'Documents',  icon: 'doc' },
@@ -87,20 +95,21 @@ const getNavStructure = (counts) => ({
   manager: [
     { group: 'Workspace', items: [
       { id: 'dashboard', label: 'Home',       icon: 'home' },
-      { id: 'timesheet', label: 'Timesheet',  icon: 'clock' },
+      { id: 'leave-requests', label: 'My leaves', icon: 'inbox' },
+      { id: 'my-timesheets', label: 'My timesheets',  icon: 'inbox' },
     ]},
     { group: 'Approvals', items: [
-      { id: 'approve-leave', label: 'Leave requests', icon: 'inbox', badge: counts.pendingLeaves },
+      { id: 'approve-leave', label: 'Leaves', icon: 'inbox', badge: counts.pendingLeaves },
       { id: 'approve-time',  label: 'Timesheets',     icon: 'inbox', badge: counts.pendingTimesheets },
     ]},
-    { group: 'Personal', items: [
-      { id: 'addresses', label: 'Addresses',        icon: 'pin' },
-      { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
+    { group: 'Team', items: [
+      { id: 'employee',  label: 'Team members',      icon: 'users' },
+      { id: 'team-leave-requests', label: 'All leaves', icon: 'calendar' },
+      { id: 'team-timesheets', label: 'All timesheets', icon: 'clock' },
     ]},
-    { group: 'Records', items: [
+    { group: 'Personal', items: [
       { id: 'documents', label: 'Documents',  icon: 'doc' },
-      { id: 'payslips',  label: 'Payslips',   icon: 'wallet' },
-      { id: 'employee', label: 'Team',       icon: 'users' },
+      { id: 'emergency', label: 'Emergency contact', icon: 'user' },
       { id: 'profile',   label: 'My profile', icon: 'user' },
     ]},
   ],
@@ -111,7 +120,7 @@ const getNavStructure = (counts) => ({
     ]},
     { group: 'People', items: [
       { id: 'employee', label: 'Employees',      icon: 'users' },
-      { id: 'leave-requests', label: 'Leave Requests', icon: 'calendar' },
+      { id: 'leave-requests', label: 'Leaves', icon: 'calendar' },
       // { id: 'leave',     label: 'All leave',      icon: 'calendar' },
       // { id: 'timesheet',        label: 'All timesheets',  icon: 'clock' },
       { id: 'timesheet-talent', label: 'Timesheets', icon: 'clock' },
@@ -124,7 +133,7 @@ const getNavStructure = (counts) => ({
       { id: 'addresses', label: 'Addresses',        icon: 'pin' },
       { id: 'banks',     label: 'Banks',            icon: 'wallet' },
       { id: 'salary',    label: 'Salary',           icon: 'wallet' },
-      { id: 'emergency', label: 'Emergency Contact', icon: 'user' },
+      { id: 'emergency', label: 'Emergency contact', icon: 'user' },
     ]},
     { group: 'Records', items: [
       { id: 'documents', label: 'Documents',  icon: 'doc' },
@@ -132,14 +141,14 @@ const getNavStructure = (counts) => ({
       { id: 'profile',   label: 'My profile', icon: 'user' },
     ]},
     { group: 'Settings', items: [
-      { id: 'application-settings', label: 'Application Settings', icon: 'settings' },
-      { id: 'leave-types', label: 'Leave Types', icon: 'settings' },
+      { id: 'application-settings', label: 'Application settings', icon: 'settings' },
+      { id: 'leave-types', label: 'Leave types', icon: 'settings' },
       { id: 'events', label: 'Events', icon: 'calendar' },
-      { id: 'event-templates', label: 'Event Templates', icon: 'users' },
+      { id: 'event-templates', label: 'Event templates', icon: 'users' },
       { id: 'venues', label: 'Venues', icon: 'pin' },
     ]},
     { group: 'Security/Privacy', items: [
-      { id: 'manager-users',      label: 'User Management',     icon: 'users' },
+      { id: 'manager-users',      label: 'User management',     icon: 'users' },
       { id: 'roles-permissions',  label: 'Roles & Permissions', icon: 'shield' },
     ]},
   ],
@@ -158,9 +167,11 @@ const PAGE_TITLES = {
   profile:        'My profile',
   'application-settings': 'Application Settings',
   'leave-types':  'Leave Types',
-  'leave-requests':    'Leave Requests',
+  'leave-requests':    'Leaves',
   'my-timesheets':     'My Timesheets',
   'timesheet-talent':  'Timesheet Talent',
+  'team-leave-requests': 'Team Leaves',
+  'team-timesheets':   'Team Timesheets',
   events:         'Events',
   'event-templates': 'Event Templates',
   venues:         'Venues',
@@ -178,6 +189,10 @@ const navGroups = computed(() => {
   return nav[hrRole.value] || nav['employee-basic'] || nav.employee
 })
 const pageTitle = computed(() => PAGE_TITLES[hrPage.value] || 'Home')
+const browserTitle = computed(() => {
+  const base = pageTitle.value
+  return base === 'Home' ? 'Meridian HR' : `${base} · Meridian HR`
+})
 const breadcrumbGroup = computed(() => {
   if (hrRole.value === 'admin') return 'HR Admin'
   if (hrRole.value === 'manager') return 'Manager'
@@ -202,6 +217,8 @@ const ROUTE_MAP = {
   'leave-requests':    'hr.leave-requests',
   'my-timesheets':     'hr.my-timesheets',
   'timesheet-talent':  'hr.timesheet-talent',
+  'team-leave-requests': 'hr.leave-requests',
+  'team-timesheets':   'hr.timesheet-talent',
   'event-templates': 'hr.event-templates',
   events:         'hr.events',
   venues:         'hr.venues',
@@ -220,7 +237,14 @@ const NOTIFICATIONS = [
 
 function navigate(id) {
   const routeName = ROUTE_MAP[id]
-  if (routeName) router.get(route(routeName))
+  if (routeName) {
+    // Add scope=team query parameter for team views
+    if (id === 'team-leave-requests' || id === 'team-timesheets') {
+      router.get(route(routeName, { scope: 'team' }))
+    } else {
+      router.get(route(routeName))
+    }
+  }
 }
 
 function logout() {
@@ -230,11 +254,12 @@ function logout() {
 function selectEvent(eventId) {
   eventSelectorOpen.value = false
   if (!eventId) {
-    // Only admin/manager can clear event selection
+    // Admin and manager can clear event selection
     if (isEmployee.value) return
+    const message = isAdmin.value ? 'Showing all events' : 'Showing all your events'
     router.post(route('event.clear'), {}, {
       preserveScroll: true,
-      onSuccess: () => showToast('Showing all events'),
+      onSuccess: () => showToast(message),
     })
   } else {
     router.post(route('event.select'), { event_id: eventId }, {
@@ -287,8 +312,8 @@ onMounted(() => {
   // Auto-collapse on initial mount if mobile
   handleResize()
   
-  // Auto-select first event for employees if no event selected
-  if (isEmployee.value && !selectedEvent.value && availableEvents.value.length === 1) {
+  // Auto-select first event for employees and managers if no event selected and they have only one event
+  if ((isEmployee.value || isManager.value) && !selectedEvent.value && availableEvents.value.length === 1) {
     selectEvent(availableEvents.value[0].id)
   }
 })
@@ -302,6 +327,8 @@ defineExpose({ showToast })
 </script>
 
 <template>
+  <Head :title="browserTitle" />
+  
   <div class="meridian-app" :data-collapsed="collapsed ? '1' : undefined">
 
     <!-- Mobile overlay backdrop -->
@@ -335,19 +362,14 @@ defineExpose({ showToast })
       </div>
 
       <div class="mhr-sidebar__footer">
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div class="mhr-sidebar__user" style="flex:1;min-width:0;" @click="handleNavigation('profile')">
-            <AppAvatar :name="me.name" :c="me.avatarColor" :initials="me.initials" />
-            <div class="mhr-sidebar__user-meta">
-              <div class="mhr-sidebar__user-name">{{ me.name }}</div>
-              <div class="mhr-sidebar__user-role">
-                {{ hrRole === 'employee' ? me.role : hrRole === 'manager' ? 'Manager · ' + me.role : 'Administrator' }}
-              </div>
+        <div class="mhr-sidebar__user" @click="handleNavigation('profile')">
+          <AppAvatar :name="me.name" :c="me.avatarColor" :initials="me.initials" />
+          <div class="mhr-sidebar__user-meta">
+            <div class="mhr-sidebar__user-name">{{ me.name }}</div>
+            <div class="mhr-sidebar__user-role">
+              {{ isEmployee ? me.role : hrRole === 'manager' ? 'Manager · ' + me.role : 'Administrator' }}
             </div>
           </div>
-          <button class="mhr-icon-btn" title="Sign out" @click="logout">
-            <AppIcon name="logout" :size="16" />
-          </button>
         </div>
       </div>
     </aside>
@@ -385,7 +407,7 @@ defineExpose({ showToast })
                 :class="{ 'event-dropdown-item--active': !selectedEvent }"
                 @click="selectEvent(null)"
               >
-                <span class="event-dropdown-name">All Events</span>
+                <span class="event-dropdown-name">{{ isAdmin ? 'All Events' : 'All My Events' }}</span>
                 <svg v-if="!selectedEvent" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
               </button>
               <button
@@ -417,6 +439,9 @@ defineExpose({ showToast })
           </button>
           <button class="mhr-icon-btn" title="Settings">
             <AppIcon name="cog" />
+          </button>
+          <button class="mhr-icon-btn" title="Sign out" @click="logout">
+            <AppIcon name="logout" :size="16" />
           </button>
         </div>
 

@@ -94,6 +94,18 @@ HR controllers return data shaped for the page via `Inertia::render()`. Eligibil
 
 Singular model names (`Employee`, `LeaveType`), plural snake_case table names (`employee_leave_types`, `leave_eligibilities`). Most models use `active_flag` (integer 0/1) rather than soft deletes. Deactivation is done by setting `active_flag = 0`.
 
+### Event Filtering
+
+The system supports multi-event architecture where employees can be associated with multiple events via the `employee_events` pivot table (has `is_active` flag). Selected event is stored in session via `session('selected_event_id')` and accessed via `BaseHRController::getSelectedEventId()`.
+
+**Emergency Contacts** respect event filtering:
+- Admin/manager views: Only show contacts for employees active in the selected event using `whereHas('employee.events', function($q) use ($eventId) { $q->where('events.id', $eventId); })`
+- Employee dropdown: Uses `Employee::forEvent($eventId)` scope to show only event-active employees
+- CRUD operations: Validate that the employee belongs to the event before creating/updating/deleting contacts
+- Employee role: Shows fixed employee name (non-searchable) for their own contacts only
+
+**Type Coercion**: All foreign key fields (e.g., `country_of_birth`, `gender_id`, `marital_status_id`, `nationality_id`) must be explicitly converted to `Number()` in Vue forms before submission, as v-model returns strings but the backend expects integers.
+
 ## Design Reference: HTML Prototype
 
 The canonical design reference is `C:\Users\r.sabha\Downloads\Meridian HR _standalone_ (5).html` — a self-contained React prototype (compiled, not source). Open in a browser; use the **Tweaks panel** (bottom-right corner) to switch between `employee`, `manager`, and `admin` roles. There are also theme, density, accent colour, and font options there.
@@ -138,6 +150,76 @@ When branching on role in Vue templates, always guard against all variants — n
 
 The `hrRole` prop is passed to every Meridian HR page via `BaseHRController::getCommonProps()`. `MeridianLayout` uses it for sidebar navigation (separate nav structures for `employee-basic`, `employee-full`, `manager`, `admin`).
 
+### Manager Access Control & Navigation
+
+Manager navigation follows a **personal workspace + team oversight** pattern:
+
+**Workspace** (personal items, same routes as employees):
+- My leaves (`hr.leave-requests` with no scope parameter) — manager's own leave requests
+- My timesheets (`hr.my-timesheets`) — manager's own timesheets
+
+**Approvals** (action queues):
+- Leaves (`hr.approvals.leave`) — pending leave requests requiring approval
+- Timesheets (`hr.approvals.time`) — submitted timesheets requiring review
+
+**Team** (read-only oversight):
+- All leaves (`hr.leave-requests?scope=team`) — view all team leave requests (read-only)
+- All timesheets (`hr.timesheet-talent?scope=team`) — view all team timesheets (read-only)
+
+**Personal**:
+- Documents, Emergency contact, My profile
+
+#### Scope-Based Filtering
+
+Controllers detect the `?scope=team` query parameter to distinguish between personal and team views:
+
+**EmployeeLeaveRequestController:**
+```php
+$scope = request()->query('scope');
+$showPersonalOnly = false;
+
+if (!in_array($hrRole, ['admin'])) {
+    if (!in_array($hrRole, ['manager'])) {
+        $showPersonalOnly = true; // Employees always personal
+    } elseif ($scope !== 'team') {
+        $showPersonalOnly = true; // Managers personal unless scope=team
+    }
+}
+
+if ($showPersonalOnly) {
+    $currentEmployee = Employee::where('user_id', auth()->id())->first();
+    $query->where('employee_id', $currentEmployee->id);
+}
+```
+
+**TimesheetController::timesheetTalent():**
+- Same scope detection logic
+- Filters timesheets, leave days, and employee dropdown to current employee when `$showPersonalOnly = true`
+
+#### Read-Only Enforcement in Team Views
+
+Team views are strictly read-only for managers:
+
+**LeaveRequest.vue:**
+- Edit button: Hidden for managers (`v-if="hrRole !== 'manager'"`)
+- Archive button: Hidden for managers
+- View Details button: Visible for all roles
+
+**TimesheetTalent.vue:**
+- View/Edit button: Shows "View" with eye icon for managers (not "View / Edit")
+- Status button: Hidden for managers (`v-if="hrRole === 'admin'"`)
+- Delete button: Hidden for managers
+- Save/Submit buttons in entry modal: Hidden for managers (`v-if="... && hrRole !== 'manager'"`)
+- Day cells: Not clickable for managers (`canEdit()` returns `false` for `hrRole === 'manager'`)
+- Cancel button text: Changes to "Close" for managers (read-only mode)
+
+**Access Summary:**
+| View Type | Manager Can | Manager Cannot |
+|---|---|---|
+| **My leaves/timesheets** | View, edit, submit own data | N/A |
+| **Team leaves/timesheets** | View team data | Edit, delete, or modify team data |
+| **Approval queues** | Approve, reject requests | N/A |
+
 ### Dashboard role views (`Dashboard.vue`)
 
 Three template blocks share one page:
@@ -148,6 +230,179 @@ Three template blocks share one page:
 ### Leave Balance Data
 
 `LeaveBalanceService::getEmployeeBalanceSummary($employeeId, $eventId)` returns `EmployeeLeaveBalance` records with a `leaveType` relation. Map to dashboard shape by matching `strtolower($balance->leaveType->title)` containing `'annual'`, `'sick'`, or `'personal'`. The linked employee is found via `Employee::where('user_id', auth()->id())->first()`.
+
+## Timesheet Approval Workflow
+
+The system implements a **two-stage approval workflow** for timesheets:
+
+### Stage 1: Manager/Admin Review
+- **Status transition**: `Submitted` → `Pending Payroll` (on approval) or `Rejected`
+- **Controller**: `TimesheetController::approveTimesheet()` / `rejectTimesheet()`
+- **Routes**: `hr.approvals.time.approve` / `hr.approvals.time.reject`
+- **Database fields updated**:
+  - `status_id` = Pending Payroll status ID (or Rejected)
+  - `performer_id` = Manager/admin user ID who approved
+  - `additional_information` = Optional notes from manager
+- **UI**: Manager Review tab in `TimesheetApprovals.vue` (visible to managers and admins)
+
+### Stage 2: Payroll Review (Admin only)
+- **Status transition**: `Pending Payroll` → `Approved` (final) or `Rejected`
+- **Controller**: `TimesheetController::payrollApproveTimesheet()` / `payrollRejectTimesheet()`
+- **Routes**: `hr.payroll.time.approve` / `hr.payroll.time.reject` (in `routes/hr/manager.php`)
+- **Database fields updated**:
+  - `status_id` = Approved status ID (or Rejected)
+  - `payroll_approval_id` = Final status ID from payroll
+  - `payroll_reviewed` = 1 (marks as reviewed by payroll)
+  - `payroll_additional_information` = Optional notes from payroll
+- **UI**: Payroll Review tab in `TimesheetApprovals.vue` (admin only)
+
+### Timesheet Statuses
+
+`EmployeeTimesheetStatus` model defines five statuses with helper methods:
+- `Pending` - Initial state (draft)
+- `Submitted` - Employee submitted, awaiting manager review
+- `Pending Payroll` - Manager approved, awaiting payroll verification
+- `Approved` - Final approval by payroll, ready for payment
+- `Rejected` - Rejected by either manager or payroll
+
+**Helper methods** (all return `?int`):
+- `EmployeeTimesheetStatus::pendingId()`
+- `EmployeeTimesheetStatus::submittedId()`
+- `EmployeeTimesheetStatus::pendingPayrollId()`
+- `EmployeeTimesheetStatus::approvedId()`
+- `EmployeeTimesheetStatus::rejectedId()`
+
+### TimesheetApprovals.vue
+
+**Props**:
+- `submittedTimesheets` - Array of timesheets in Submitted status (for manager review)
+- `payrollTimesheets` - Array of timesheets in Pending Payroll status (for payroll review)
+- `isAdmin` - Boolean, controls visibility of Payroll Review tab
+
+**State**:
+- `selectedManager` - Set of selected IDs for manager approval actions
+- `selectedPayroll` - Set of selected IDs for payroll approval actions
+- `activeTab` - 'manager' or 'payroll' (tab switching, admin only)
+
+**Actions**:
+- Manager approval → sends to `Pending Payroll` status
+- Manager rejection → sets to `Rejected` status
+- Payroll approval → sets to final `Approved` status
+- Payroll rejection → sets to `Rejected` status (overrides manager approval)
+
+### Data Flow
+
+```
+Employee submits → Submitted
+                      ↓
+Manager reviews → Pending Payroll (on approve)
+                      ↓            ↘ Rejected (on reject)
+Payroll reviews → Approved        
+                      ↘ Rejected (if payroll rejects)
+```
+
+**Key principle**: If payroll rejects a timesheet, it is rejected even though the manager approved it. This allows payroll to catch discrepancies in hours, calculations, or payment eligibility.
+
+### Timesheet Calculations and Leave Interactions
+
+Timesheets track employee attendance and automatically calculate payment based on worked days, leave, and unpaid leave.
+
+#### Day Action Codes
+
+Each calendar day in a timesheet entry has a `day_action` value:
+- **`W`** (Worked) - Normal working day, employee present
+- **`L`** (Leave) - Paid leave day (approved leave request)
+- **`U`** (Unpaid) - Unpaid leave or absence
+- **`0`** (Non-working) - Weekend, holiday, or outside contract period
+
+#### Leave Integration
+
+When loading timesheet entries, the system:
+
+1. **Fetches approved leave requests** for the employee and event:
+   ```php
+   EmployeeLeaveRequest::active()
+       ->where('status_id', $approvedStatusId)
+       ->where('employee_id', $employee->id)
+       ->forEvent($eventId)
+   ```
+
+2. **Compiles leave dates** into a lookup array (`$leaveDays[$employeeId][$date]`)
+
+3. **Auto-marks leave days** in timesheet with `isLeave` flag for UI display
+
+4. **Employee can override** the day action manually (e.g., mark as `U` for unpaid or `W` if they worked)
+
+#### Payment Calculation
+
+On timesheet submission (`timesheetTalentSubmit`), the system calculates payment:
+
+**Step 1: Count day actions**
+```php
+$countWorked = entries where day_action = 'W'
+$countLeaves = entries where day_action = 'L'
+$countUnpaid = entries where day_action = 'U'
+```
+
+**Step 2: Get salary and daily rate**
+```php
+$monthlySalary = EmployeeSalary::net_salary (latest effective)
+$dailyRate = $monthlySalary / 30
+```
+
+**Step 3: Determine full month vs partial month**
+```php
+$isFullMonth = ($startDay <= 5 && $endDay >= $daysInMonth - 2)
+```
+- Full month: Employee worked substantially the entire month (contract covers most of the month)
+- Partial month: Employee started/ended mid-month (contract assignment/release dates)
+
+**Step 4: Calculate payment**
+
+**Full Month:**
+```php
+$totalPayment = $monthlySalary - ($countUnpaid * $dailyRate)
+$paidDays = 30 - $countUnpaid
+```
+- Base pay = full monthly salary
+- Deduct only unpaid days
+- Paid leave days don't reduce salary
+
+**Partial Month:**
+```php
+$workedDays = $endDay - $startDay + 1  // Calendar days in range
+$paidDays = max(0, $workedDays - $countUnpaid)
+$totalPayment = $dailyRate * $paidDays
+```
+- Prorate based on actual calendar days in contract period
+- Deduct unpaid days from the calendar range
+
+**Step 5: Update timesheet record**
+```php
+'days_worked'                     => $countWorked,
+'leave_taken'                     => $countLeaves,
+'unpaid_leave_taken'              => $countUnpaid,
+'total_days_eligible_for_payment' => $paidDays,
+'salary'                          => $monthlySalary,
+'daily_rate'                      => $dailyRate,
+'total_payment'                   => $totalPayment,
+'status_id'                       => Submitted
+```
+
+#### Key Payment Rules
+
+1. **Paid leave is not deducted** from salary (full month) or calendar days (partial month)
+2. **Unpaid leave always deducts** from payment
+3. **Weekends/holidays** (action `0`) are not counted in any category
+4. **Full month employees** get guaranteed monthly salary minus unpaid days only
+5. **Partial month employees** are paid daily rate × eligible calendar days
+
+#### Contract Period Windowing
+
+Timesheets respect event assignment dates (`employee_events.assigned_at` / `released_at`):
+- Days before `assigned_at` are excluded (action `0`)
+- Days after `released_at` are excluded (action `0`)
+- Only days within the active assignment period are eligible for entry
 
 ## Authentication
 

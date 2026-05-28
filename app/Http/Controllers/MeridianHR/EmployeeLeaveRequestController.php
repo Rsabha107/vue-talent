@@ -15,12 +15,27 @@ class EmployeeLeaveRequestController extends BaseHRController
 {
     public function index()
     {
-        $eventId = $this->getSelectedEventId();
+        $eventId = $this->getEffectiveEventIds(); // Support manager "All My Events"
         $hrRole = $this->getHRRole();
+        $scope = request()->query('scope'); // 'team' for team view, null for personal view
         
-        // For employees, get their employee record
+        // Determine if we should show only personal leaves
+        $showPersonalOnly = false;
+        
+        if (!in_array($hrRole, ['admin'])) {
+            // For employees, always show only their own leaves
+            if (!in_array($hrRole, ['manager'])) {
+                $showPersonalOnly = true;
+            }
+            // For managers, show personal leaves unless scope=team
+            elseif ($scope !== 'team') {
+                $showPersonalOnly = true;
+            }
+        }
+        
+        // Get current employee record if needed
         $currentEmployee = null;
-        if (!in_array($hrRole, ['admin', 'manager'])) {
+        if ($showPersonalOnly) {
             $currentEmployee = Employee::where('user_id', auth()->id())->first();
         }
         
@@ -36,14 +51,17 @@ class EmployeeLeaveRequestController extends BaseHRController
             ->active()
             ->orderBy('created_at', 'desc');
         
-        // Apply event scope if event is selected
-        if ($eventId) {
-            $query->forEvent($eventId);
-        }
+        // Apply event scope (supports single ID, array of IDs, or null for all)
+        $query->forEvent($eventId);
         
-        // Filter by employee for non-admin/manager users
-        if ($currentEmployee) {
-            $query->where('employee_id', $currentEmployee->id);
+        // Filter by employee for personal view
+        if ($showPersonalOnly) {
+            if ($currentEmployee) {
+                $query->where('employee_id', $currentEmployee->id);
+            } else {
+                // No employee record found - show empty results
+                $query->whereRaw('1 = 0');
+            }
         }
         
         $leaveRequests = $query->get()
@@ -76,14 +94,40 @@ class EmployeeLeaveRequestController extends BaseHRController
             });
 
         // Get employees filtered by event if selected
-        $employees = $eventId 
-            ? $this->getEventEmployees()->orderBy('full_name')->get(['id', 'full_name', 'employee_number'])
-            : Employee::orderBy('full_name')->get(['id', 'full_name', 'employee_number']);
+        // For personal view (managers/employees), only show current employee
+        if ($showPersonalOnly && $currentEmployee) {
+            $employees = collect([
+                [
+                    'id' => $currentEmployee->id,
+                    'full_name' => $currentEmployee->full_name,
+                    'employee_number' => $currentEmployee->employee_number,
+                ]
+            ]);
+        } else {
+            $employees = $eventId 
+                ? $this->getEventEmployees()->orderBy('full_name')->get(['id', 'full_name', 'employee_number'])
+                : Employee::orderBy('full_name')->get(['id', 'full_name', 'employee_number']);
+        }
 
-        // Get leave balances for all employees (for the selected event if applicable)
-        $leaveBalances = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
-            ->where('active_flag', 1)
-            ->when($eventId, fn($q) => $q->where('event_id', $eventId))
+        // Get leave balances (filtered by employee in personal view)
+        $leaveBalancesQuery = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
+            ->where('active_flag', 1);
+        
+        // Handle event filtering - support single ID, array of IDs, or null
+        if ($eventId !== null) {
+            if (is_array($eventId)) {
+                $leaveBalancesQuery->whereIn('event_id', $eventId);
+            } else {
+                $leaveBalancesQuery->where('event_id', $eventId);
+            }
+        }
+        
+        // Filter by employee in personal view
+        if ($showPersonalOnly && $currentEmployee) {
+            $leaveBalancesQuery->where('employee_id', $currentEmployee->id);
+        }
+        
+        $leaveBalances = $leaveBalancesQuery
             ->with('leaveType')
             ->get()
             ->map(function ($balance) {
@@ -108,6 +152,7 @@ class EmployeeLeaveRequestController extends BaseHRController
             'leaveTypes'     => LeaveType::active()->orderBy('title')->get(['id', 'title']),
             'statuses'       => EmployeeLeaveStatus::active()->orderBy('title')->get(['id', 'title', 'color']),
             'leaveBalances'  => $leaveBalances,
+            'isTeamView'     => $scope === 'team', // Indicates read-only team view for managers
         ]));
     }
 

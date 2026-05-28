@@ -9,6 +9,7 @@ class EmployeeTimesheetStatus extends Model
     // Status constants
     const STATUS_PENDING = 'Pending';
     const STATUS_SUBMITTED = 'Submitted';
+    const STATUS_PENDING_PAYROLL = 'Pending Payroll';
     const STATUS_APPROVED = 'Approved';
     const STATUS_REJECTED = 'Rejected';
     
@@ -41,22 +42,27 @@ class EmployeeTimesheetStatus extends Model
     /**
      * Convenience methods for common statuses
      */
-    public static function pendingId(): int
+    public static function pendingId(): ?int
     {
         return static::getIdByTitle(self::STATUS_PENDING);
     }
     
-    public static function submittedId(): int
+    public static function submittedId(): ?int
     {
         return static::getIdByTitle(self::STATUS_SUBMITTED);
     }
     
-    public static function approvedId(): int
+    public static function pendingPayrollId(): ?int
+    {
+        return static::getIdByTitle(self::STATUS_PENDING_PAYROLL);
+    }
+    
+    public static function approvedId(): ?int
     {
         return static::getIdByTitle(self::STATUS_APPROVED);
     }
     
-    public static function rejectedId(): int
+    public static function rejectedId(): ?int
     {
         return static::getIdByTitle(self::STATUS_REJECTED);
     }

@@ -20,4 +20,8 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::get('/approvals/time', [TimesheetController::class, 'approvalsTime'])->name('approvals.time');
     Route::post('/approvals/time/approve', [TimesheetController::class, 'approveTimesheet'])->name('approvals.time.approve');
     Route::post('/approvals/time/reject', [TimesheetController::class, 'rejectTimesheet'])->name('approvals.time.reject');
+    
+    // Payroll Approval (Admin/Finance only)
+    Route::post('/payroll/time/approve', [TimesheetController::class, 'payrollApproveTimesheet'])->name('payroll.time.approve');
+    Route::post('/payroll/time/reject', [TimesheetController::class, 'payrollRejectTimesheet'])->name('payroll.time.reject');
 });

@@ -92,6 +92,7 @@ const visibleColumns = ref({
   employeeNumber: false,
   role: true,
   department: true,
+  eventName: false, // Show for managers when viewing multiple events
   reportingTo: true,
   email: false,
   contractStart: true,
@@ -280,6 +281,12 @@ function handleClickOutside(event) {
 }
 
 onMounted(() => {
+  // Set default column visibility based on role
+  if (props.hrRole === 'manager') {
+    visibleColumns.value.eventName = true
+    visibleColumns.value.reportingTo = false
+  }
+  
   document.addEventListener('click', handleClickOutside)
 })
 
@@ -382,6 +389,7 @@ const columnPreview = computed(() => {
     employeeNumber: first.empNumber,
     role: first.role,
     department: first.dept,
+    eventName: first.eventName || 'N/A',
     reportingTo: first.reportingTo || 'N/A',
     email: first.email,
     personalEmail: first.personalEmail || 'N/A',
@@ -921,6 +929,13 @@ function updateEmployee() {
             </div>
           </label>
           <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
+            <input type="checkbox" v-model="visibleColumns.eventName" style="cursor:pointer;" />
+            <div style="flex:1;">
+              <span>Event</span>
+              <div v-if="visibleColumns.eventName" style="font-size:11px;color:var(--mhr-ink-3);margin-top:2px;">{{ columnPreview.eventName }}</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
             <input type="checkbox" v-model="visibleColumns.reportingTo" style="cursor:pointer;" />
             <div style="flex:1;">
               <span>Reporting To</span>
@@ -1140,6 +1155,7 @@ function updateEmployee() {
               <th v-if="visibleColumns.employeeNumber">Employee #</th>
               <th v-if="visibleColumns.role">Role</th>
               <th v-if="visibleColumns.department">Department</th>
+              <th v-if="visibleColumns.eventName">Event</th>
               <th v-if="visibleColumns.reportingTo">Reporting To</th>
             <th v-if="visibleColumns.email">Work Email</th>
             <th v-if="visibleColumns.personalEmail">Personal Email</th>
@@ -1207,6 +1223,7 @@ function updateEmployee() {
             <td v-if="visibleColumns.employeeNumber"><span class="mhr-mono" style="font-size:12px;color:var(--mhr-ink-2);">{{ p.empNumber }}</span></td>
             <td v-if="visibleColumns.role">{{ p.role }}</td>
             <td v-if="visibleColumns.department"><span class="mhr-pill mhr-pill--plain">{{ p.dept }}</span></td>
+            <td v-if="visibleColumns.eventName"><span class="mhr-pill mhr-pill--neutral">{{ p.eventName }}</span></td>
             <td v-if="visibleColumns.reportingTo" style="color:var(--mhr-ink-3);">{{ p.reportingTo || '—' }}</td>
             <td v-if="visibleColumns.email" style="color:var(--mhr-ink-3);">{{ p.email }}</td>
             <td v-if="visibleColumns.personalEmail" style="color:var(--mhr-ink-3);">{{ p.personalEmail }}</td>

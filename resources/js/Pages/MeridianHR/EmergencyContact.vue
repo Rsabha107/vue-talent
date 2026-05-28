@@ -234,7 +234,7 @@ onBeforeUnmount(() => {
         <table class="mhr-table">
           <thead>
             <tr>
-              <th v-if="['admin', 'manager'].includes(hrRole)">EMPLOYEE</th>
+              <th v-if="hrRole === 'admin'">EMPLOYEE</th>
               <th>CONTACT NAME</th>
               <th>RELATIONSHIP</th>
               <th>PHONE NUMBER</th>
@@ -243,12 +243,12 @@ onBeforeUnmount(() => {
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td :colspan="['admin', 'manager'].includes(hrRole) ? 5 : 4" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
+              <td :colspan="hrRole === 'admin' ? 5 : 4" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
                 No emergency contacts found
               </td>
             </tr>
             <tr v-for="contact in filtered" :key="contact.id">
-              <td v-if="['admin', 'manager'].includes(hrRole)">
+              <td v-if="hrRole === 'admin'">
                 <div style="font-weight:500;">{{ contact.employeeName }}</div>
                 <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:2px;">{{ contact.employeeNumber }}</div>
               </td>
@@ -302,8 +302,8 @@ onBeforeUnmount(() => {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <!-- Employee field for admin/manager: searchable dropdown -->
-            <div v-if="['admin', 'manager'].includes(hrRole)" class="mhr-field" style="grid-column:1/-1;position:relative;" data-employee-dropdown>
+            <!-- Employee field for admin: searchable dropdown -->
+            <div v-if="employees.length > 0" class="mhr-field" style="grid-column:1/-1;position:relative;" data-employee-dropdown>
               <label class="mhr-field__label">EMPLOYEE *</label>
               <div style="position:relative;">
                 <input
@@ -407,7 +407,10 @@ onBeforeUnmount(() => {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;">
             <div>
               <h2 class="mhr-modal__title">Edit Emergency Contact</h2>
-              <p class="mhr-modal__sub" style="margin-top:2px;">{{ editingContact?.employeeName }}</p>
+              <p class="mhr-modal__sub" style="margin-top:2px;">
+                {{ editingContact?.employeeName }}
+                <span v-if="editingContact?.employeeNumber" style="opacity:0.7;"> · {{ editingContact.employeeNumber }}</span>
+              </p>
             </div>
             <button class="mhr-icon-btn" @click="closeEditModal" style="margin-top:-4px;">
               <AppIcon name="x" :size="16" />

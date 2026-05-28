@@ -20,6 +20,7 @@ const props = defineProps({
   leaveTypes:      { type: Array,  default: () => [] },
   statuses:        { type: Array,  default: () => [] },
   leaveBalances:   { type: Array,  default: () => [] },
+  isTeamView:      { type: Boolean, default: false },
 })
 
 const isEmployee = computed(() => !['admin', 'manager'].includes(props.hrRole))
@@ -97,16 +98,22 @@ const editForm = useForm({
 // Get leave balance for selected employee and leave type (Add modal)
 const currentBalance = computed(() => {
   if (!form.employee_id || !form.leave_type_id) return null
+  // Ensure proper type comparison (convert to numbers)
+  const empId = Number(form.employee_id)
+  const leaveTypeId = Number(form.leave_type_id)
   return props.leaveBalances.find(
-    b => b.employee_id === form.employee_id && b.leave_type_id === form.leave_type_id
+    b => Number(b.employee_id) === empId && Number(b.leave_type_id) === leaveTypeId
   )
 })
 
 // Get leave balance for selected employee and leave type (Edit modal)
 const editCurrentBalance = computed(() => {
   if (!editForm.employee_id || !editForm.leave_type_id) return null
+  // Ensure proper type comparison (convert to numbers)
+  const empId = Number(editForm.employee_id)
+  const leaveTypeId = Number(editForm.leave_type_id)
   return props.leaveBalances.find(
-    b => b.employee_id === editForm.employee_id && b.leave_type_id === editForm.leave_type_id
+    b => Number(b.employee_id) === empId && Number(b.leave_type_id) === leaveTypeId
   )
 })
 
@@ -215,9 +222,55 @@ watch(() => editForm.date_from, (newVal) => {
   }
 })
 
+// Clear form errors when fields are modified (Add form)
+watch(() => form.employee_id, () => {
+  if (form.errors.employee_id) form.clearErrors('employee_id')
+})
+watch(() => form.leave_type_id, () => {
+  if (form.errors.leave_type_id) form.clearErrors('leave_type_id')
+})
+watch(() => form.date_from, () => {
+  if (form.errors.date_from) form.clearErrors('date_from')
+})
+watch(() => form.date_to, () => {
+  if (form.errors.date_to) form.clearErrors('date_to')
+})
+watch(() => form.number_of_days, () => {
+  if (form.errors.number_of_days) form.clearErrors('number_of_days')
+})
+watch(() => form.reason, () => {
+  if (form.errors.reason) form.clearErrors('reason')
+})
+watch(() => form.status_id, () => {
+  if (form.errors.status_id) form.clearErrors('status_id')
+})
+
+// Clear form errors when fields are modified (Edit form)
+watch(() => editForm.employee_id, () => {
+  if (editForm.errors.employee_id) editForm.clearErrors('employee_id')
+})
+watch(() => editForm.leave_type_id, () => {
+  if (editForm.errors.leave_type_id) editForm.clearErrors('leave_type_id')
+})
+watch(() => editForm.date_from, () => {
+  if (editForm.errors.date_from) editForm.clearErrors('date_from')
+})
+watch(() => editForm.date_to, () => {
+  if (editForm.errors.date_to) editForm.clearErrors('date_to')
+})
+watch(() => editForm.number_of_days, () => {
+  if (editForm.errors.number_of_days) editForm.clearErrors('number_of_days')
+})
+watch(() => editForm.reason, () => {
+  if (editForm.errors.reason) editForm.clearErrors('reason')
+})
+watch(() => editForm.status_id, () => {
+  if (editForm.errors.status_id) editForm.clearErrors('status_id')
+})
+
 function openAddModal() {
-  // For employees, auto-set their employee_id
-  if (isEmployee.value && props.currentEmployee) {
+  // For employees and managers in personal view, auto-set their employee_id
+  if (props.currentEmployee && (isEmployee.value || !props.isTeamView)) {
     form.employee_id = props.currentEmployee.id
   }
   showAddModal.value = true
@@ -226,8 +279,8 @@ function openAddModal() {
 function resetAddForm() {
   form.reset()
   form.status_id = getPendingStatusId()
-  // Restore employee_id for employee roles
-  if (isEmployee.value && props.currentEmployee) {
+  // Restore employee_id for employees and managers in personal view
+  if (props.currentEmployee && (isEmployee.value || !props.isTeamView)) {
     form.employee_id = props.currentEmployee.id
   }
 }
@@ -388,7 +441,14 @@ function refreshLeaveRequests() {
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
         <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshLeaveRequests" />
-        <button class="mhr-btn mhr-btn--primary" @click="openAddModal">
+        <button 
+          v-if="!isTeamView" 
+          class="mhr-btn mhr-btn--primary" 
+          :disabled="!selectedEventId && hrRole === 'manager'"
+          :style="!selectedEventId && hrRole === 'manager' ? 'opacity: 0.5; cursor: not-allowed;' : ''"
+          :title="!selectedEventId && hrRole === 'manager' ? 'Please select an event to create leave requests' : ''"
+          @click="openAddModal"
+        >
           <AppIcon name="plus" /> Add Leave Request
         </button>
       </div>
@@ -399,6 +459,16 @@ function refreshLeaveRequests() {
       v-if="selectedEventData"
       :event-data="selectedEventData"
     />
+
+    <!-- Info Banner: No Event Selected for Manager -->
+    <div v-if="!selectedEventId && hrRole === 'manager' && !isTeamView" style="background:var(--mhr-accent-soft);border-left:3px solid var(--mhr-accent);padding:12px 16px;margin-bottom:16px;border-radius:var(--mhr-r);display:flex;align-items:center;gap:12px;">
+      <AppIcon name="info" :size="18" style="color:var(--mhr-accent);flex-shrink:0;" />
+      <div style="font-size:13px;color:var(--mhr-ink);">
+        <strong style="color:var(--mhr-accent);">Viewing all your events</strong> — 
+        Leave balances in the add/edit modal will show aggregated data from all assigned events. 
+        Select a specific event from the event selector above to view balances for a single event.
+      </div>
+    </div>
 
     <!-- Filters -->
     <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;justify-content:space-between;">
@@ -434,8 +504,12 @@ function refreshLeaveRequests() {
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td colspan="8" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
-                No leave requests found
+              <td colspan="8" style="text-align:center;padding:56px 20px;">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+                  <AppIcon name="inbox" :size="40" style="opacity:0.18;" />
+                  <div style="font-size:14px;font-weight:600;color:var(--mhr-ink-2);">No leave requests found</div>
+                  <div style="font-size:13px;color:var(--mhr-ink-3);">Click <strong>Add Leave Request</strong> to create the first one.</div>
+                </div>
               </td>
             </tr>
             <tr v-for="request in filtered" :key="request.id">
@@ -477,12 +551,12 @@ function refreshLeaveRequests() {
                       <AppIcon name="eye" :size="14" />
                       <span>View Details</span>
                     </button>
-                    <button v-if="request.statusTitle?.toLowerCase() !== 'approved'" @click="editRequest(request)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
+                    <button v-if="hrRole !== 'manager' && request.statusTitle?.toLowerCase() !== 'approved'" @click="editRequest(request)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
                       <AppIcon name="edit" :size="14" />
                       <span>Edit</span>
                     </button>
-                    <div v-if="request.statusTitle?.toLowerCase() !== 'approved'" style="border-top:1px solid var(--mhr-line-2);margin:4px 0;"></div>
-                    <button v-if="request.statusTitle?.toLowerCase() !== 'approved'" @click="confirmDelete(request)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-danger);" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
+                    <div v-if="hrRole !== 'manager' && request.statusTitle?.toLowerCase() !== 'approved'" style="border-top:1px solid var(--mhr-line-2);margin:4px 0;"></div>
+                    <button v-if="hrRole !== 'manager' && request.statusTitle?.toLowerCase() !== 'approved'" @click="confirmDelete(request)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-danger);" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
                       <AppIcon name="trash" :size="14" />
                       <span>Archive</span>
                     </button>
@@ -518,8 +592,8 @@ function refreshLeaveRequests() {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <!-- Employee field: Show selector for admin/manager, read-only for employees -->
-            <div v-if="!isEmployee" class="mhr-field" style="grid-column:1/-1;">
+            <!-- Employee field: Show selector for admin or manager in team view, read-only for employees and managers in personal view -->
+            <div v-if="hrRole === 'admin' || (hrRole === 'manager' && isTeamView)" class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">EMPLOYEE *</label>
               <EmployeeSelector
                 v-model="form.employee_id"
@@ -717,7 +791,8 @@ function refreshLeaveRequests() {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div class="mhr-field" style="grid-column:1/-1;">
+            <!-- Employee field: Show selector for admin or manager in team view, read-only for employees and managers in personal view -->
+            <div v-if="hrRole === 'admin' || (hrRole === 'manager' && isTeamView)" class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">EMPLOYEE *</label>
               <EmployeeSelector
                 v-model="editForm.employee_id"
@@ -726,6 +801,12 @@ function refreshLeaveRequests() {
                 placeholder="Search employee..."
                 :disabled="isApproved"
               />
+            </div>
+            <div v-else class="mhr-field" style="grid-column:1/-1;">
+              <label class="mhr-field__label">EMPLOYEE</label>
+              <div style="padding:10px 12px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
+                {{ editingRequest?.employeeName }} ({{ editingRequest?.employeeNumber }})
+              </div>
             </div>
             
             <div class="mhr-field" style="grid-column:1/-1;">

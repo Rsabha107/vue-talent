@@ -213,20 +213,27 @@ class Employee extends Model
      * Scope to filter employees by event assignment
      * 
      * @param \Illuminate\Database\Eloquent\Builder $query
-     * @param int|null $eventId - If null, uses session event
+     * @param int|array|null $eventId - Single event ID, array of IDs, or null for all
      * @return \Illuminate\Database\Eloquent\Builder
      */
     public function scopeForEvent($query, $eventId = null)
     {
         $eventId = $eventId ?? session('selected_event_id');
         
-        if ($eventId) {
+        if ($eventId === null) {
+            return $query; // No filter - show all
+        }
+        
+        if (is_array($eventId)) {
             return $query->whereHas('events', function ($q) use ($eventId) {
-                $q->where('events.id', $eventId)
+                $q->whereIn('events.id', $eventId)
                   ->where('employee_events.is_active', 1);
             });
         }
         
-        return $query;
+        return $query->whereHas('events', function ($q) use ($eventId) {
+            $q->where('events.id', $eventId)
+              ->where('employee_events.is_active', 1);
+        });
     }
 }

@@ -39,6 +39,33 @@ abstract class BaseHRController extends Controller
     }
 
     /**
+     * Get effective event IDs for filtering based on role and selection
+     * 
+     * @return int|array|null
+     *   - int: specific event selected
+     *   - array: manager's assigned events (when no event selected)
+     *   - null: admin with no event selected (all events)
+     */
+    protected function getEffectiveEventIds()
+    {
+        $eventId = $this->getSelectedEventId();
+        $hrRole = $this->getHRRole();
+        
+        // If specific event selected, return that
+        if ($eventId) {
+            return $eventId;
+        }
+        
+        // No event selected - depends on role
+        if ($hrRole === 'admin') {
+            return null; // Admin sees all events
+        }
+        
+        // Manager/employee: return their assigned event IDs
+        return $this->getManagerEventIds();
+    }
+
+    /**
      * Require event selection - redirect if not selected
      * 
      * @return \Illuminate\Http\RedirectResponse|null
@@ -54,20 +81,64 @@ abstract class BaseHRController extends Controller
     }
 
     /**
-     * Get employees query scoped to current event
+     * Get manager's assigned event IDs
+     * 
+     * @return array|null Array of event IDs for manager, null for admin (all events)
+     */
+    protected function getManagerEventIds()
+    {
+        $hrRole = $this->getHRRole();
+        
+        // Admin has access to all events
+        if ($hrRole === 'admin') {
+            return null;
+        }
+        
+        // Manager and employees: get their assigned events
+        $employee = Employee::where('user_id', auth()->id())->first();
+        
+        if (!$employee) {
+            return [];
+        }
+        
+        return $employee->events()
+            ->where('events.active_flag', 1)
+            ->where('employee_events.is_active', 1)
+            ->pluck('events.id')
+            ->toArray();
+    }
+
+    /**
+     * Get employees query scoped to current event or manager's events
      * 
      * @return \Illuminate\Database\Eloquent\Builder
      */
     protected function getEventEmployees()
     {
         $eventId = $this->getSelectedEventId();
+        $hrRole = $this->getHRRole();
         
-        if (!$eventId) {
+        // If specific event selected, filter by that event
+        if ($eventId) {
+            return Employee::whereHas('events', function ($q) use ($eventId) {
+                $q->where('events.id', $eventId)
+                  ->where('employee_events.is_active', 1);
+            });
+        }
+        
+        // No event selected: admin sees all, manager sees their assigned events
+        if ($hrRole === 'admin') {
             return Employee::query();
         }
         
-        return Employee::whereHas('events', function ($q) use ($eventId) {
-            $q->where('events.id', $eventId)
+        // Manager/employee with no event selected: filter by their assigned events
+        $managerEventIds = $this->getManagerEventIds();
+        if (empty($managerEventIds)) {
+            return Employee::whereRaw('1 = 0'); // No results
+        }
+        
+        return Employee::whereHas('events', function ($q) use ($managerEventIds) {
+            $q->whereIn('events.id', $managerEventIds)
               ->where('employee_events.is_active', 1);
         });
     }
@@ -83,14 +154,14 @@ abstract class BaseHRController extends Controller
     {
         $hrRole = $this->getHRRole();
         
-        // Admin and Manager can see all events
-        if (in_array($hrRole, ['admin', 'manager'])) {
+        // Only admin can see all events
+        if ($hrRole === 'admin') {
             return Event::where('active_flag', 1)
                 ->orderBy('name')
                 ->get(['id', 'name', 'event_logo']);
         }
         
-        // Employees only see their assigned events
+        // Managers and employees only see their assigned events
         $employee = Employee::where('user_id', auth()->id())->first();
         
         if (!$employee) {

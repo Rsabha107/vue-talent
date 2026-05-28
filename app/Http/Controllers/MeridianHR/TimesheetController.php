@@ -89,12 +89,32 @@ class TimesheetController extends BaseHRController
 
     protected function timesheetStatuses(): array
     {
-        return [
-            ['id' => 1, 'title' => 'Pending',   'color' => '#f59e0b'],
-            ['id' => 2, 'title' => 'Submitted', 'color' => '#3b82f6'],
-            ['id' => 3, 'title' => 'Approved',  'color' => '#10b981'],
-            ['id' => 4, 'title' => 'Rejected',  'color' => '#ef4444'],
+        return EmployeeTimesheetStatus::active()
+            ->orderBy('id')
+            ->get(['id', 'title', 'color'])
+            ->map(function ($status) {
+                return [
+                    'id'    => $status->id,
+                    'title' => $status->title,
+                    'color' => $this->getColorForStatus($status->color),
+                ];
+            })
+            ->toArray();
+    }
+    
+    /**
+     * Map color names to hex codes
+     */
+    private function getColorForStatus(string $color): string
+    {
+        $colors = [
+            'warning' => '#f59e0b',
+            'info'    => '#3b82f6',
+            'primary' => '#3b82f6',
+            'success' => '#10b981',
+            'danger'  => '#ef4444',
         ];
+        return $colors[$color] ?? '#6b7280';
     }
 
     protected function generateMonthSkeleton(string $monthKey): array
@@ -121,6 +141,96 @@ class TimesheetController extends BaseHRController
         ]));
     }
 
+    /**
+     * Calculate and update timesheet payment fields based on entries
+     */
+    protected function calculateTimesheetPayment(EmployeeTimesheet $timesheet): void
+    {
+        $tsId = $timesheet->id;
+        $employeeId = $timesheet->employee_id;
+        
+        // Get timesheet period dates
+        $timesheetPeriodStart = \Carbon\Carbon::create($timesheet->year, $timesheet->month_id, 1)->startOfMonth();
+        $timesheetPeriodEnd = $timesheetPeriodStart->copy()->endOfMonth();
+
+        // Get salary for this period
+        $salary = EmployeeSalary::where('employee_id', $employeeId)
+            ->where('archived', 'N')
+            ->where('active_flag', 1)
+            ->where('effective_start_date', '<=', $timesheetPeriodEnd)
+            ->where(function ($query) use ($timesheetPeriodStart) {
+                $query->where('effective_end_date', '>=', $timesheetPeriodStart)
+                    ->orWhere('effective_end_date', '9999-12-31');
+            })
+            ->orderBy('effective_start_date', 'DESC')
+            ->first();
+
+        // Get bank account for this period
+        $bank = EmployeeBank::where('employee_id', $employeeId)
+            ->where('archived', 'N')
+            ->where('effective_start_date', '<=', $timesheetPeriodEnd)
+            ->where(function ($query) use ($timesheetPeriodStart) {
+                $query->where('effective_end_date', '>=', $timesheetPeriodStart)
+                    ->orWhere('effective_end_date', '9999-12-31');
+            })
+            ->orderBy('effective_start_date', 'DESC')
+            ->first();
+
+        // Get first and last days from entries
+        $firstDay = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)
+            ->orderBy('calendar_day', 'ASC')
+            ->first();
+        $lastDay = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)
+            ->orderBy('calendar_day', 'DESC')
+            ->first();
+
+        if (!$firstDay || !$lastDay) {
+            // No entries found - set default values
+            $startDay = 1;
+            $endDay = cal_days_in_month(CAL_GREGORIAN, $timesheet->month_id, $timesheet->year);
+        } else {
+            $startDay = $firstDay->calendar_day;
+            $endDay = $lastDay->calendar_day;
+        }
+
+        // Count actions
+        $countWorked = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'W')->count();
+        $countLeaves = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'L')->count();
+        $countUnpaid = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'U')->count();
+
+        // Calculate payment
+        $monthlySalary = $salary?->net_salary ?? 0;
+        $dailyRate = $monthlySalary / 30;
+        
+        // Determine if this is a full month (contract goes to month-end)
+        $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $timesheet->month_id, $timesheet->year);
+        $isFullMonth = ($startDay <= 5 && $endDay >= $daysInMonth - 2); // Covers substantially full month
+        
+        if ($isFullMonth) {
+            // Full month: pay full salary minus unpaid days only
+            $totalPayment = $monthlySalary - ($countUnpaid * $dailyRate);
+            $paidDays = 30 - $countUnpaid;
+        } else {
+            // Partial month: prorate based on actual calendar days worked
+            $workedDays = $endDay - $startDay + 1; // Actual days in range
+            $paidDays = max(0, $workedDays - $countUnpaid);
+            $totalPayment = $dailyRate * $paidDays;
+        }
+
+        // Update timesheet with calculated values (but not status)
+        $timesheet->update([
+            'days_worked' => $countWorked,
+            'leave_taken' => $countLeaves,
+            'unpaid_leave_taken' => $countUnpaid,
+            'total_days_eligible_for_payment' => $paidDays,
+            'salary' => $monthlySalary,
+            'daily_rate' => $dailyRate,
+            'total_payment' => $totalPayment,
+            'bank_id' => $bank?->id,
+            'updated_at' => now(),
+        ]);
+    }
+
     public function submitTimesheet(Request $request)
     {
         $request->validate([
@@ -134,13 +244,51 @@ class TimesheetController extends BaseHRController
             return back()->withErrors(['error' => 'Only pending timesheets can be submitted.']);
         }
         
-        // Update status to Submitted
-        $timesheet->update([
-            'status_id' => EmployeeTimesheetStatus::submittedId(),
-            'updated_at' => now(),
-        ]);
+        // Recalculate payment before submission
+        DB::transaction(function () use ($timesheet) {
+            // Use the shared calculation method
+            $this->calculateTimesheetPayment($timesheet);
+            
+            // Update status to Submitted
+            $timesheet->update([
+                'status_id' => EmployeeTimesheetStatus::submittedId(),
+                'updated_at' => now(),
+            ]);
+        });
         
         return back()->with('success', 'Timesheet submitted successfully.');
+    }
+
+    /**
+     * Calculate payment for a timesheet without changing status
+     */
+    public function calculatePayment(Request $request)
+    {
+        $request->validate([
+            'timesheet_id' => 'required|integer|exists:employee_timesheets,id',
+        ]);
+        
+        $timesheet = EmployeeTimesheet::findOrFail($request->timesheet_id);
+        
+        // Calculate payment
+        $this->calculateTimesheetPayment($timesheet);
+        
+        // Refresh the model to get updated values
+        $timesheet->refresh();
+        
+        // Return updated values to frontend
+        return back()->with([
+            'updatedTimesheet' => [
+                'id' => $timesheet->id,
+                'daysWorked' => $timesheet->days_worked ?? 0,
+                'leaveTaken' => $timesheet->leave_taken ?? 0,
+                'unpaidLeave' => $timesheet->unpaid_leave_taken ?? 0,
+                'totalDays' => $timesheet->total_days_eligible_for_payment ?? 0,
+                'dailyRate' => $timesheet->daily_rate ? number_format($timesheet->daily_rate, 2) : '0.00',
+                'salary' => $timesheet->salary ? number_format($timesheet->salary, 2) : '0.00',
+                'payment' => $timesheet->total_payment ? number_format($timesheet->total_payment, 2) : '0.00',
+            ],
+        ]);
     }
 
     public function saveTimesheetDay(Request $request)
@@ -360,31 +508,80 @@ class TimesheetController extends BaseHRController
 
     public function timesheetTalent()
     {
-        $eventId  = $this->getSelectedEventId();
+        $eventId  = $this->getEffectiveEventIds(); // Support manager "All My Events"
+        $hrRole = $this->getHRRole();
+        $scope = request()->query('scope'); // 'team' for team view, null for personal view
         $statuses = $this->timesheetStatuses();
         $statusMap = collect($statuses)->keyBy('id');
 
-        // Employees list
-        $empQuery = Employee::active()->orderBy('full_name');
-        if ($eventId) {
-            $empQuery->whereHas('events', function ($q) use ($eventId) {
-                $q->where('events.id', $eventId)->where('employee_events.is_active', 1);
-            });
+        // Determine if we should show only personal timesheets
+        $showPersonalOnly = false;
+        $currentEmployee = null;
+        
+        if (!in_array($hrRole, ['admin'])) {
+            // For employees, always show only their own timesheets
+            if (!in_array($hrRole, ['manager'])) {
+                $showPersonalOnly = true;
+            }
+            // For managers, show personal timesheets unless scope=team
+            elseif ($scope !== 'team') {
+                $showPersonalOnly = true;
+            }
         }
-        $employees = $empQuery->get()->map(fn($e) => [
-            'id' => $e->id,
-            'full_name' => $e->full_name,
-            'employee_number' => $e->employee_number
-        ]);
+        
+        // Get current employee record if needed
+        if ($showPersonalOnly) {
+            $currentEmployee = Employee::where('user_id', auth()->id())->first();
+        }
+
+        // Employees list
+        // For personal view (managers/employees), only show current employee
+        if ($showPersonalOnly) {
+            if ($currentEmployee) {
+                $employees = collect([[
+                    'id' => $currentEmployee->id,
+                    'full_name' => $currentEmployee->full_name,
+                    'employee_number' => $currentEmployee->employee_number,
+                ]]);
+            } else {
+                $employees = collect([]);
+            }
+        } else {
+            $empQuery = Employee::active()->orderBy('full_name');
+            
+            if ($eventId) {
+                if (is_array($eventId)) {
+                    $empQuery->whereHas('events', function ($q) use ($eventId) {
+                        $q->whereIn('events.id', $eventId)->where('employee_events.is_active', 1);
+                    });
+                } else {
+                    $empQuery->whereHas('events', function ($q) use ($eventId) {
+                        $q->where('events.id', $eventId)->where('employee_events.is_active', 1);
+                    });
+                }
+            }
+            
+            $employees = $empQuery->get()->map(fn($e) => [
+                'id' => $e->id,
+                'full_name' => $e->full_name,
+                'employee_number' => $e->employee_number
+            ]);
+        }
 
         // Timesheets with entries
         $tsQuery = EmployeeTimesheet::active()
             ->with([
                 'employee' => function ($query) use ($eventId) {
                     if ($eventId) {
-                        $query->with(['events' => function ($q) use ($eventId) {
-                            $q->where('events.id', $eventId);
-                        }]);
+                        if (is_array($eventId)) {
+                            $query->with(['events' => function ($q) use ($eventId) {
+                                $q->whereIn('events.id', $eventId);
+                            }]);
+                        } else {
+                            $query->with(['events' => function ($q) use ($eventId) {
+                                $q->where('events.id', $eventId);
+                            }]);
+                        }
                     }
                 },
                 'event',
@@ -392,6 +589,14 @@ class TimesheetController extends BaseHRController
                 'performer:id,full_name'
             ])
             ->forEvent($eventId)
+            ->when($showPersonalOnly, function ($query) use ($currentEmployee) {
+                if ($currentEmployee) {
+                    return $query->where('employee_id', $currentEmployee->id);
+                } else {
+                    // No employee record found - show empty results
+                    return $query->whereRaw('1 = 0');
+                }
+            })
             ->orderByDesc('year')
             ->orderByDesc('month_id');
 
@@ -406,6 +611,14 @@ class TimesheetController extends BaseHRController
             EmployeeLeaveRequest::active()
                 ->where('status_id', $approvedStatusId)
                 ->forEvent($eventId)
+                ->when($showPersonalOnly, function ($query) use ($currentEmployee) {
+                    if ($currentEmployee) {
+                        return $query->where('employee_id', $currentEmployee->id);
+                    } else {
+                        // No employee record found - show empty results
+                        return $query->whereRaw('1 = 0');
+                    }
+                })
                 ->get(['employee_id', 'date_from', 'date_to'])
                 ->each(function ($lr) use (&$leaveDays) {
                     $cur = $lr->date_from->copy();
@@ -547,6 +760,7 @@ class TimesheetController extends BaseHRController
             'cutoffDay' => $cutoffDay,
             'disableSubmission' => $disableSubmission,
             'formattedCutoff' => $formattedCutoff,
+            'isTeamView' => $scope === 'team', // Indicates read-only team view for managers
         ]));
     }
 
@@ -821,81 +1035,12 @@ class TimesheetController extends BaseHRController
             }
             EmployeeTimesheetEntry::insert($rows);
 
-            // Calculate and update timesheet summary fields
+            // Calculate and update timesheet payment
             $timesheet = EmployeeTimesheet::findOrFail($tsId);
+            $this->calculateTimesheetPayment($timesheet);
             
-            // Get timesheet period dates
-            $timesheetPeriodStart = \Carbon\Carbon::create($timesheet->year, $timesheet->month_id, 1)->startOfMonth();
-            $timesheetPeriodEnd = $timesheetPeriodStart->copy()->endOfMonth();
-
-            // Get salary for this period
-            $salary = EmployeeSalary::where('employee_id', $employeeId)
-                ->where('archived', 'N')
-                ->where('active_flag', 1)
-                ->where('effective_start_date', '<=', $timesheetPeriodEnd)
-                ->where(function ($query) use ($timesheetPeriodStart) {
-                    $query->where('effective_end_date', '>=', $timesheetPeriodStart)
-                        ->orWhere('effective_end_date', '9999-12-31');
-                })
-                ->orderBy('effective_start_date', 'DESC')
-                ->first();
-
-            // Get bank account for this period
-            $bank = EmployeeBank::where('employee_id', $employeeId)
-                ->where('archived', 'N')
-                ->where('effective_start_date', '<=', $timesheetPeriodEnd)
-                ->where(function ($query) use ($timesheetPeriodStart) {
-                    $query->where('effective_end_date', '>=', $timesheetPeriodStart)
-                        ->orWhere('effective_end_date', '9999-12-31');
-                })
-                ->orderBy('effective_start_date', 'DESC')
-                ->first();
-
-            // Get first and last days from entries
-            $firstDay = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)
-                ->orderBy('calendar_day', 'ASC')
-                ->first();
-            $lastDay = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)
-                ->orderBy('calendar_day', 'DESC')
-                ->first();
-
-            $startDay = $firstDay->calendar_day;
-            $endDay = $lastDay->calendar_day;
-
-            // Count actions
-            $countWorked = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'W')->count();
-            $countLeaves = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'L')->count();
-            $countUnpaid = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'U')->count();
-
-            // Calculate payment
-            $monthlySalary = $salary?->net_salary ?? 0;
-            $dailyRate = $monthlySalary / 30;
-            
-            // Determine if this is a full month (contract goes to month-end)
-            $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $timesheet->month_id, $timesheet->year);
-            $isFullMonth = ($startDay <= 5 && $endDay >= $daysInMonth - 2); // Covers substantially full month
-            
-            if ($isFullMonth) {
-                // Full month: pay full salary minus unpaid days only
-                $totalPayment = $monthlySalary - ($countUnpaid * $dailyRate);
-                $paidDays = 30 - $countUnpaid;
-            } else {
-                // Partial month: prorate based on actual calendar days worked
-                $workedDays = $endDay - $startDay + 1; // Actual days in range
-                $paidDays = max(0, $workedDays - $countUnpaid);
-                $totalPayment = $dailyRate * $paidDays;
-            }
-
-            // Update timesheet with calculated values
+            // Mark entries as existing and ensure status is Pending
             $timesheet->update([
-                'days_worked' => $countWorked,
-                'leave_taken' => $countLeaves,
-                'unpaid_leave_taken' => $countUnpaid,
-                'total_days_eligible_for_payment' => $paidDays,
-                'salary' => $monthlySalary,
-                'daily_rate' => $dailyRate,
-                'total_payment' => $totalPayment,
-                'bank_id' => $bank?->id,
                 'entries_exists' => 'Y',
                 'status_id' => EmployeeTimesheetStatus::pendingId(),
             ]);
@@ -935,21 +1080,24 @@ class TimesheetController extends BaseHRController
 
     public function approvalsTime()
     {
-        $eventId = $this->getSelectedEventId();
+        $eventId = $this->getEffectiveEventIds(); // Support manager "All My Events"
+        $role = $this->getHRRole();
         
-        // Get submitted timesheets (ready for approval)
+        // Get submitted timesheets (ready for manager/admin approval)
         $submittedStatusId = EmployeeTimesheetStatus::submittedId();
-        
-        $query = EmployeeTimesheet::active()
-            ->with(['employee', 'performer:id,full_name'])
-            ->where('status_id', $submittedStatusId)
-            ->forEvent($eventId)
-            ->orderBy('created_at', 'DESC');
+        $pendingPayrollStatusId = EmployeeTimesheetStatus::pendingPayrollId();
         
         $monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June',
                        'July', 'August', 'September', 'October', 'November', 'December'];
         
-        $timesheets = $query->get()->map(function ($ts) use ($monthNames) {
+        // Submitted timesheets (manager review)
+        $submittedQuery = EmployeeTimesheet::active()
+            ->with(['employee', 'event', 'performer:id,full_name'])
+            ->where('status_id', $submittedStatusId)
+            ->forEvent($eventId)
+            ->orderBy('created_at', 'DESC');
+        
+        $submittedTimesheets = $submittedQuery->get()->map(function ($ts) use ($monthNames) {
             $emp = $ts->employee;
             $period = $monthNames[$ts->month_id] . ' ' . $ts->year;
             
@@ -964,11 +1112,45 @@ class TimesheetController extends BaseHRController
                 'unpaid'    => $ts->unpaid_leave_taken ?? 0,
                 'submitted' => $ts->created_at?->format('Y-m-d'),
                 'note'      => $ts->additional_information ?? '',
+                'status'    => 'submitted',
+                'eventName' => $ts->event?->name,
             ];
         });
         
+        // Pending payroll timesheets (payroll review) - admin only
+        $payrollTimesheets = collect([]);
+        if ($role === 'admin') {
+            $payrollQuery = EmployeeTimesheet::active()
+                ->with(['employee', 'event', 'performer:id,full_name'])
+                ->where('status_id', $pendingPayrollStatusId)
+                ->forEvent($eventId)
+                ->orderBy('updated_at', 'DESC');
+            
+            $payrollTimesheets = $payrollQuery->get()->map(function ($ts) use ($monthNames) {
+                $emp = $ts->employee;
+                $period = $monthNames[$ts->month_id] . ' ' . $ts->year;
+                
+                return [
+                    'id'        => $ts->id,
+                    'emp'       => $emp?->full_name ?? 'Unknown',
+                    'empId'     => $emp?->employee_number ?? 'N/A',
+                    'c'         => $emp?->avatar_color ?? 0,
+                    'period'    => $period,
+                    'worked'    => $ts->days_worked ?? 0,
+                    'leave'     => $ts->leave_taken ?? 0,
+                    'unpaid'    => $ts->unpaid_leave_taken ?? 0,
+                    'approved'  => $ts->updated_at?->format('Y-m-d'),
+                    'note'      => $ts->additional_information ?? '',
+                    'status'    => 'pending-payroll',
+                    'eventName' => $ts->event?->name,
+                ];
+            });
+        }
+        
         return Inertia::render('MeridianHR/TimesheetApprovals', array_merge($this->getCommonProps('approve-time'), [
-            'items' => $timesheets,
+            'submittedTimesheets' => $submittedTimesheets,
+            'payrollTimesheets' => $payrollTimesheets,
+            'isAdmin' => $role === 'admin',
         ]));
     }
     
@@ -980,23 +1162,24 @@ class TimesheetController extends BaseHRController
             'additional_information' => 'nullable|string|max:1000',
         ]);
         
-        $approvedStatusId = EmployeeTimesheetStatus::approvedId();
+        // Manager/Admin approval sends to Pending Payroll status
+        $pendingPayrollStatusId = EmployeeTimesheetStatus::pendingPayrollId();
         $submittedStatusId = EmployeeTimesheetStatus::submittedId();
         $userId = Auth::id();
         $additionalInfo = $request->additional_information;
         
-        DB::transaction(function () use ($request, $approvedStatusId, $submittedStatusId, $userId, $additionalInfo) {
+        DB::transaction(function () use ($request, $pendingPayrollStatusId, $submittedStatusId, $userId, $additionalInfo) {
             EmployeeTimesheet::whereIn('id', $request->ids)
                 ->where('status_id', $submittedStatusId)
                 ->update([
-                    'status_id'   => $approvedStatusId,
+                    'status_id'   => $pendingPayrollStatusId,
                     'performer_id' => $userId,
                     'additional_information' => $additionalInfo,
                     'updated_at'  => now(),
                 ]);
         });
         
-        return back()->with('success', count($request->ids) . ' timesheet(s) approved successfully');
+        return back()->with('success', count($request->ids) . ' timesheet(s) approved and sent to payroll');
     }
     
     public function rejectTimesheet(Request $request)
@@ -1024,5 +1207,67 @@ class TimesheetController extends BaseHRController
         });
         
         return back()->with('success', count($request->ids) . ' timesheet(s) rejected');
+    }
+
+    /**
+     * Payroll approval - final approval after manager review
+     */
+    public function payrollApproveTimesheet(Request $request)
+    {
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'required|integer|exists:employee_timesheets,id',
+            'payroll_additional_information' => 'nullable|string|max:1000',
+        ]);
+        
+        $approvedStatusId = EmployeeTimesheetStatus::approvedId();
+        $pendingPayrollStatusId = EmployeeTimesheetStatus::pendingPayrollId();
+        $userId = Auth::id();
+        $payrollInfo = $request->payroll_additional_information;
+        
+        DB::transaction(function () use ($request, $approvedStatusId, $pendingPayrollStatusId, $userId, $payrollInfo) {
+            EmployeeTimesheet::whereIn('id', $request->ids)
+                ->where('status_id', $pendingPayrollStatusId)
+                ->update([
+                    'status_id'   => $approvedStatusId,
+                    'payroll_approval_id' => $approvedStatusId,
+                    'payroll_reviewed' => 1,
+                    'payroll_additional_information' => $payrollInfo,
+                    'updated_at'  => now(),
+                ]);
+        });
+        
+        return back()->with('success', count($request->ids) . ' timesheet(s) approved by payroll');
+    }
+
+    /**
+     * Payroll rejection - rejects timesheet after manager approval
+     */
+    public function payrollRejectTimesheet(Request $request)
+    {
+        $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'required|integer|exists:employee_timesheets,id',
+            'payroll_additional_information' => 'nullable|string|max:1000',
+        ]);
+        
+        $rejectedStatusId = EmployeeTimesheetStatus::rejectedId();
+        $pendingPayrollStatusId = EmployeeTimesheetStatus::pendingPayrollId();
+        $userId = Auth::id();
+        $payrollInfo = $request->payroll_additional_information;
+        
+        DB::transaction(function () use ($request, $rejectedStatusId, $pendingPayrollStatusId, $userId, $payrollInfo) {
+            EmployeeTimesheet::whereIn('id', $request->ids)
+                ->where('status_id', $pendingPayrollStatusId)
+                ->update([
+                    'status_id'   => $rejectedStatusId,
+                    'payroll_approval_id' => $rejectedStatusId,
+                    'payroll_reviewed' => 1,
+                    'payroll_additional_information' => $payrollInfo,
+                    'updated_at'  => now(),
+                ]);
+        });
+        
+        return back()->with('success', count($request->ids) . ' timesheet(s) rejected by payroll');
     }
 }

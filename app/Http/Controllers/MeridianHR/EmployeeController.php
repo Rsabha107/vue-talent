@@ -517,10 +517,10 @@ class EmployeeController extends BaseHRController
 
     public function employee()
     {
-        $eventId = $this->getSelectedEventId();
+        $eventId = $this->getEffectiveEventIds(); // Support manager "All My Events"
         
         // Employees page requires an event selection - return empty if no event selected
-        if (!$eventId) {
+        if (!$eventId || (is_array($eventId) && empty($eventId))) {
             return Inertia::render('MeridianHR/Employee', array_merge($this->getCommonProps('employee'), [
                 'employees'         => [],
                 'salutations'       => Salutation::orderBy('title')->get()->map(fn($s) => ['id' => $s->id, 'title' => $s->title]),
@@ -544,25 +544,50 @@ class EmployeeController extends BaseHRController
         $query = Employee::active()
             ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType', 'reportingTo'])
             ->withCount(['documents as documents_count' => function ($query) use ($eventId) {
-                $query->where('active_flag', 1)
-                      ->where('event_id', $eventId);
+                $query->where('active_flag', 1);
+                if (is_array($eventId)) {
+                    $query->whereIn('event_id', $eventId);
+                } else {
+                    $query->where('event_id', $eventId);
+                }
             }]);
         
         // Filter by event assignment
-        $query->whereHas('events', function ($q) use ($eventId) {
-            $q->where('events.id', $eventId)
-              ->where('employee_events.is_active', 1);
-        })->with(['events' => function ($q) use ($eventId) {
-            $q->where('events.id', $eventId)
-              ->select('events.id', 'events.name');
-        }]);
+        if (is_array($eventId)) {
+            $query->whereHas('events', function ($q) use ($eventId) {
+                $q->whereIn('events.id', $eventId)
+                  ->where('employee_events.is_active', 1);
+            })->with(['events' => function ($q) use ($eventId) {
+                $q->whereIn('events.id', $eventId)
+                  ->select('events.id', 'events.name');
+            }]);
+        } else {
+            $query->whereHas('events', function ($q) use ($eventId) {
+                $q->where('events.id', $eventId)
+                  ->where('employee_events.is_active', 1);
+            })->with(['events' => function ($q) use ($eventId) {
+                $q->where('events.id', $eventId)
+                  ->select('events.id', 'events.name');
+            }]);
+        }
         
         $employees = $query->orderBy('full_name')
             ->get()
             ->map(function ($emp) use ($eventId) {
+                // Event name - useful for managers viewing "All My Events"
+                $eventName = null;
+                if ($emp->events->isNotEmpty()) {
+                    // If viewing multiple events, show all event names
+                    $eventNames = $emp->events->pluck('name')->toArray();
+                    $eventName = count($eventNames) > 1 
+                        ? implode(', ', $eventNames)
+                        : $eventNames[0];
+                }
+                
                 return [
                     'id'                => $emp->id,
                     'name'              => $emp->full_name,
+                    'eventName'         => $eventName,
                     
                     // Event-specific data
                     'eventRole'         => $eventId && $emp->events->isNotEmpty() 
@@ -1608,15 +1633,15 @@ class EmployeeController extends BaseHRController
         $eventId = $this->getSelectedEventId();
 
         // Fetch emergency contacts based on role
-        if ($role === 'employee') {
-            // Employees see only their own emergency contacts
+        if (!in_array($role, ['admin'])) {
+            // Employees and Managers see only their own emergency contacts
             $contacts = \App\Models\EmployeeEmergencyContact::where('employee_id', $me['id'])
                 ->with(['employee', 'relationship'])
                 ->active()
                 ->orderBy('created_at', 'desc')
                 ->get();
         } else {
-            // Admin/Manager: filter by event if selected
+            // Admin only: filter by event if selected
             $query = \App\Models\EmployeeEmergencyContact::with(['employee', 'relationship'])
                 ->active()
                 ->orderBy('created_at', 'desc');
@@ -1652,8 +1677,8 @@ class EmployeeController extends BaseHRController
         });
 
         $employees = [];
-        if ($role !== 'employee') {
-            // For admin/manager, show employees filtered by event
+        if ($role === 'admin') {
+            // For admin only, show employees filtered by event
             $employeeQuery = Employee::select('id', 'employee_number', 'full_name')
                 ->orderBy('full_name');
             
@@ -1673,9 +1698,9 @@ class EmployeeController extends BaseHRController
                 ];
             });
 
-        // Pass current employee info for employee role
+        // Pass current employee info for employee and manager roles
         $currentEmployee = null;
-        if (!in_array($role, ['admin', 'manager'])) {
+        if (!in_array($role, ['admin'])) {
             $currentEmployee = [
                 'id' => $me['id'],
                 'full_name' => $me['name'],
@@ -1711,15 +1736,15 @@ class EmployeeController extends BaseHRController
             'contact_number' => 'required|string|max:20',
         ]);
 
-        // Employees can only add their own emergency contacts
-        if ($role === 'employee' && $validated['employee_id'] != $me['id']) {
+        // Employees and Managers can only add their own emergency contacts
+        if (!in_array($role, ['admin']) && $validated['employee_id'] != $me['id']) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'employee_id' => 'You can only add your own emergency contacts.'
             ]);
         }
 
-        // Admin/Manager: verify employee belongs to selected event
-        if ($role !== 'employee' && $eventId) {
+        // Admin only: verify employee belongs to selected event
+        if ($role === 'admin' && $eventId) {
             $employee = Employee::find($validated['employee_id']);
             $belongsToEvent = $employee->events()
                 ->where('events.id', $eventId)
@@ -1753,15 +1778,15 @@ class EmployeeController extends BaseHRController
 
         $contact = \App\Models\EmployeeEmergencyContact::findOrFail($id);
 
-        // Employees can only update their own emergency contacts
-        if ($role === 'employee' && $contact->employee_id != $me['id']) {
+        // Employees and Managers can only update their own emergency contacts
+        if (!in_array($role, ['admin']) && $contact->employee_id != $me['id']) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'employee_id' => 'You can only update your own emergency contacts.'
             ]);
         }
 
-        // Admin/Manager: verify employee belongs to selected event
-        if ($role !== 'employee' && $eventId) {
+        // Admin only: verify employee belongs to selected event
+        if ($role === 'admin' && $eventId) {
             $employee = $contact->employee;
             $belongsToEvent = $employee->events()
                 ->where('events.id', $eventId)
@@ -1800,15 +1825,15 @@ class EmployeeController extends BaseHRController
 
         $contact = \App\Models\EmployeeEmergencyContact::findOrFail($id);
 
-        // Employees can only delete their own emergency contacts
-        if ($role === 'employee' && $contact->employee_id != $me['id']) {
+        // Employees and Managers can only delete their own emergency contacts
+        if (!in_array($role, ['admin']) && $contact->employee_id != $me['id']) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'employee_id' => 'You can only delete your own emergency contacts.'
             ]);
         }
 
-        // Admin/Manager: verify employee belongs to selected event
-        if ($role !== 'employee' && $eventId) {
+        // Admin only: verify employee belongs to selected event
+        if ($role === 'admin' && $eventId) {
             $employee = $contact->employee;
             $belongsToEvent = $employee->events()
                 ->where('events.id', $eventId)

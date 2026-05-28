@@ -33,6 +33,7 @@ const props = defineProps({
   cutoffDay:  { type: [Number, String], default: 21 },
   disableSubmission: { type: Boolean, default: false },
   formattedCutoff: { type: String, default: null },
+  isTeamView: { type: Boolean, default: false },
   /*
     timesheets item shape:
     {
@@ -119,10 +120,21 @@ const isAdding     = ref(false)
 const addForm      = ref({ employeeId: '', monthId: '', year: '' })
 const addErrors    = ref({})
 
+// Clear add form errors when fields are modified
+watch(() => addForm.value.employeeId, () => {
+  if (addErrors.value.employeeId) delete addErrors.value.employeeId
+})
+watch(() => addForm.value.monthId, () => {
+  if (addErrors.value.monthId) delete addErrors.value.monthId
+})
+watch(() => addForm.value.year, () => {
+  if (addErrors.value.year) delete addErrors.value.year
+})
+
 function openAddModal() {
   addForm.value   = { employeeId: '', monthId: '', year: '' }
-  // Auto-populate employee ID for employees
-  if (isEmployee.value && props.currentEmployee) {
+  // Auto-populate employee ID for employees and managers in personal view
+  if (props.currentEmployee && (isEmployee.value || !props.isTeamView)) {
     addForm.value.employeeId = props.currentEmployee.id
   }
   addErrors.value = {}
@@ -131,7 +143,8 @@ function openAddModal() {
 
 function validateAdd() {
   const e = {}
-  if ((props.hrRole === 'admin' || props.hrRole === 'manager') && !addForm.value.employeeId) {
+  // Only validate employee selection for admin or manager in team view
+  if ((props.hrRole === 'admin' || (props.hrRole === 'manager' && props.isTeamView)) && !addForm.value.employeeId) {
     e.employeeId = 'Employee is required.'
   }
   if (!addForm.value.monthId) e.monthId = 'Month is required.'
@@ -262,6 +275,44 @@ function openEntries(ts) {
   activeTimesheet.value = ts
   entryRows.value       = buildRows(ts)
   view.value            = 'entries'
+  
+  // Recalculate payment when opening timesheet
+  recalculatePayment()
+}
+
+function recalculatePayment() {
+  if (!activeTimesheet.value || !activeTimesheet.value.id) return
+  
+  router.post(route('hr.timesheet.calculate'), {
+    timesheet_id: activeTimesheet.value.id,
+  }, {
+    preserveScroll: true,
+    onSuccess: (page) => {
+      // Update local timesheet with new calculated values
+      const updated = page.props.updatedTimesheet
+      if (updated && activeTimesheet.value) {
+        activeTimesheet.value.daysWorked = updated.daysWorked
+        activeTimesheet.value.leaveTaken = updated.leaveTaken
+        activeTimesheet.value.unpaidLeave = updated.unpaidLeave
+        activeTimesheet.value.totalDays = updated.totalDays
+        activeTimesheet.value.dailyRate = updated.dailyRate
+        activeTimesheet.value.salary = updated.salary
+        activeTimesheet.value.payment = updated.payment
+        
+        // Also update in localTimesheets
+        const localTs = localTimesheets.value.find(t => t.id === updated.id)
+        if (localTs) {
+          localTs.daysWorked = updated.daysWorked
+          localTs.leaveTaken = updated.leaveTaken
+          localTs.unpaidLeave = updated.unpaidLeave
+          localTs.totalDays = updated.totalDays
+          localTs.dailyRate = updated.dailyRate
+          localTs.salary = updated.salary
+          localTs.payment = updated.payment
+        }
+      }
+    },
+  })
 }
 
 function backToList() {
@@ -297,6 +348,8 @@ const editingDay = ref(null)
 const editAction = ref('W')
 
 function canEdit(day) {
+  // Managers cannot edit team timesheets (read-only access)
+  if (props.hrRole === 'manager') return false
   // Employees cannot edit approved timesheets
   if (isApprovedReadOnly.value) return false
   // Employees cannot edit when submission is disabled
@@ -307,6 +360,11 @@ function canEdit(day) {
 }
 
 function openDay(day) {
+  // Prevent editing for managers (read-only access to team timesheets)
+  if (props.hrRole === 'manager') {
+    showToast('Team timesheets are read-only. Only employees can edit their own timesheets.', 'error')
+    return
+  }
   // Prevent editing approved timesheets for employees
   if (isApprovedReadOnly.value) {
     showToast('This timesheet is approved and cannot be edited.', 'error')
@@ -469,24 +527,46 @@ function confirmSubmit() {
   if (!activeTimesheet.value) return
   
   isSubmitting.value = true
-  router.post(route('hr.timesheet.submit'), {
-    timesheet_id: activeTimesheet.value.id,
+  
+  // First, save entries to database
+  const workingDays = entryRows.value.filter(r => !r.isWeekend)
+  
+  router.post(route('hr.timesheet-talent.entries.store'), {
+    employee_timesheet_id: activeTimesheet.value.id,
+    employee_id:           activeTimesheet.value.employeeId,
+    calendar_day:          workingDays.map(r => r.day),
+    day_action:            workingDays.map(r => r.isLeave ? 'L' : r.action),
   }, {
+    preserveScroll: true,
     onSuccess: () => {
-      // Update local status to Submitted
-      const ts = localTimesheets.value.find(t => t.id === activeTimesheet.value.id)
-      if (ts) {
-        ts.statusId = 2 // Submitted
-        ts.statusTitle = 'Submitted'
-      }
-      if (activeTimesheet.value) {
-        activeTimesheet.value.statusId = 2
-        activeTimesheet.value.statusTitle = 'Submitted'
-      }
-      showSubmitModal.value = false
-      showToast('Timesheet submitted for approval successfully.')
-      backToList()
-      refreshData()
+      // Now submit the timesheet for approval
+      router.post(route('hr.timesheet.submit'), {
+        timesheet_id: activeTimesheet.value.id,
+      }, {
+        onSuccess: () => {
+          // Update local status to Submitted
+          const ts = localTimesheets.value.find(t => t.id === activeTimesheet.value.id)
+          if (ts) {
+            ts.statusId = 2 // Submitted
+            ts.statusTitle = 'Submitted'
+            ts.hasEntries = true
+            ts.entries = entryRows.value.map(r => ({ ...r }))
+          }
+          if (activeTimesheet.value) {
+            activeTimesheet.value.statusId = 2
+            activeTimesheet.value.statusTitle = 'Submitted'
+          }
+          showSubmitModal.value = false
+          showToast('Timesheet submitted for approval successfully.')
+          backToList()
+          refreshData()
+        },
+        onError: (errors) => {
+          const first = Object.values(errors)[0]
+          showToast(first || 'Failed to submit timesheet. Please try again.', 'error')
+        },
+        onFinish: () => { isSubmitting.value = false },
+      })
     },
     onError: (errors) => {
       const first = Object.values(errors)[0]
@@ -530,10 +610,11 @@ function deleteTimesheet() {
 
 // ── Status badge helpers ─────────────────────────────────────────────
 const STATUS_STYLE = {
-  Pending:   { bg: 'var(--mhr-warn-bg)',     color: 'var(--mhr-warn)'        },
-  Submitted: { bg: 'var(--mhr-info-bg)',     color: 'var(--mhr-info)'        },
-  Approved:  { bg: 'var(--mhr-accent-soft)', color: 'var(--mhr-accent-ink)'  },
-  Rejected:  { bg: 'var(--mhr-danger-bg)',   color: 'var(--mhr-danger)'      },
+  'Pending':         { bg: 'var(--mhr-warn-bg)',     color: 'var(--mhr-warn)'        },
+  'Submitted':       { bg: 'var(--mhr-info-bg)',     color: 'var(--mhr-info)'        },
+  'Pending Payroll': { bg: 'var(--mhr-accent-soft)', color: 'var(--mhr-accent-ink)' },
+  'Approved':        { bg: 'var(--green-700)',       color: '#fff'                   },
+  'Rejected':        { bg: 'var(--mhr-danger-bg)',   color: 'var(--mhr-danger)'      },
 }
 function statusStyle(title) {
   return STATUS_STYLE[title] || { bg: 'var(--mhr-surface-2)', color: 'var(--mhr-ink-3)' }
@@ -564,10 +645,12 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         <div class="mhr-page-head__actions">
           <RefreshButton variant="ghost" :is-refreshing="isRefreshing" @refresh="refreshData" />
           <button 
+            v-if="!isTeamView"
             class="mhr-btn mhr-btn--primary" 
             @click="openAddModal"
-            :disabled="isEmployee && disableSubmission"
-            :title="isEmployee && disableSubmission ? 'Timesheet submission is closed' : ''">
+            :disabled="(!selectedEventId && hrRole === 'manager') || (isEmployee && disableSubmission)"
+            :style="((!selectedEventId && hrRole === 'manager') || (isEmployee && disableSubmission)) ? 'opacity: 0.5; cursor: not-allowed;' : ''"
+            :title="!selectedEventId && hrRole === 'manager' ? 'Please select an event to create timesheets' : (isEmployee && disableSubmission ? 'Timesheet submission is closed' : '')">
             <AppIcon name="plus" :size="14" /> Add Timesheet
           </button>
         </div>
@@ -578,6 +661,16 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         v-if="selectedEventData"
         :event-data="selectedEventData"
       />
+
+      <!-- Info Banner: No Event Selected for Manager -->
+      <div v-if="!selectedEventId && hrRole === 'manager' && !isTeamView" style="background:var(--mhr-accent-soft);border-left:3px solid var(--mhr-accent);padding:12px 16px;margin-bottom:16px;border-radius:var(--mhr-r);display:flex;align-items:center;gap:12px;">
+        <AppIcon name="info" :size="18" style="color:var(--mhr-accent);flex-shrink:0;" />
+        <div style="font-size:13px;color:var(--mhr-ink);">
+          <strong style="color:var(--mhr-accent);">Viewing all your events</strong> — 
+          Timesheet data is aggregated from all assigned events. 
+          Select a specific event from the event selector above to view timesheets for a single event.
+        </div>
+      </div>
 
       <!-- Timesheet Submission Cutoff Banner -->
       <div v-if="cutoffDayNumber !== 0 && formattedCutoff && isEmployee" 
@@ -690,18 +783,18 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
                 <td>
                   <div style="display:flex;gap:6px;justify-content:flex-end;">
                     <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="openEntries(ts)">
-                      <AppIcon :name="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) ? 'eye' : 'edit'" :size="13" />
-                      <template v-if="isEmployee && (disableSubmission || ts.statusTitle === 'Approved')">
+                      <AppIcon :name="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) || hrRole === 'manager' ? 'eye' : 'edit'" :size="13" />
+                      <template v-if="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) || hrRole === 'manager'">
                         View
                       </template>
                       <template v-else>
                         {{ ts.hasEntries ? 'View / Edit' : 'Add Entries' }}
                       </template>
                     </button>
-                    <button v-if="isAdminOrManager" class="mhr-btn mhr-btn--sm mhr-btn--ghost" @click="openStatusModal(ts)">
+                    <button v-if="hrRole === 'admin'" class="mhr-btn mhr-btn--sm mhr-btn--ghost" @click="openStatusModal(ts)">
                       Status
                     </button>
-                    <button v-if="isAdminOrManager || (isEmployee && ts.statusTitle !== 'Approved')" class="mhr-btn mhr-btn--sm mhr-btn--danger"
+                    <button v-if="hrRole === 'admin' || (isEmployee && ts.statusTitle !== 'Approved')" class="mhr-btn mhr-btn--sm mhr-btn--danger"
                       @click="confirmDelete(ts)" :disabled="deletingId === ts.id">
                       <AppIcon name="trash" :size="13" />
                     </button>
@@ -781,18 +874,18 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <!-- Actions -->
           <div class="ts-card__actions">
             <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="openEntries(ts)" style="flex:1;">
-              <AppIcon :name="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) ? 'eye' : 'edit'" :size="13" />
-              <template v-if="isEmployee && (disableSubmission || ts.statusTitle === 'Approved')">
+              <AppIcon :name="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) || hrRole === 'manager' ? 'eye' : 'edit'" :size="13" />
+              <template v-if="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) || hrRole === 'manager'">
                 View
               </template>
               <template v-else>
                 {{ ts.hasEntries ? 'View / Edit' : 'Add Entries' }}
               </template>
             </button>
-            <button v-if="isAdminOrManager" class="mhr-btn mhr-btn--sm mhr-btn--ghost" @click="openStatusModal(ts)">
+            <button v-if="hrRole === 'admin'" class="mhr-btn mhr-btn--sm mhr-btn--ghost" @click="openStatusModal(ts)">
               Status
             </button>
-            <button v-if="isAdminOrManager || (isEmployee && ts.statusTitle !== 'Approved')" class="mhr-btn mhr-btn--sm mhr-btn--danger"
+            <button v-if="hrRole === 'admin' || (isEmployee && ts.statusTitle !== 'Approved')" class="mhr-btn mhr-btn--sm mhr-btn--danger"
               @click="confirmDelete(ts)" :disabled="deletingId === ts.id">
               <AppIcon name="trash" :size="13" />
             </button>
@@ -827,10 +920,10 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         </div>
         <div class="mhr-page-head__actions">
           <button class="mhr-btn mhr-btn--ghost" @click="backToList">
-            {{ (isApprovedReadOnly || (isEmployee && disableSubmission)) ? 'Close' : 'Cancel' }}
+            {{ (isApprovedReadOnly || (isEmployee && disableSubmission) || hrRole === 'manager') ? 'Close' : 'Cancel' }}
           </button>
           <button 
-            v-if="!isApprovedReadOnly && !(isEmployee && disableSubmission)"
+            v-if="!isApprovedReadOnly && !(isEmployee && disableSubmission) && hrRole !== 'manager'"
             class="mhr-btn mhr-btn--outline" 
             @click="saveEntries" 
             :disabled="isSavingEntries || isSubmitting">
@@ -838,7 +931,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
             {{ isSavingEntries ? 'Saving…' : 'Save' }}
           </button>
           <button 
-            v-if="activeTimesheet?.statusId === 1 && !isApprovedReadOnly && !(isEmployee && disableSubmission)" 
+            v-if="activeTimesheet?.statusId === 1 && !isApprovedReadOnly && !(isEmployee && disableSubmission) && hrRole !== 'manager'" 
             class="mhr-btn mhr-btn--primary" 
             @click="submitForApproval" 
             :disabled="isSavingEntries || isSubmitting">
@@ -987,8 +1080,8 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         </div>
         <div class="mhr-modal__body">
 
-          <!-- Employee selector — admin / manager only -->
-          <div v-if="isAdminOrManager" class="mhr-field">
+          <!-- Employee selector — admin or manager in team view, read-only for others -->
+          <div v-if="hrRole === 'admin' || (hrRole === 'manager' && isTeamView)" class="mhr-field">
             <label class="mhr-field__label">Select Employee *</label>
             <EmployeeSelector
               v-model="addForm.employeeId"
@@ -997,6 +1090,12 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
               :required="true"
             />
             <p v-if="addErrors.employeeId" class="ts-field-error">{{ addErrors.employeeId }}</p>
+          </div>
+          <div v-else-if="currentEmployee" class="mhr-field">
+            <label class="mhr-field__label">Employee</label>
+            <div style="padding:10px 12px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
+              {{ currentEmployee.full_name }} ({{ currentEmployee.employee_number }})
+            </div>
           </div>
 
           <!-- Employee display for employees (read-only) -->

@@ -29,6 +29,7 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     // Timesheet Management (Employee's own - Everyone)
     Route::get('/timesheet', [TimesheetController::class, 'timesheet'])->name('timesheet');
     Route::post('/timesheet/submit', [TimesheetController::class, 'submitTimesheet'])->name('timesheet.submit');
+    Route::post('/timesheet/calculate', [TimesheetController::class, 'calculatePayment'])->name('timesheet.calculate');
     Route::post('/timesheet/day', [TimesheetController::class, 'saveTimesheetDay'])->name('timesheet.day');
     Route::post('/timesheet/start', [TimesheetController::class, 'startTimesheet'])->name('timesheet.start');
     
