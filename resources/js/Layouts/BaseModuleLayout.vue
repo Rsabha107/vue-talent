@@ -45,7 +45,7 @@ const props = defineProps({
 })
 
 const page = usePage()
-const { modules, currentModule } = usePermissions()
+const { modules } = usePermissions()
 
 const collapsed = ref(false)
 const openNotif = ref(false)
@@ -189,7 +189,7 @@ defineExpose({ showToast })
             :key="mod.key"
             :href="mod.url"
             class="module-tab"
-            :class="{ 'module-tab--active': currentModule === mod.key }"
+            :class="{ 'module-tab--active': moduleKey === mod.key }"
           >
             <AppIcon :name="mod.icon" :size="14" />
             <span>{{ mod.name }}</span>

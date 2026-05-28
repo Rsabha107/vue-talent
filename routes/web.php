@@ -90,6 +90,12 @@ Route::middleware('auth')->group(function () {
     require __DIR__ . '/hr/admin.php';     // Admin management
     
     // ========================================================================
+    // PAYROLL MODULE ROUTES - Payroll operations
+    // ========================================================================
+    
+    require __DIR__ . '/payroll.php';      // Payroll dashboard, timesheet review, payments
+    
+    // ========================================================================
     // LEGACY ROUTES - Old event management system
     // ========================================================================
     

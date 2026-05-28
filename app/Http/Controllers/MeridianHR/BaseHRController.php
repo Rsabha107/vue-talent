@@ -392,13 +392,13 @@ abstract class BaseHRController extends Controller
             'url' => route('hr.dashboard'),
         ];
         
-        // Payroll module (future - check permission)
+        // Payroll module
         if ($user->can('payroll.access')) {
             $modules[] = [
                 'key' => 'payroll',
                 'name' => 'Payroll',
                 'icon' => 'dollar',
-                'url' => '/payroll/dashboard', // route('payroll.dashboard') when created
+                'url' => route('payroll.dashboard'),
             ];
         }
         
