@@ -33,7 +33,6 @@ const props = defineProps({
   cutoffDay:  { type: [Number, String], default: 21 },
   disableSubmission: { type: Boolean, default: false },
   formattedCutoff: { type: String, default: null },
-  isTeamView: { type: Boolean, default: false },
   /*
     timesheets item shape:
     {
@@ -661,20 +660,11 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
 
       <div class="mhr-page-head">
         <div>
-          <h1 class="mhr-page-head__title">Timesheets</h1>
-          <p class="mhr-page-head__sub">{{ filtered.length }} record{{ filtered.length !== 1 ? 's' : '' }}</p>
+          <h1 class="mhr-page-head__title">Team Timesheets</h1>
+          <p class="mhr-page-head__sub">{{ filtered.length }} record{{ filtered.length !== 1 ? 's' : '' }} (read-only)</p>
         </div>
         <div class="mhr-page-head__actions">
           <RefreshButton variant="ghost" :is-refreshing="isRefreshing" @refresh="refreshData" />
-          <button 
-            v-if="!isTeamView"
-            class="mhr-btn mhr-btn--primary" 
-            @click="openAddModal"
-            :disabled="(!selectedEventId && hrRole === 'manager') || (isEmployee && disableSubmission)"
-            :style="((!selectedEventId && hrRole === 'manager') || (isEmployee && disableSubmission)) ? 'opacity: 0.5; cursor: not-allowed;' : ''"
-            :title="!selectedEventId && hrRole === 'manager' ? 'Please select an event to create timesheets' : (isEmployee && disableSubmission ? 'Timesheet submission is closed' : '')">
-            <AppIcon name="plus" :size="14" /> Add Timesheet
-          </button>
         </div>
       </div>
 
@@ -683,16 +673,6 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         v-if="selectedEventData"
         :event-data="selectedEventData"
       />
-
-      <!-- Info Banner: No Event Selected for Manager -->
-      <div v-if="!selectedEventId && hrRole === 'manager' && !isTeamView" style="background:var(--mhr-accent-soft);border-left:3px solid var(--mhr-accent);padding:12px 16px;margin-bottom:16px;border-radius:var(--mhr-r);display:flex;align-items:center;gap:12px;">
-        <AppIcon name="info" :size="18" style="color:var(--mhr-accent);flex-shrink:0;" />
-        <div style="font-size:13px;color:var(--mhr-ink);">
-          <strong style="color:var(--mhr-accent);">Viewing all your events</strong> — 
-          Timesheet data is aggregated from all assigned events. 
-          Select a specific event from the event selector above to view timesheets for a single event.
-        </div>
-      </div>
 
       <!-- Timesheet Submission Cutoff Banner -->
       <div v-if="cutoffDayNumber !== 0 && formattedCutoff && isEmployee" 

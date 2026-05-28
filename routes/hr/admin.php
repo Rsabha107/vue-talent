@@ -23,9 +23,10 @@ use Illuminate\Support\Facades\Route;
  */
 Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     
-    // Employee Management
+    // Employee Management (consolidated - handles both All Events and event-filtered views)
     Route::get('/employee', [EmployeeController::class, 'employee'])->name('employee');
-    Route::get('/master-employee', [EmployeeController::class, 'masterEmployee'])->name('master-employee');
+    // Legacy route: master-employee now redirects to employee (All Events view)
+    // Route::get('/master-employee', [EmployeeController::class, 'masterEmployee'])->name('master-employee');
     Route::post('/employee', [EmployeeController::class, 'store'])->name('employee.store');
     Route::get('/employee/{id}/edit', [EmployeeController::class, 'edit'])->name('employee.edit');
     Route::put('/employee/{id}', [EmployeeController::class, 'update'])->name('employee.update');
@@ -74,13 +75,15 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::delete('/settings/{id}', [SettingsController::class, 'destroy'])->name('settings.destroy');
     
     // Leave Request Management (Admin View)
-    Route::get('/leave-requests', [EmployeeLeaveRequestController::class, 'index'])->name('leave-requests');
+    Route::get('/leave-requests', [EmployeeLeaveRequestController::class, 'index'])->name('leave-requests'); // Legacy route
+    Route::get('/all-leaves', [EmployeeLeaveRequestController::class, 'allLeaves'])->name('all-leaves'); // New route
     Route::post('/leave-requests', [EmployeeLeaveRequestController::class, 'store'])->name('leave-requests.store');
     Route::put('/leave-requests/{id}', [EmployeeLeaveRequestController::class, 'update'])->name('leave-requests.update');
     Route::delete('/leave-requests/{id}', [EmployeeLeaveRequestController::class, 'destroy'])->name('leave-requests.destroy');
     
     // Timesheet Talent (Admin View)
-    Route::get('/timesheet-talent', [TimesheetController::class, 'timesheetTalent'])->name('timesheet-talent');
+    Route::get('/timesheet-talent', [TimesheetController::class, 'timesheetTalent'])->name('timesheet-talent'); // Legacy route
+    Route::get('/all-timesheets', [TimesheetController::class, 'allTimesheetsView'])->name('all-timesheets'); // New route
     Route::post('/timesheet-talent/store', [TimesheetController::class, 'timesheetTalentStore'])->name('timesheet-talent.store');
     Route::post('/timesheet-talent/status', [TimesheetController::class, 'timesheetTalentStatus'])->name('timesheet-talent.status');
     Route::post('/timesheet-talent/entries/store', [TimesheetController::class, 'timesheetTalentEntriesStore'])->name('timesheet-talent.entries.store');

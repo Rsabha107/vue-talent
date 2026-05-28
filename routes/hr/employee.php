@@ -26,6 +26,9 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::get('/leave', [EmployeeController::class, 'leave'])->name('leave');
     Route::post('/leave', [EmployeeController::class, 'storeLeave'])->name('leave.store');
     
+    // My Leaves - View all leave requests for current employee (Everyone)
+    Route::get('/my-leaves', [\App\Http\Controllers\MeridianHR\EmployeeLeaveRequestController::class, 'myLeaves'])->name('my-leaves');
+    
     // Timesheet Management (Employee's own - Everyone)
     Route::get('/timesheet', [TimesheetController::class, 'timesheet'])->name('timesheet');
     Route::post('/timesheet/submit', [TimesheetController::class, 'submitTimesheet'])->name('timesheet.submit');
@@ -37,6 +40,13 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::get('/my-timesheets', [TimesheetController::class, 'myTimesheets'])->name('my-timesheets');
     Route::post('/my-timesheets/store', [TimesheetController::class, 'timesheetTalentStore'])->name('my-timesheets.store');
     Route::delete('/my-timesheets/{id}', [TimesheetController::class, 'timesheetTalentDestroy'])->name('my-timesheets.destroy');
+    
+    // My Timesheets View - Alternative route for viewing/editing timesheets (Everyone)
+    Route::get('/my-timesheets-view', [TimesheetController::class, 'myTimesheetsView'])->name('my-timesheets-view');
+    Route::post('/my-timesheets-view/store', [TimesheetController::class, 'timesheetTalentStore'])->name('my-timesheets-view.store');
+    Route::post('/my-timesheets-view/status', [TimesheetController::class, 'timesheetTalentStatus'])->name('my-timesheets-view.status');
+    Route::post('/my-timesheets-view/entries/store', [TimesheetController::class, 'timesheetTalentEntriesStore'])->name('my-timesheets-view.entries.store');
+    Route::delete('/my-timesheets-view/{id}', [TimesheetController::class, 'timesheetTalentDestroy'])->name('my-timesheets-view.destroy');
     
     // Emergency Contacts (Everyone)
     Route::get('/emergency', [EmployeeController::class, 'emergency'])->name('emergency');

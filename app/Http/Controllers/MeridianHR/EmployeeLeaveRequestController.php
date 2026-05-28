@@ -156,6 +156,266 @@ class EmployeeLeaveRequestController extends BaseHRController
         ]));
     }
 
+    /**
+     * My Leaves - Personal view for current user
+     * Accessible by: everyone (employee, manager, admin)
+     */
+    public function myLeaves()
+    {
+        $eventId = $this->getSelectedEventId();
+        $currentEmployee = Employee::where('user_id', auth()->id())->first();
+
+        if (!$currentEmployee) {
+            return Inertia::render('MeridianHR/MyLeaves', array_merge($this->getCommonProps('my-leaves'), [
+                'leaveRequests'   => [],
+                'employees'       => [],
+                'currentEmployee' => null,
+                'leaveTypes'      => LeaveType::active()->orderBy('title')->get(['id', 'title']),
+                'statuses'        => EmployeeLeaveStatus::active()->orderBy('title')->get(['id', 'title', 'color']),
+                'leaveBalances'   => [],
+            ]));
+        }
+
+        // Get leave requests for current employee only
+        $leaveRequests = EmployeeLeaveRequest::with(['employee', 'event', 'user', 'leaveType', 'status', 'performer'])
+            ->active()
+            ->where('employee_id', $currentEmployee->id)
+            ->forEvent($eventId)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'id'                    => $request->id,
+                    'archived'              => $request->archived,
+                    'employeeId'            => $request->employee_id,
+                    'employeeName'          => $request->employee?->full_name,
+                    'employeeNumber'        => $request->employee?->employee_number,
+                    'eventId'               => $request->event_id,
+                    'eventName'             => $request->event?->name,
+                    'userId'                => $request->user_id,
+                    'userName'              => $request->user?->name,
+                    'leaveTypeId'           => $request->leave_type_id,
+                    'leaveTypeTitle'        => $request->leaveType?->title,
+                    'numberOfDays'          => $request->number_of_days,
+                    'dateFrom'              => $request->date_from?->format('Y-m-d'),
+                    'dateTo'                => $request->date_to?->format('Y-m-d'),
+                    'reason'                => $request->reason,
+                    'statusId'              => $request->status_id,
+                    'statusTitle'           => $request->status?->title,
+                    'statusColor'           => $request->status?->color,
+                    'performerId'           => $request->performer_id,
+                    'performerName'         => $request->performer?->name,
+                    'additionalInformation' => $request->additional_information,
+                    'createdAt'             => $request->created_at?->format('Y-m-d H:i:s'),
+                    'updatedAt'             => $request->updated_at?->format('Y-m-d H:i:s'),
+                ];
+            });
+
+        // Get leave balances for current employee
+        $leaveBalancesQuery = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
+            ->where('active_flag', 1)
+            ->where('employee_id', $currentEmployee->id);
+
+        if ($eventId !== null) {
+            if (is_array($eventId)) {
+                $leaveBalancesQuery->whereIn('event_id', $eventId);
+            } else {
+                $leaveBalancesQuery->where('event_id', $eventId);
+            }
+        }
+
+        $leaveBalances = $leaveBalancesQuery->with('leaveType')->get()->map(function ($balance) {
+            return [
+                'employee_id'    => $balance->employee_id,
+                'leave_type_id'  => $balance->leave_type_id,
+                'allocated_days' => $balance->allocated_days,
+                'used_days'      => $balance->used_days,
+                'pending_days'   => $balance->pending_days,
+                'available_days' => $balance->available_days,
+            ];
+        });
+
+        // Show only current employee in dropdown (read-only)
+        $employees = collect([[
+            'id'              => $currentEmployee->id,
+            'full_name'       => $currentEmployee->full_name,
+            'employee_number' => $currentEmployee->employee_number,
+        ]]);
+
+        return Inertia::render('MeridianHR/MyLeaves', array_merge($this->getCommonProps('my-leaves'), [
+            'leaveRequests'   => $leaveRequests,
+            'employees'       => $employees,
+            'currentEmployee' => [
+                'id'              => $currentEmployee->id,
+                'full_name'       => $currentEmployee->full_name,
+                'employee_number' => $currentEmployee->employee_number,
+            ],
+            'leaveTypes'     => LeaveType::active()->orderBy('title')->get(['id', 'title']),
+            'statuses'       => EmployeeLeaveStatus::active()->orderBy('title')->get(['id', 'title', 'color']),
+            'leaveBalances'  => $leaveBalances,
+        ]));
+    }
+
+    /**
+     * Team Leaves - Manager read-only view of team leave requests
+     * Accessible by: manager, admin
+     */
+    public function teamLeaves()
+    {
+        $eventId = $this->getEffectiveEventIds(); // Support manager "All My Events"
+
+        // Get team leave requests (all employees in manager's events)
+        $leaveRequests = EmployeeLeaveRequest::with(['employee', 'event', 'user', 'leaveType', 'status', 'performer'])
+            ->active()
+            ->forEvent($eventId)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'id'                    => $request->id,
+                    'archived'              => $request->archived,
+                    'employeeId'            => $request->employee_id,
+                    'employeeName'          => $request->employee?->full_name,
+                    'employeeNumber'        => $request->employee?->employee_number,
+                    'eventId'               => $request->event_id,
+                    'eventName'             => $request->event?->name,
+                    'userId'                => $request->user_id,
+                    'userName'              => $request->user?->name,
+                    'leaveTypeId'           => $request->leave_type_id,
+                    'leaveTypeTitle'        => $request->leaveType?->title,
+                    'numberOfDays'          => $request->number_of_days,
+                    'dateFrom'              => $request->date_from?->format('Y-m-d'),
+                    'dateTo'                => $request->date_to?->format('Y-m-d'),
+                    'reason'                => $request->reason,
+                    'statusId'              => $request->status_id,
+                    'statusTitle'           => $request->status?->title,
+                    'statusColor'           => $request->status?->color,
+                    'performerId'           => $request->performer_id,
+                    'performerName'         => $request->performer?->name,
+                    'additionalInformation' => $request->additional_information,
+                    'createdAt'             => $request->created_at?->format('Y-m-d H:i:s'),
+                    'updatedAt'             => $request->updated_at?->format('Y-m-d H:i:s'),
+                ];
+            });
+
+        // Get all employees in manager's events
+        $employees = $eventId 
+            ? $this->getEventEmployees()->orderBy('full_name')->get(['id', 'full_name', 'employee_number'])
+            : Employee::orderBy('full_name')->get(['id', 'full_name', 'employee_number']);
+
+        // Get leave balances for team employees
+        $leaveBalancesQuery = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
+            ->where('active_flag', 1);
+
+        if ($eventId !== null) {
+            if (is_array($eventId)) {
+                $leaveBalancesQuery->whereIn('event_id', $eventId);
+            } else {
+                $leaveBalancesQuery->where('event_id', $eventId);
+            }
+        }
+
+        $leaveBalances = $leaveBalancesQuery->with('leaveType')->get()->map(function ($balance) {
+            return [
+                'employee_id'    => $balance->employee_id,
+                'leave_type_id'  => $balance->leave_type_id,
+                'allocated_days' => $balance->allocated_days,
+                'used_days'      => $balance->used_days,
+                'pending_days'   => $balance->pending_days,
+                'available_days' => $balance->available_days,
+            ];
+        });
+
+        return Inertia::render('MeridianHR/TeamLeaves', array_merge($this->getCommonProps('team-leaves'), [
+            'leaveRequests'   => $leaveRequests,
+            'employees'       => $employees,
+            'currentEmployee' => null,
+            'leaveTypes'      => LeaveType::active()->orderBy('title')->get(['id', 'title']),
+            'statuses'        => EmployeeLeaveStatus::active()->orderBy('title')->get(['id', 'title', 'color']),
+            'leaveBalances'   => $leaveBalances,
+        ]));
+    }
+
+    /**
+     * All Leaves - Admin full-control view of all leave requests
+     * Accessible by: admin
+     */
+    public function allLeaves()
+    {
+        $eventId = $this->getSelectedEventId();
+
+        // Get all leave requests
+        $leaveRequests = EmployeeLeaveRequest::with(['employee', 'event', 'user', 'leaveType', 'status', 'performer'])
+            ->active()
+            ->forEvent($eventId)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'id'                    => $request->id,
+                    'archived'              => $request->archived,
+                    'employeeId'            => $request->employee_id,
+                    'employeeName'          => $request->employee?->full_name,
+                    'employeeNumber'        => $request->employee?->employee_number,
+                    'eventId'               => $request->event_id,
+                    'eventName'             => $request->event?->name,
+                    'userId'                => $request->user_id,
+                    'userName'              => $request->user?->name,
+                    'leaveTypeId'           => $request->leave_type_id,
+                    'leaveTypeTitle'        => $request->leaveType?->title,
+                    'numberOfDays'          => $request->number_of_days,
+                    'dateFrom'              => $request->date_from?->format('Y-m-d'),
+                    'dateTo'                => $request->date_to?->format('Y-m-d'),
+                    'reason'                => $request->reason,
+                    'statusId'              => $request->status_id,
+                    'statusTitle'           => $request->status?->title,
+                    'statusColor'           => $request->status?->color,
+                    'performerId'           => $request->performer_id,
+                    'performerName'         => $request->performer?->name,
+                    'additionalInformation' => $request->additional_information,
+                    'createdAt'             => $request->created_at?->format('Y-m-d H:i:s'),
+                    'updatedAt'             => $request->updated_at?->format('Y-m-d H:i:s'),
+                ];
+            });
+
+        // Get all employees
+        $employees = $eventId 
+            ? $this->getEventEmployees()->orderBy('full_name')->get(['id', 'full_name', 'employee_number'])
+            : Employee::orderBy('full_name')->get(['id', 'full_name', 'employee_number']);
+
+        // Get all leave balances
+        $leaveBalancesQuery = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
+            ->where('active_flag', 1);
+
+        if ($eventId !== null) {
+            if (is_array($eventId)) {
+                $leaveBalancesQuery->whereIn('event_id', $eventId);
+            } else {
+                $leaveBalancesQuery->where('event_id', $eventId);
+            }
+        }
+
+        $leaveBalances = $leaveBalancesQuery->with('leaveType')->get()->map(function ($balance) {
+            return [
+                'employee_id'    => $balance->employee_id,
+                'leave_type_id'  => $balance->leave_type_id,
+                'allocated_days' => $balance->allocated_days,
+                'used_days'      => $balance->used_days,
+                'pending_days'   => $balance->pending_days,
+                'available_days' => $balance->available_days,
+            ];
+        });
+
+        return Inertia::render('MeridianHR/AllLeaves', array_merge($this->getCommonProps('all-leaves'), [
+            'leaveRequests'   => $leaveRequests,
+            'employees'       => $employees,
+            'currentEmployee' => null,
+            'leaveTypes'      => LeaveType::active()->orderBy('title')->get(['id', 'title']),
+            'statuses'        => EmployeeLeaveStatus::active()->orderBy('title')->get(['id', 'title', 'color']),
+            'leaveBalances'   => $leaveBalances,
+        ]));
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -195,6 +455,44 @@ class EmployeeLeaveRequestController extends BaseHRController
                         ->withErrors(['employee_id' => 'Please select an event from the sidebar before creating a leave request.']);
                 }
             }
+        }
+        
+        // Validate leave dates against event assignment period
+        if ($eventId) {
+            $employee = Employee::find($validated['employee_id']);
+            $eventPivot = $employee->events()->where('events.id', $eventId)->first();
+            
+            if ($eventPivot) {
+                $assignedAt = $eventPivot->pivot->assigned_at;
+                $releasedAt = $eventPivot->pivot->released_at;
+                
+                // Check if leave dates fall within assignment period
+                if ($assignedAt && $validated['date_from'] < $assignedAt) {
+                    return redirect()->back()
+                        ->withInput()
+                        ->withErrors(['date_from' => 'Leave request cannot start before the employee assignment date (' . \Carbon\Carbon::parse($assignedAt)->format('d M Y') . ').']);
+                }
+                
+                if ($releasedAt && $validated['date_to'] > $releasedAt) {
+                    return redirect()->back()
+                        ->withInput()
+                        ->withErrors(['date_to' => 'Leave request cannot extend beyond the employee release date (' . \Carbon\Carbon::parse($releasedAt)->format('d M Y') . ').']);
+                }
+            }
+        }
+
+        // Check for pending/submitted timesheets
+        [$hasPendingTimesheets, $timesheetMessage] = $this->checkPendingTimesheets(
+            $validated['employee_id'],
+            $validated['date_from'],
+            $validated['date_to'],
+            $eventId
+        );
+
+        if ($hasPendingTimesheets) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['date_from' => $timesheetMessage]);
         }
 
         // Check for overlapping leave dates
@@ -246,6 +544,44 @@ class EmployeeLeaveRequestController extends BaseHRController
             'performer_id'           => 'nullable|integer|exists:users,id',
             'additional_information' => 'nullable|string|max:4000',
         ]);
+        
+        // Validate leave dates against event assignment period
+        if ($leaveRequest->event_id) {
+            $employee = Employee::find($validated['employee_id']);
+            $eventPivot = $employee->events()->where('events.id', $leaveRequest->event_id)->first();
+            
+            if ($eventPivot) {
+                $assignedAt = $eventPivot->pivot->assigned_at;
+                $releasedAt = $eventPivot->pivot->released_at;
+                
+                // Check if leave dates fall within assignment period
+                if ($assignedAt && $validated['date_from'] < $assignedAt) {
+                    return redirect()->back()
+                        ->withInput()
+                        ->withErrors(['date_from' => 'Leave request cannot start before the employee assignment date (' . \Carbon\Carbon::parse($assignedAt)->format('d M Y') . ').']);
+                }
+                
+                if ($releasedAt && $validated['date_to'] > $releasedAt) {
+                    return redirect()->back()
+                        ->withInput()
+                        ->withErrors(['date_to' => 'Leave request cannot extend beyond the employee release date (' . \Carbon\Carbon::parse($releasedAt)->format('d M Y') . ').']);
+                }
+            }
+        }
+
+        // Check for pending/submitted timesheets
+        [$hasPendingTimesheets, $timesheetMessage] = $this->checkPendingTimesheets(
+            $validated['employee_id'],
+            $validated['date_from'],
+            $validated['date_to'],
+            $leaveRequest->event_id
+        );
+
+        if ($hasPendingTimesheets) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['date_from' => $timesheetMessage]);
+        }
 
         // Check for overlapping leave dates (excluding current record)
         $hasOverlap = $this->checkDateOverlap(
@@ -332,5 +668,69 @@ class EmployeeLeaveRequestController extends BaseHRController
         }
 
         return $query->exists();
+    }
+
+    /**
+     * Check if employee has pending/submitted timesheets for the leave period
+     * 
+     * @param int $employeeId
+     * @param string $dateFrom
+     * @param string $dateTo
+     * @param int|null $eventId
+     * @return array [bool hasConflict, string|null message]
+     */
+    private function checkPendingTimesheets($employeeId, $dateFrom, $dateTo, $eventId = null)
+    {
+        // Get all month/year combinations in the leave date range
+        $start = \Carbon\Carbon::parse($dateFrom);
+        $end = \Carbon\Carbon::parse($dateTo);
+        
+        $monthsToCheck = [];
+        $current = $start->copy();
+        
+        while ($current->lessThanOrEqualTo($end)) {
+            $monthsToCheck[] = [
+                'month' => $current->month,
+                'year' => $current->year,
+            ];
+            $current->addMonth();
+        }
+        
+        // Build query for conflicting timesheets
+        $conflictingTimesheets = \App\Models\EmployeeTimesheet::where('employee_id', $employeeId)
+            ->where('archived', 'N')
+            ->where(function($query) use ($monthsToCheck) {
+                foreach ($monthsToCheck as $period) {
+                    $query->orWhere(function($q) use ($period) {
+                        $q->where('month_id', $period['month'])
+                          ->where('year', $period['year']);
+                    });
+                }
+            })
+            ->whereHas('status', function($q) {
+                // Check for Pending, Submitted, or Pending Payroll statuses
+                $q->whereIn('title', ['Pending', 'Submitted', 'Pending Payroll']);
+            });
+        
+        // Match event context
+        if ($eventId) {
+            $conflictingTimesheets->where('event_id', $eventId);
+        }
+        
+        $timesheets = $conflictingTimesheets->with('status')->get();
+        
+        if ($timesheets->isEmpty()) {
+            return [false, null];
+        }
+        
+        // Build detailed error message
+        $count = $timesheets->count();
+        $periods = $timesheets->map(function($ts) {
+            return $ts->timesheet_period;
+        })->unique()->join(', ');
+        
+        $message = "Cannot create leave request. Employee has {$count} pending/submitted timesheet(s) for: {$periods}. Please wait until these timesheets are approved or rejected before requesting leave for this period.";
+        
+        return [true, $message];
     }
 }

@@ -698,7 +698,7 @@
 /* ─── Toast ──────────────────────────────────────────────────────── */
 .meridian-app .mhr-toast {
   position: fixed;
-  bottom: 24px;
+  top: 24px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--mhr-ink);
@@ -714,7 +714,7 @@
   animation: mhrToastIn 0.22s ease;
   white-space: nowrap;
 }
-@keyframes mhrToastIn { from { opacity: 0; transform: translate(-50%, 8px); } }
+@keyframes mhrToastIn { from { opacity: 0; transform: translate(-50%, -8px); } }
 .meridian-app .mhr-toast svg { width: 16px; height: 16px; color: var(--green-300); }
 
 /* ─── Event Selector (lmsx style) ───────────────────────────────── */

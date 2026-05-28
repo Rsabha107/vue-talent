@@ -16,6 +16,7 @@ const props = defineProps({
   hrRole:              { type: String, default: 'employee' },
   hrPage:              { type: String, default: 'employee' },
   employees:           { type: Array,  default: () => [] },
+  isAllEvents:         { type: Boolean, default: false }, // Flag: true = All Events (show import/export), false = specific event
   salutations:         { type: Array,  default: () => [] },
   designations:        { type: Array,  default: () => [] },
   departments:         { type: Array,  default: () => [] },
@@ -349,9 +350,8 @@ function confirmAssignToEvent() {
       showAssignEventModal.value = false
       assignEventId.value = null
       selectedEmployees.value.clear()
-      // Navigate back to the correct page (master-employee or regular employee)
-      const targetRoute = props.hrPage === 'master-employee' ? 'hr.master-employee' : 'hr.employee'
-      router.get(route(targetRoute), {}, {
+      // Navigate back to employee page
+      router.get(route('hr.employee'), {}, {
         preserveState: false,
         preserveScroll: true,
         onSuccess: () => {
@@ -497,9 +497,8 @@ function addEmployee() {
     preserveScroll: true,
     onSuccess: () => {
       showAddModal.value = false
-      // Navigate back to the correct page (master-employee or regular employee)
-      const targetRoute = props.hrPage === 'master-employee' ? 'hr.master-employee' : 'hr.employee'
-      router.get(route(targetRoute), {}, {
+      // Navigate back to employee page
+      router.get(route('hr.employee'), {}, {
         preserveState: false,
         preserveScroll: true,
         onSuccess: () => {
@@ -649,9 +648,8 @@ function confirmDelete() {
       showDeleteModal.value = false
       const empName = employeeToDelete.value.name
       employeeToDelete.value = null
-      // Navigate back to the correct page (master-employee or regular employee)
-      const targetRoute = props.hrPage === 'master-employee' ? 'hr.master-employee' : 'hr.employee'
-      router.get(route(targetRoute), {}, {
+      // Navigate back to employee page
+      router.get(route('hr.employee'), {}, {
         preserveState: false,
         preserveScroll: true,
         onSuccess: () => {
@@ -806,9 +804,8 @@ function updateEmployee() {
     onSuccess: () => {
       isUpdating.value = false
       showEditModal.value = false
-      // Navigate back to the correct page (master-employee or regular employee)
-      const targetRoute = props.hrPage === 'master-employee' ? 'hr.master-employee' : 'hr.employee'
-      router.get(route(targetRoute), {}, {
+      // Navigate back to employee page
+      router.get(route('hr.employee'), {}, {
         preserveState: false,
         preserveScroll: true,
         onSuccess: () => {
@@ -835,8 +832,8 @@ function updateEmployee() {
   <div @click="openMenuId = null; showColumnMenu = false; showActionsMenu = false">
     <div class="mhr-page-head">
       <div>
-        <h1 class="mhr-page-head__title">{{ hrPage === 'master-employee' ? 'Employee Master List' : 'Employees' }}</h1>
-        <p class="mhr-page-head__sub">{{ hrPage === 'master-employee' ? 'Complete database of all employees' : `${filtered.length} of ${all.length} people` }}</p>
+        <h1 class="mhr-page-head__title">{{ isAllEvents ? 'Employee Master List' : 'Employees' }}</h1>
+        <p class="mhr-page-head__sub">{{ isAllEvents ? 'Complete database of all employees' : `${filtered.length} of ${all.length} people` }}</p>
       </div>
       <div class="mhr-page-head__actions">
         <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshEmployees" />
@@ -844,7 +841,7 @@ function updateEmployee() {
           <button class="mhr-btn mhr-btn--accent" @click.stop="showActionsMenu = !showActionsMenu">
             <AppIcon name="check" :size="14" />
             <span>{{ selectedEmployees.size }} Selected</span>
-            <AppIcon name="chevron-down" :size="12" />
+            <AppIcon name="chevdown" :size="12" />
           </button>
           <div v-if="showActionsMenu" @click.stop class="mhr-dropdown" style="position:absolute;left:0;top:100%;margin-top:4px;min-width:200px;background:white;border:1px solid var(--mhr-line);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:1000;padding:8px;">
             <button @click="() => { exportSelected(); showActionsMenu = false }" class="mhr-dropdown-item">
@@ -857,15 +854,15 @@ function updateEmployee() {
             </button>
             <div style="height:1px;background:var(--mhr-line);margin:4px 0;"></div>
             <button @click="() => { deleteSelected(); showActionsMenu = false }" class="mhr-dropdown-item" style="color:var(--mhr-danger);">
-              <AppIcon name="trash" :size="14" />
+              <AppIcon name="x" :size="14" />
               <span>Delete Selected</span>
             </button>
           </div>
         </div>
-        <button v-if="hrRole === 'admin' && hrPage === 'master-employee'" class="mhr-btn mhr-btn--outline" @click="downloadTemplate">
+        <button v-if="hrRole === 'admin' && isAllEvents" class="mhr-btn mhr-btn--outline" @click="downloadTemplate">
           <AppIcon name="download" :size="14" /> Download Template
         </button>
-        <button v-if="hrRole === 'admin' && hrPage === 'master-employee'" class="mhr-btn mhr-btn--outline" @click="openImportModal">
+        <button v-if="hrRole === 'admin' && isAllEvents" class="mhr-btn mhr-btn--outline" @click="openImportModal">
           <AppIcon name="upload" :size="14" /> Import
         </button>
         <button v-if="hrRole === 'admin'" class="mhr-btn mhr-btn--primary" @click="showAddModal = true">
@@ -876,7 +873,7 @@ function updateEmployee() {
 
     <!-- Event Context Banner (when viewing event-filtered employees) -->
     <EventBanner 
-      v-if="selectedEventData && hrPage !== 'master-employee'"
+      v-if="selectedEventData && !isAllEvents"
       :event-data="selectedEventData"
     />
 
@@ -1190,7 +1187,7 @@ function updateEmployee() {
         <tbody>
           <tr v-if="filtered.length === 0">
             <td :colspan="visibleColumnsCount" style="text-align:center;padding:60px 20px;">
-              <div v-if="!selectedEventData && hrPage !== 'master-employee'" style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+              <div v-if="!selectedEventData && !isAllEvents" style="display:flex;flex-direction:column;align-items:center;gap:12px;">
                 <AppIcon name="calendar" :size="48" style="opacity:0.2;" />
                 <div>
                   <div style="font-size:15px;font-weight:600;color:var(--mhr-ink-2);margin-bottom:4px;">No Event Selected</div>

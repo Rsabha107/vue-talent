@@ -16,10 +16,16 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::post('/approvals/leave/approve', [EmployeeController::class, 'approveLeave'])->name('approvals.leave.approve');
     Route::post('/approvals/leave/reject', [EmployeeController::class, 'rejectLeave'])->name('approvals.leave.reject');
     
+    // Team Leave Requests (Manager Read-Only View)
+    Route::get('/team-leaves', [\App\Http\Controllers\MeridianHR\EmployeeLeaveRequestController::class, 'teamLeaves'])->name('team-leaves');
+    
     // Timesheet Approvals
     Route::get('/approvals/time', [TimesheetController::class, 'approvalsTime'])->name('approvals.time');
     Route::post('/approvals/time/approve', [TimesheetController::class, 'approveTimesheet'])->name('approvals.time.approve');
     Route::post('/approvals/time/reject', [TimesheetController::class, 'rejectTimesheet'])->name('approvals.time.reject');
+    
+    // Team Timesheets (Manager Read-Only View)
+    Route::get('/team-timesheets', [TimesheetController::class, 'teamTimesheetsView'])->name('team-timesheets');
     
     // Payroll Approval (Admin/Finance only)
     Route::post('/payroll/time/approve', [TimesheetController::class, 'payrollApproveTimesheet'])->name('payroll.time.approve');

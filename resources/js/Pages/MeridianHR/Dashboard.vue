@@ -107,10 +107,10 @@ const maxHeadcount = computed(() => {
         <div class="mhr-stat" style="background:linear-gradient(135deg,var(--green-700),var(--green-800));color:#fff;border:none;">
           <div class="mhr-stat__label" style="color:rgba(255,255,255,0.7);">Next pay</div>
           <div class="mhr-stat__value" style="color:#fff;">
-            {{ stats.nextPayFormatted || '$7,312' }}<span class="mhr-stat__unit" style="color:rgba(255,255,255,0.7);">.50</span>
+            {{ stats.nextPayFormatted || '$0.00' }}
           </div>
           <div class="mhr-stat__delta" style="color:rgba(255,255,255,0.85);">
-            <AppIcon name="calendar" :size="12" /> {{ stats.nextPayDate || 'Friday, May 29' }}
+            <AppIcon name="calendar" :size="12" /> {{ stats.nextPayDate || 'Not available' }}
           </div>
         </div>
       </div>

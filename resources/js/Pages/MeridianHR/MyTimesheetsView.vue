@@ -33,7 +33,6 @@ const props = defineProps({
   cutoffDay:  { type: [Number, String], default: 21 },
   disableSubmission: { type: Boolean, default: false },
   formattedCutoff: { type: String, default: null },
-  isTeamView: { type: Boolean, default: false },
   /*
     timesheets item shape:
     {
@@ -131,10 +130,18 @@ watch(() => addForm.value.year, () => {
   if (addErrors.value.year) delete addErrors.value.year
 })
 
+// Get primary error message for banner display
+const addErrorMessage = computed(() => {
+  if (addErrors.value.employeeId) return addErrors.value.employeeId
+  if (addErrors.value.monthId) return addErrors.value.monthId
+  if (addErrors.value.year) return addErrors.value.year
+  return null
+})
+
 function openAddModal() {
   addForm.value   = { employeeId: '', monthId: '', year: '' }
   // Auto-populate employee ID for employees and managers in personal view
-  if (props.currentEmployee && (isEmployee.value || !props.isTeamView)) {
+  if (props.currentEmployee && isEmployee.value) {
     addForm.value.employeeId = props.currentEmployee.id
   }
   addErrors.value = {}
@@ -144,7 +151,8 @@ function openAddModal() {
 function validateAdd() {
   const e = {}
   // Only validate employee selection for admin or manager in team view
-  if ((props.hrRole === 'admin' || (props.hrRole === 'manager' && props.isTeamView)) && !addForm.value.employeeId) {
+  // Always show employee selector for admin, read-only employee field for employees/managers
+  if (!addForm.value.employeeId) {
     e.employeeId = 'Employee is required.'
   }
   if (!addForm.value.monthId) e.monthId = 'Month is required.'
@@ -188,6 +196,13 @@ const statusTarget    = ref(null)
 const statusForm      = ref({ statusId: '', additionalInfo: '' })
 const statusErrors    = ref({})
 const isSavingStatus  = ref(false)
+
+// Get primary error message for status modal banner display
+const statusErrorMessage = computed(() => {
+  if (statusErrors.value.statusId) return statusErrors.value.statusId
+  if (statusErrors.value.additionalInfo) return statusErrors.value.additionalInfo
+  return null
+})
 
 function openStatusModal(ts) {
   statusTarget.value = ts
@@ -322,6 +337,29 @@ function backToList() {
   editingDay.value      = null
 }
 
+function refreshEntries() {
+  if (!activeTimesheet.value) return
+  
+  isRefreshing.value = true
+  router.reload({
+    preserveScroll: true,
+    preserveState: true,
+    only: ['timesheets'],
+    onFinish: () => {
+      isRefreshing.value = false
+      // Reload the active timesheet data
+      const timesheetId = activeTimesheet.value.id
+      const updatedTs = props.timesheets.find(t => t.id === timesheetId)
+      if (updatedTs) {
+        activeTimesheet.value = JSON.parse(JSON.stringify(updatedTs))
+        entryRows.value = updatedTs.entries?.map(e => ({ ...e })) || []
+      }
+      localTimesheets.value = JSON.parse(JSON.stringify(props.timesheets))
+      showToast('Entries refreshed')
+    }
+  })
+}
+
 function firstDayOffset() {
   if (!activeTimesheet.value) return 0
   const ts = activeTimesheet.value
@@ -348,8 +386,6 @@ const editingDay = ref(null)
 const editAction = ref('W')
 
 function canEdit(day) {
-  // Managers cannot edit team timesheets (read-only access)
-  if (props.hrRole === 'manager') return false
   // Employees cannot edit approved timesheets
   if (isApprovedReadOnly.value) return false
   // Employees cannot edit when submission is disabled
@@ -360,11 +396,6 @@ function canEdit(day) {
 }
 
 function openDay(day) {
-  // Prevent editing for managers (read-only access to team timesheets)
-  if (props.hrRole === 'manager') {
-    showToast('Team timesheets are read-only. Only employees can edit their own timesheets.', 'error')
-    return
-  }
   // Prevent editing approved timesheets for employees
   if (isApprovedReadOnly.value) {
     showToast('This timesheet is approved and cannot be edited.', 'error')
@@ -398,9 +429,6 @@ function saveDay() {
   const dayNumber = day.day
   const newAction = editAction.value
   
-  console.log('Saving day:', dayNumber, 'with action:', newAction)
-  console.log('Before update:', entryRows.value.length, 'rows')
-  
   // Find and update the row
   const index = entryRows.value.findIndex(r => r.day === dayNumber)
   if (index !== -1) {
@@ -411,16 +439,6 @@ function saveDay() {
       ...entryRows.value.slice(index + 1)
     ]
     entryRows.value = newRows
-    
-    const newCounts = {
-      worked: newRows.filter(r => r.action === 'W' && !r.isLeave && !r.isWeekend).length,
-      leave: newRows.filter(r => (r.action === 'L' || r.isLeave) && !r.isWeekend).length,
-      unpaid: newRows.filter(r => r.action === 'U' && !r.isWeekend).length
-    }
-    
-    console.log('After update - row', index, ':', newRows[index])
-    console.log('Summary should update:', newCounts)
-    console.log('Unpaid days:', newCounts.unpaid, '- Payment will recalculate automatically')
   }
   
   closeModal()
@@ -661,18 +679,17 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
 
       <div class="mhr-page-head">
         <div>
-          <h1 class="mhr-page-head__title">Timesheets</h1>
+          <h1 class="mhr-page-head__title">My Timesheets</h1>
           <p class="mhr-page-head__sub">{{ filtered.length }} record{{ filtered.length !== 1 ? 's' : '' }}</p>
         </div>
         <div class="mhr-page-head__actions">
           <RefreshButton variant="ghost" :is-refreshing="isRefreshing" @refresh="refreshData" />
           <button 
-            v-if="!isTeamView"
             class="mhr-btn mhr-btn--primary" 
             @click="openAddModal"
-            :disabled="(!selectedEventId && hrRole === 'manager') || (isEmployee && disableSubmission)"
-            :style="((!selectedEventId && hrRole === 'manager') || (isEmployee && disableSubmission)) ? 'opacity: 0.5; cursor: not-allowed;' : ''"
-            :title="!selectedEventId && hrRole === 'manager' ? 'Please select an event to create timesheets' : (isEmployee && disableSubmission ? 'Timesheet submission is closed' : '')">
+            :disabled="!selectedEventId || (isEmployee && disableSubmission)"
+            :style="(!selectedEventId || (isEmployee && disableSubmission)) ? 'opacity: 0.5; cursor: not-allowed;' : ''"
+            :title="!selectedEventId ? 'Please select an event to create timesheets' : (isEmployee && disableSubmission ? 'Timesheet submission is closed' : '')">
             <AppIcon name="plus" :size="14" /> Add Timesheet
           </button>
         </div>
@@ -684,8 +701,8 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
         :event-data="selectedEventData"
       />
 
-      <!-- Info Banner: No Event Selected for Manager -->
-      <div v-if="!selectedEventId && hrRole === 'manager' && !isTeamView" style="background:var(--mhr-accent-soft);border-left:3px solid var(--mhr-accent);padding:12px 16px;margin-bottom:16px;border-radius:var(--mhr-r);display:flex;align-items:center;gap:12px;">
+      <!-- Info Banner: No Event Selected -->
+      <div v-if="!selectedEventId" style="background:var(--mhr-accent-soft);border-left:3px solid var(--mhr-accent);padding:12px 16px;margin-bottom:16px;border-radius:var(--mhr-r);display:flex;align-items:center;gap:12px;">
         <AppIcon name="info" :size="18" style="color:var(--mhr-accent);flex-shrink:0;" />
         <div style="font-size:13px;color:var(--mhr-ink);">
           <strong style="color:var(--mhr-accent);">Viewing all your events</strong> — 
@@ -805,8 +822,8 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
                 <td>
                   <div style="display:flex;gap:6px;justify-content:flex-end;">
                     <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="openEntries(ts)">
-                      <AppIcon :name="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) || hrRole === 'manager' ? 'eye' : 'edit'" :size="13" />
-                      <template v-if="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) || hrRole === 'manager'">
+                      <AppIcon :name="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) ? 'eye' : 'edit'" :size="13" />
+                      <template v-if="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved'))">
                         View
                       </template>
                       <template v-else>
@@ -896,8 +913,8 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <!-- Actions -->
           <div class="ts-card__actions">
             <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="openEntries(ts)" style="flex:1;">
-              <AppIcon :name="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) || hrRole === 'manager' ? 'eye' : 'edit'" :size="13" />
-              <template v-if="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) || hrRole === 'manager'">
+              <AppIcon :name="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved')) ? 'eye' : 'edit'" :size="13" />
+              <template v-if="(isEmployee && (disableSubmission || ts.statusTitle === 'Approved'))">
                 View
               </template>
               <template v-else>
@@ -941,11 +958,12 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           </p>
         </div>
         <div class="mhr-page-head__actions">
+          <RefreshButton variant="ghost" :is-refreshing="isRefreshing" @refresh="refreshEntries" />
           <button class="mhr-btn mhr-btn--ghost" @click="backToList">
-            {{ (isApprovedReadOnly || (isEmployee && disableSubmission) || hrRole === 'manager') ? 'Close' : 'Cancel' }}
+            {{ (isApprovedReadOnly || (isEmployee && disableSubmission)) ? 'Close' : 'Cancel' }}
           </button>
           <button 
-            v-if="!isApprovedReadOnly && !(isEmployee && disableSubmission) && hrRole !== 'manager'"
+            v-if="!isApprovedReadOnly && !(isEmployee && disableSubmission)"
             class="mhr-btn mhr-btn--outline" 
             @click="saveEntries" 
             :disabled="isSavingEntries || isSubmitting">
@@ -953,7 +971,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
             {{ isSavingEntries ? 'Saving…' : 'Save' }}
           </button>
           <button 
-            v-if="activeTimesheet?.statusId === 1 && !isApprovedReadOnly && !(isEmployee && disableSubmission) && hrRole !== 'manager'" 
+            v-if="activeTimesheet?.statusId === 1 && !isApprovedReadOnly && !(isEmployee && disableSubmission)" 
             class="mhr-btn mhr-btn--primary" 
             @click="submitForApproval" 
             :disabled="isSavingEntries || isSubmitting">
@@ -1101,27 +1119,13 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           </div>
         </div>
         <div class="mhr-modal__body">
-
-          <!-- Employee selector — admin or manager in team view, read-only for others -->
-          <div v-if="hrRole === 'admin' || (hrRole === 'manager' && isTeamView)" class="mhr-field">
-            <label class="mhr-field__label">Select Employee *</label>
-            <EmployeeSelector
-              v-model="addForm.employeeId"
-              :employees="employees"
-              placeholder="Select employee…"
-              :required="true"
-            />
-            <p v-if="addErrors.employeeId" class="ts-field-error">{{ addErrors.employeeId }}</p>
-          </div>
-          <div v-else-if="currentEmployee" class="mhr-field">
-            <label class="mhr-field__label">Employee</label>
-            <div style="padding:10px 12px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
-              {{ currentEmployee.full_name }} ({{ currentEmployee.employee_number }})
-            </div>
+          <!-- Error Banner -->
+          <div v-if="addErrorMessage" class="ts-field-error" style="margin-bottom:16px;padding:12px;background:rgba(220,38,38,0.1);border:1px solid var(--mhr-danger);border-radius:var(--mhr-r);">
+            {{ addErrorMessage }}
           </div>
 
-          <!-- Employee display for employees (read-only) -->
-          <div v-else-if="isEmployee && currentEmployee" class="mhr-field">
+          <!-- Employee field: Always read-only for personal view -->
+          <div v-if="currentEmployee" class="mhr-field">
             <label class="mhr-field__label">Employee</label>
             <div style="padding:10px 12px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
               {{ currentEmployee.full_name }} ({{ currentEmployee.employee_number }})
@@ -1136,7 +1140,6 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
               <option value="">Select month…</option>
               <option v-for="m in monthsName" :key="m.id" :value="m.id">{{ m.monthName }}</option>
             </select>
-            <p v-if="addErrors.monthId" class="ts-field-error">{{ addErrors.monthId }}</p>
           </div>
 
           <!-- Year -->
@@ -1147,13 +1150,12 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
               <option value="">Select year…</option>
               <option v-for="y in availableYears" :key="y" :value="y">{{ y }}</option>
             </select>
-            <p v-if="addErrors.year" class="ts-field-error">{{ addErrors.year }}</p>
           </div>
 
         </div>
         <div class="mhr-modal__ft">
           <button class="mhr-btn mhr-btn--ghost" @click="showAddModal = false">Close</button>
-          <SubmitButton text="Save" processing-text="Saving…" :processing="isAdding" @click="submitAdd" />
+          <SubmitButton text="Save" processing-text="Saving…" :processing="isAdding" :disabled="!addForm.monthId || !addForm.year" @click="submitAdd" />
         </div>
       </div>
     </div>
@@ -1173,6 +1175,10 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           </div>
         </div>
         <div class="mhr-modal__body">
+          <!-- Error Banner -->
+          <div v-if="statusErrorMessage" class="ts-field-error" style="margin-bottom:16px;padding:12px;background:rgba(220,38,38,0.1);border:1px solid var(--mhr-danger);border-radius:var(--mhr-r);">
+            {{ statusErrorMessage }}
+          </div>
 
           <div class="mhr-field">
             <label class="mhr-field__label">Status *</label>
@@ -1181,7 +1187,6 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
               <option value="">Select…</option>
               <option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.title }}</option>
             </select>
-            <p v-if="statusErrors.statusId" class="ts-field-error">{{ statusErrors.statusId }}</p>
           </div>
 
           <div class="mhr-field">
@@ -1322,6 +1327,13 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+}
+
+/* ── Error message ──────────────────────────────────────────── */
+.ts-field-error {
+  color: var(--mhr-danger);
+  font-size: 12px;
+  margin-top: 6px;
 }
 
 /* ── Calendar cells ─────────────────────────────────────────── */

@@ -11,41 +11,91 @@ class RolePermissionSeeder extends Seeder
     /**
      * Run the database seeds.
      * 
-     * This seeder sets up role-based access control for the HR system:
+     * This seeder sets up permission-based access control for the modular HR system:
      * - employee-basic: Restricted access (profile, leave, timesheet, emergency)
      * - employee-full: Extended access (includes salary, banks, addresses, payslips, documents)
-     * - manager: Approval workflows + employee-full permissions
+     * - manager: Team oversight + approval workflows
+     * - payroll-admin: Payroll processing permissions
      * - admin: Full system access
+     * 
+     * Users can have multiple roles (e.g., employee + manager + payroll-admin)
      */
     public function run(): void
     {
-        // Create permissions
+        // =====================================================================
+        // Define All Permissions
+        // =====================================================================
         $permissions = [
-            // Document permissions
-            'view-documents' => 'View employee documents',
-            'manage-documents' => 'Upload and delete documents',
+            // ─────────────────────────────────────────────────────────────────
+            // Employee Self-Service (everyone gets these via controller logic)
+            // ─────────────────────────────────────────────────────────────────
+            'view.own.leaves' => 'View own leave requests',
+            'create.own.leaves' => 'Create own leave requests',
+            'edit.own.leaves' => 'Edit own leave requests',
+            'view.own.timesheets' => 'View own timesheets',
+            'create.own.timesheets' => 'Create own timesheets',
+            'edit.own.timesheets' => 'Edit own timesheets',
             
-            // Financial permissions
-            'view-salary' => 'View salary information',
-            'manage-salary' => 'Create and edit salary records',
-            'view-banks' => 'View bank details',
-            'manage-banks' => 'Create and edit bank details',
-            'view-payslips' => 'View payslips',
+            // ─────────────────────────────────────────────────────────────────
+            // Manager Permissions - Team Oversight
+            // ─────────────────────────────────────────────────────────────────
+            'view.team.leaves' => 'View team leave requests',
+            'view.team.timesheets' => 'View team timesheets',
+            'approve.leaves' => 'Approve or reject leave requests (stage 1)',
+            'approve.timesheets' => 'Approve or reject timesheets (stage 1)',
             
-            // Personal data permissions
-            'view-addresses' => 'View address information',
-            'manage-addresses' => 'Create and edit addresses',
+            // ─────────────────────────────────────────────────────────────────
+            // HR Admin Permissions
+            // ─────────────────────────────────────────────────────────────────
+            'manage.employees' => 'Create, edit, and manage employees',
+            'manage.leave.types' => 'Manage leave types and eligibility',
+            'manage.departments' => 'Manage departments and designations',
+            'view.all.data' => 'View all system data (unrestricted)',
             
-            // Approval permissions
-            'approve-leave' => 'Approve or reject leave requests',
-            'approve-timesheet' => 'Approve or reject timesheets',
+            // ─────────────────────────────────────────────────────────────────
+            // Payroll Module Permissions
+            // ─────────────────────────────────────────────────────────────────
+            'payroll.access' => 'Access payroll module',
+            'payroll.review.timesheets' => 'Review timesheets for payroll',
+            'payroll.approve.timesheets' => 'Final timesheet approval (stage 2)',
+            'payroll.reject.timesheets' => 'Reject timesheets from payroll',
+            'payroll.process.payments' => 'Process payment batches',
+            'payroll.generate.bank.files' => 'Generate bank payment files',
+            'payroll.view.missing.timesheets' => 'View missing timesheet reports',
             
-            // Management permissions
-            'manage-employees' => 'Create, edit, and manage employees',
-            'view-all-employees' => 'View all employee records',
+            // ─────────────────────────────────────────────────────────────────
+            // Extended Employee Permissions (employee-full)
+            // ─────────────────────────────────────────────────────────────────
+            'view.documents' => 'View employee documents',
+            'manage.documents' => 'Upload and delete documents',
+            'view.salary' => 'View salary information',
+            'manage.salary' => 'Create and edit salary records',
+            'view.banks' => 'View bank details',
+            'manage.banks' => 'Create and edit bank details',
+            'view.payslips' => 'View payslips',
+            'view.addresses' => 'View address information',
+            'manage.addresses' => 'Create and edit addresses',
+            
+            // ─────────────────────────────────────────────────────────────────
+            // Legacy Permissions (kept for backward compatibility)
+            // ─────────────────────────────────────────────────────────────────
+            'approve-leave' => 'Approve or reject leave requests (legacy)',
+            'approve-timesheet' => 'Approve or reject timesheets (legacy)',
+            'manage-employees' => 'Manage employees (legacy)',
+            'view-all-employees' => 'View all employees (legacy)',
             'manage-events' => 'Create and manage events',
-            'manage-settings' => 'Manage system settings (leave types, venues, etc)',
+            'manage-settings' => 'Manage system settings',
             'manage-roles' => 'Manage roles and permissions',
+            
+            // ─────────────────────────────────────────────────────────────────
+            // Future Module Permissions (placeholder)
+            // ─────────────────────────────────────────────────────────────────
+            'procurement.access' => 'Access procurement module',
+            'procurement.create.orders' => 'Create purchase orders',
+            'recruiting.access' => 'Access recruiting module',
+            'recruiting.post.jobs' => 'Post job openings',
+            'finance.access' => 'Access finance module',
+            'finance.view.reports' => 'View financial reports',
         ];
         
         foreach ($permissions as $name => $description) {
@@ -63,8 +113,8 @@ class RolePermissionSeeder extends Seeder
             ['guard_name' => 'web']
         );
         
-        // Basic employees have no extra permissions
-        // They can only access: dashboard, profile, leave, timesheet, emergency contacts
+        // Basic employees have no extra permissions beyond self-service
+        // (Self-service permissions are granted at controller level)
         $employeeBasic->syncPermissions([]);
         
         // =====================================================================
@@ -76,6 +126,12 @@ class RolePermissionSeeder extends Seeder
         );
         
         $employeeFull->syncPermissions([
+            'view.documents',
+            'view.salary',
+            'view.banks',
+            'view.addresses',
+            'view.payslips',
+            // Legacy permissions
             'view-documents',
             'view-salary',
             'view-banks',
@@ -84,7 +140,7 @@ class RolePermissionSeeder extends Seeder
         ]);
         
         // =====================================================================
-        // Manager Role - Approvals + Extended Access
+        // Manager Role - Team Oversight + Approvals
         // =====================================================================
         $manager = Role::firstOrCreate(
             ['name' => 'manager'],
@@ -92,17 +148,33 @@ class RolePermissionSeeder extends Seeder
         );
         
         $manager->syncPermissions([
-            // Employee-full permissions
-            'view-documents',
-            'view-salary',
-            'view-banks',
-            'view-addresses',
-            'view-payslips',
-            
             // Manager-specific permissions
+            'view.team.leaves',
+            'view.team.timesheets',
+            'approve.leaves',
+            'approve.timesheets',
+            // Legacy
             'approve-leave',
             'approve-timesheet',
             'view-all-employees',
+        ]);
+        
+        // =====================================================================
+        // Payroll Admin Role - Payroll Processing
+        // =====================================================================
+        $payrollAdmin = Role::firstOrCreate(
+            ['name' => 'payroll-admin'],
+            ['guard_name' => 'web']
+        );
+        
+        $payrollAdmin->syncPermissions([
+            'payroll.access',
+            'payroll.review.timesheets',
+            'payroll.approve.timesheets',
+            'payroll.reject.timesheets',
+            'payroll.process.payments',
+            'payroll.generate.bank.files',
+            'payroll.view.missing.timesheets',
         ]);
         
         // =====================================================================
@@ -144,9 +216,13 @@ class RolePermissionSeeder extends Seeder
         $supervisor->syncPermissions($manager->permissions);
         
         $this->command->info('Roles and permissions seeded successfully!');
-        $this->command->info('✓ employee-basic: Restricted access');
-        $this->command->info('✓ employee-full: Extended access');
-        $this->command->info('✓ manager: Approvals + extended access');
+        $this->command->info('✓ employee-basic: Restricted access (self-service only)');
+        $this->command->info('✓ employee-full: Extended access (documents, salary, banks, payslips)');
+        $this->command->info('✓ manager: Team oversight + approvals (stage 1)');
+        $this->command->info('✓ payroll-admin: Payroll processing + final approvals (stage 2)');
         $this->command->info('✓ admin: Full system access');
+        $this->command->info('');
+        $this->command->info('Note: Users can have multiple roles for combined permissions');
+        $this->command->info('Example: employee + manager = personal workspace + team oversight');
     }
 }

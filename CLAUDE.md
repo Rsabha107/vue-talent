@@ -64,6 +64,213 @@ The app has two distinct frontend interfaces that coexist:
 
 `app.js` calls `initLegacyScripts()` after every Inertia navigation (`router.on('finish')`). This re-initialises jQuery plugins (metisMenu sidebar, Waves ripple, mobile sidebar toggle) that lose state on SPA navigation. Do not remove these calls.
 
+## Module-Based Architecture (New)
+
+The system is evolving from a single-role hardcoded system to a **multi-module, permission-based architecture** that supports users with multiple concurrent roles (e.g., employee + manager + payroll-admin).
+
+### Core Principles
+
+1. **Modules are isolated** — HR, Payroll, Procurement, Recruiting as separate feature domains
+2. **Permissions over roles** — Check `can.approveLeaves` not `hrRole === 'manager'`
+3. **Composable UI** — Navigation, pages, and components adapt to user's permission set
+4. **Additive roles** — Users accumulate capabilities from all assigned roles
+5. **No hardcoded role checks** — Use Spatie permissions throughout
+
+### Permission System
+
+**Backend**: `BaseHRController::getPermissions()` returns a map of boolean capability flags:
+
+```php
+'can' => [
+    // Employee self-service (everyone)
+    'viewOwnLeaves' => true,
+    'createOwnLeaves' => true,
+    
+    // Manager permissions
+    'viewTeamLeaves' => $user->can('view.team.leaves'),
+    'approveLeaves' => $user->can('approve.leaves'),
+    
+    // Admin permissions
+    'manageEmployees' => $user->can('manage.employees'),
+    
+    // Payroll permissions
+    'payrollReviewTimesheets' => $user->can('payroll.review.timesheets'),
+],
+'userRoles' => ['employee', 'manager'], // Spatie roles
+'modules' => [
+    ['key' => 'hr', 'name' => 'HR', 'icon' => 'users', 'url' => '/hr'],
+    ['key' => 'payroll', 'name' => 'Payroll', 'icon' => 'dollar', 'url' => '/payroll'],
+],
+```
+
+**Frontend**: `usePermissions()` composable provides reactive access:
+
+```vue
+<script setup>
+import { usePermissions } from '@/Composables/usePermissions'
+
+const { can, hasRole, hasModule, currentModule } = usePermissions()
+</script>
+
+<template>
+  <button v-if="can.approveLeaves" @click="approve">Approve</button>
+  <div v-if="hasModule('payroll')">...</div>
+</template>
+```
+
+### Roles & Permissions
+
+**Defined roles** (`database/seeders/RolePermissionSeeder.php`):
+
+- `employee-basic` — Restricted access (profile, leave, timesheet only)
+- `employee-full` — Extended access (+ documents, salary, banks, payslips)
+- `manager` — Team oversight + approval workflows (stage 1)
+- `payroll-admin` — Payroll processing + final approvals (stage 2)
+- `admin` — Full system access
+
+**Key permissions**:
+
+| Permission | Description | Typical Role |
+|---|---|---|
+| `view.team.leaves` | View team leave requests | manager |
+| `approve.leaves` | Approve leaves (stage 1) | manager |
+| `approve.timesheets` | Approve timesheets (stage 1) | manager |
+| `payroll.access` | Access payroll module | payroll-admin |
+| `payroll.approve.timesheets` | Final approval (stage 2) | payroll-admin |
+| `payroll.process.payments` | Generate payment batches | payroll-admin |
+| `manage.employees` | Full employee CRUD | admin |
+
+**Users can have multiple roles** — permissions are cumulative. Example: A user with `employee` + `manager` + `payroll-admin` roles gets all permissions from all three roles.
+
+### Module Structure
+
+```
+resources/js/
+  Layouts/
+    BaseModuleLayout.vue       ← Shared shell (topbar, sidebar, toast)
+    MeridianLayout.vue         ← HR module (extends Base) [CURRENT]
+    PayrollLayout.vue          ← Payroll module (future)
+    ProcurementLayout.vue      ← Procurement module (future)
+  
+  Pages/
+    MeridianHR/                ← HR module pages [CURRENT]
+      Dashboard.vue
+      LeaveRequest.vue
+      TimesheetTalent.vue
+      Employee.vue
+    Payroll/                   ← Future
+      Dashboard.vue
+      TimesheetReview.vue
+      PaymentBatches.vue
+    Procurement/               ← Future
+    Recruiting/                ← Future
+  
+  Composables/
+    usePermissions.js          ← Permission access
+    useNavigation.js           ← Dynamic nav building (future)
+```
+
+**BaseModuleLayout.vue** provides:
+- Shared topbar with module switcher (when user has multiple modules)
+- Sidebar shell (navigation passed via props)
+- Toast notification system
+- Responsive mobile handling
+- Sign out, notifications, settings icons
+
+**Module-specific layouts** (like `MeridianLayout.vue`) extend Base and add:
+- Module-specific topbar content (e.g., event selector for HR)
+- Module-specific navigation structure
+- Module-specific context (e.g., selected event)
+
+### Navigation Philosophy
+
+Users see **accumulated navigation** from all their roles:
+
+**Example: Employee + Manager + Payroll Admin**
+
+```
+HR Module (default view)
+──────────────────────
+Workspace              ← Everyone
+  ├─ Home
+  ├─ My leaves         ← Own data
+  └─ My timesheets     ← Own data
+
+Approvals              ← Manager role adds this
+  ├─ Leaves (3)
+  └─ Timesheets (5)
+
+Team                   ← Manager role adds this
+  ├─ Team members
+  ├─ All leaves        ← Read-only
+  └─ All timesheets    ← Read-only
+
+Personal               ← Everyone
+  ├─ Documents
+  └─ My profile
+
+──────────────────────
+Module Switcher: [HR] [Payroll]  ← Payroll role adds this
+──────────────────────
+
+Payroll Module (separate routes)
+──────────────────────
+Payroll
+  └─ Dashboard
+
+Review                 ← Payroll-admin role
+  ├─ Timesheet review (12)
+  └─ Missing timesheets
+
+Payments               ← Payroll-admin role
+  ├─ Payment batches
+  └─ Bank files
+```
+
+### Migration Path (Current Status)
+
+**✅ Phase 1: Foundation (COMPLETE)**
+- Created `usePermissions.js` composable
+- Created `BaseModuleLayout.vue` shared shell
+- Updated `BaseHRController::getPermissions()`, `getAccessibleModules()`
+- Updated `RolePermissionSeeder` with granular permissions
+- Added `payroll-admin` role
+
+**✅ Phase 2: HR Restructure (COMPLETE)**
+- Split leave pages: `MyLeaves.vue` (personal), `TeamLeaves.vue` (manager read-only), `AllLeaves.vue` (admin full-control)
+- Split timesheet pages: `MyTimesheetsView.vue` (personal), `TeamTimesheetsView.vue` (manager read-only), `AllTimesheetsView.vue` (admin full-control)
+- Added controller methods: `EmployeeLeaveRequestController::myLeaves()`, `::teamLeaves()`, `::allLeaves()`
+- Added controller methods: `TimesheetController::myTimesheetsView()`, `::teamTimesheetsView()`, `::allTimesheetsView()`
+- Added routes: `hr.my-leaves`, `hr.team-leaves`, `hr.all-leaves`, `hr.my-timesheets-view`, `hr.team-timesheets`, `hr.all-timesheets`
+- Updated `useHRNavigation.js` to link directly to separate pages (removed `?scope=team` query parameter pattern)
+- Removed `isTeamView` prop from new pages
+- Legacy pages (`LeaveRequest.vue`, `TimesheetTalent.vue`) remain for backwards compatibility
+
+**🔜 Phase 3: Payroll Module (NEXT)**
+- Create `PayrollLayout.vue`
+- Build Payroll pages (TimesheetReview, PaymentBatches, BankFiles)
+- Add `routes/payroll.php`
+
+**🔜 Phase 4+: Other Modules**
+- Procurement, Recruiting, Finance modules
+
+### Best Practices
+
+**Do:**
+- ✅ Check permissions: `v-if="can.approveLeaves"`
+- ✅ Use `usePermissions()` composable in Vue components
+- ✅ Use Spatie `$user->can('permission.name')` in controllers
+- ✅ Pass `can` object from `BaseHRController::getCommonProps()`
+- ✅ Build navigation dynamically based on permissions
+
+**Don't:**
+- ❌ Hardcode role checks: `v-if="hrRole === 'manager'"` (legacy pattern, being phased out)
+- ❌ Assume single role per user
+- ❌ Use `hrRole` prop in new components (use `can` object instead)
+- ❌ Create module-specific code in `BaseModuleLayout.vue` (keep it generic)
+
+**Transition period**: Current pages still use `hrRole` prop. New pages should use `can` permissions. Refactoring existing pages to use permissions is a future task.
+
 ## Meridian HR Design System
 
 All Meridian HR pages use CSS custom properties defined in `resources/css/meridian.css`, scoped to `.meridian-app`. Key tokens:

@@ -148,12 +148,19 @@ class EmployeeController extends BaseHRController
 
     protected function pendingLeaves(): array
     {
-        $leaveRequests = EmployeeLeaveRequest::with(['employee', 'leaveType', 'status', 'event'])
+        $query = EmployeeLeaveRequest::with(['employee', 'leaveType', 'status', 'event'])
             ->forEvent() // Filter by selected event from session
             ->where('status_id', EmployeeLeaveStatus::pendingId())
             ->active()
-            ->orderBy('created_at', 'asc')
-            ->get();
+            ->orderBy('created_at', 'asc');
+        
+        // Exclude manager's own leave requests from approval queue
+        $currentEmployee = Employee::where('user_id', auth()->id())->first();
+        if ($currentEmployee) {
+            $query->where('employee_id', '!=', $currentEmployee->id);
+        }
+        
+        $leaveRequests = $query->get();
 
         return $leaveRequests->map(function($leave) {
             $employee = $leave->employee;
@@ -189,12 +196,19 @@ class EmployeeController extends BaseHRController
 
     protected function pendingTimesheets(): array
     {
-        $timesheets = \App\Models\EmployeeTimesheet::with(['employee', 'status', 'event'])
+        $query = \App\Models\EmployeeTimesheet::with(['employee', 'status', 'event'])
             ->forEvent() // Filter by selected event from session
             ->where('status_id', \App\Models\EmployeeTimesheetStatus::submittedId())
             ->active()
-            ->orderBy('created_at', 'asc')
-            ->get();
+            ->orderBy('created_at', 'asc');
+        
+        // Exclude manager's own timesheets from approval queue
+        $currentEmployee = Employee::where('user_id', auth()->id())->first();
+        if ($currentEmployee) {
+            $query->where('employee_id', '!=', $currentEmployee->id);
+        }
+        
+        $timesheets = $query->get();
 
         return $timesheets->map(function($timesheet) {
             $employee = $timesheet->employee;
@@ -460,14 +474,39 @@ class EmployeeController extends BaseHRController
         
         $isEmployee = !in_array($this->getHRRole(), ['admin', 'manager']);
 
+        // Get next pay information from approved timesheets
+        $currentEmployee = Employee::where('user_id', auth()->id())->first();
+        $nextPayDate = 'Not available';
+        $nextPayFormatted = '$0.00';
+        
+        if ($currentEmployee) {
+            // Get the most recent approved timesheet
+            $approvedStatusId = \App\Models\EmployeeTimesheetStatus::approvedId();
+            
+            $latestTimesheet = EmployeeTimesheet::where('employee_id', $currentEmployee->id)
+                ->where('status_id', $approvedStatusId)
+                ->where('archived', 'N')
+                ->orderBy('year', 'DESC')
+                ->orderBy('month_id', 'DESC')
+                ->first();
+            
+            if ($latestTimesheet && $latestTimesheet->total_payment) {
+                $nextPayFormatted = '$' . number_format($latestTimesheet->total_payment, 2, '.', ',');
+                
+                // Calculate pay date as last day of the timesheet month
+                $payDate = Carbon::create($latestTimesheet->year, $latestTimesheet->month_id, 1)->endOfMonth();
+                $nextPayDate = $payDate->format('l, F j'); // e.g., "Friday, May 31"
+            }
+        }
+
         return Inertia::render('MeridianHR/Dashboard', array_merge($this->getCommonProps('dashboard'), [
             'stats'               => [
                 'headcount'        => $headcount,
                 'onLeaveToday'     => $onLeaveData['total'],
                 'onLeaveBreakdown' => $onLeaveData['breakdown'],
                 'pendingRequests'  => $totalPendingRequests,
-                'nextPayDate'      => 'Friday, May 29',
-                'nextPayFormatted' => '$7,312',
+                'nextPayDate'      => $nextPayDate,
+                'nextPayFormatted' => $nextPayFormatted,
             ],
             'activity'            => $isEmployee ? $this->employeeActivity() : $this->activity(),
             'upcomingLeaves'      => $isEmployee ? $this->upcomingLeaves() : [],
@@ -517,51 +556,21 @@ class EmployeeController extends BaseHRController
 
     public function employee()
     {
-        $eventId = $this->getEffectiveEventIds(); // Support manager "All My Events"
-        
-        // Employees page requires an event selection - return empty if no event selected
-        if (!$eventId || (is_array($eventId) && empty($eventId))) {
-            return Inertia::render('MeridianHR/Employee', array_merge($this->getCommonProps('employee'), [
-                'employees'         => [],
-                'salutations'       => Salutation::orderBy('title')->get()->map(fn($s) => ['id' => $s->id, 'title' => $s->title]),
-                'designations'      => Designation::orderBy('name')->get()->map(fn($d) => ['id' => $d->id, 'name' => $d->name]),
-                'departments'       => Department::orderBy('name')->get()->map(fn($d) => ['id' => $d->id, 'name' => $d->name]),
-                'directorates'      => Directorate::orderBy('title')->get()->map(fn($d) => ['id' => $d->id, 'title' => $d->title]),
-                'functionalAreas'   => FunctionalArea::orderBy('title')->get()->map(fn($f) => ['id' => $f->id, 'title' => $f->title]),
-                'entities'          => EmployeeEntity::orderBy('title')->get()->map(fn($e) => ['id' => $e->id, 'title' => $e->title]),
-                'employeeTypes'     => EmployeeType::orderBy('title')->get()->map(fn($e) => ['id' => $e->id, 'title' => $e->title]),
-                'contractTypes'     => EmployeeContractType::orderBy('title')->get()->map(fn($c) => ['id' => $c->id, 'title' => $c->title]),
-                'salaryBases'       => SalaryBasis::orderBy('title')->get()->map(fn($s) => ['id' => $s->id, 'title' => $s->title]),
-                'genders'           => Gender::orderBy('title')->get()->map(fn($g) => ['id' => $g->id, 'title' => $g->title]),
-                'maritalStatuses'   => MaritalStatus::orderBy('title')->get()->map(fn($m) => ['id' => $m->id, 'title' => $m->title]),
-                'nationalities'     => Nationality::orderBy('nationality')->get()->map(fn($n) => ['id' => $n->id, 'nationality' => $n->nationality]),
-                'countries'         => Country::orderBy('country_name')->get()->map(fn($c) => ['id' => $c->id, 'name' => $c->country_name]),
-                'reportingToOptions'=> Employee::active()->where('manager_flag', 'Y')->orderBy('full_name')->get()->map(fn($e) => ['id' => $e->id, 'name' => $e->full_name]),
-            ]));
-        }
+        $eventId = $this->getSelectedEventId(); // Get selected event (null = "All Events")
+        $isAllEvents = $eventId === null;
         
         // Base query for active employees
         $query = Employee::active()
             ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType', 'reportingTo'])
             ->withCount(['documents as documents_count' => function ($query) use ($eventId) {
                 $query->where('active_flag', 1);
-                if (is_array($eventId)) {
-                    $query->whereIn('event_id', $eventId);
-                } else {
+                if ($eventId) {
                     $query->where('event_id', $eventId);
                 }
             }]);
         
-        // Filter by event assignment
-        if (is_array($eventId)) {
-            $query->whereHas('events', function ($q) use ($eventId) {
-                $q->whereIn('events.id', $eventId)
-                  ->where('employee_events.is_active', 1);
-            })->with(['events' => function ($q) use ($eventId) {
-                $q->whereIn('events.id', $eventId)
-                  ->select('events.id', 'events.name');
-            }]);
-        } else {
+        // Filter by event assignment only if specific event is selected
+        if (!$isAllEvents) {
             $query->whereHas('events', function ($q) use ($eventId) {
                 $q->where('events.id', $eventId)
                   ->where('employee_events.is_active', 1);
@@ -573,15 +582,11 @@ class EmployeeController extends BaseHRController
         
         $employees = $query->orderBy('full_name')
             ->get()
-            ->map(function ($emp) use ($eventId) {
-                // Event name - useful for managers viewing "All My Events"
+            ->map(function ($emp) use ($eventId, $isAllEvents) {
+                // Event name - only relevant when viewing specific event
                 $eventName = null;
-                if ($emp->events->isNotEmpty()) {
-                    // If viewing multiple events, show all event names
-                    $eventNames = $emp->events->pluck('name')->toArray();
-                    $eventName = count($eventNames) > 1 
-                        ? implode(', ', $eventNames)
-                        : $eventNames[0];
+                if (!$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty()) {
+                    $eventName = $emp->events->first()->name;
                 }
                 
                 return [
@@ -589,14 +594,14 @@ class EmployeeController extends BaseHRController
                     'name'              => $emp->full_name,
                     'eventName'         => $eventName,
                     
-                    // Event-specific data
-                    'eventRole'         => $eventId && $emp->events->isNotEmpty() 
+                    // Event-specific data (only when viewing specific event)
+                    'eventRole'         => !$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty() 
                         ? $emp->events->first()->pivot->event_role 
                         : null,
-                    'assignedAt'        => $eventId && $emp->events->isNotEmpty() 
+                    'assignedAt'        => !$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty() 
                         ? $emp->events->first()->pivot->assigned_at 
                         : null,
-                    'releasedAt'        => $eventId && $emp->events->isNotEmpty() 
+                    'releasedAt'        => !$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty() 
                         ? $emp->events->first()->pivot->released_at 
                         : null,
                     
@@ -611,7 +616,9 @@ class EmployeeController extends BaseHRController
                     
                     // Contact Information
                     'email'             => $emp->work_email_address,
+                    'workEmail'         => $emp->work_email_address,
                     'personalEmail'     => $emp->personal_email_address,
+                    'mobileNumber'      => $emp->mobile_number,
                     'phone_area_code'   => $emp->phone_area_code,
                     'phone'             => $emp->phone_number,
                     'alt_area_code'     => $emp->alt_area_code,
@@ -635,11 +642,13 @@ class EmployeeController extends BaseHRController
                     'reporting_to_id'   => $emp->reporting_to_id,
                     'reportingTo'       => $emp->reportingTo->full_name ?? null,
                     
-                    // Contract & Dates (show event assignment dates if in event context)
-                    'contractStart'     => $eventId && $emp->events->isNotEmpty()
+                    // Contract & Dates
+                    // In All Events mode: show master contract dates
+                    // In specific event mode: show event assignment dates (assigned_at/released_at)
+                    'contractStart'     => !$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty()
                         ? $emp->events->first()->pivot->assigned_at
                         : $emp->contract_start_date?->format('Y-m-d'),
-                    'contractEnd'       => $eventId && $emp->events->isNotEmpty()
+                    'contractEnd'       => !$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty()
                         ? $emp->events->first()->pivot->released_at
                         : $emp->contract_end_date?->format('Y-m-d'),
                     'dateOfHire'        => $emp->date_of_hire?->format('Y-m-d'),
@@ -743,6 +752,7 @@ class EmployeeController extends BaseHRController
 
         return Inertia::render('MeridianHR/Employee', array_merge($this->getCommonProps('employee'), [
             'employees'         => $employees,
+            'isAllEvents'       => $isAllEvents, // Flag to show/hide import/export
             'salutations'       => $salutations,
             'designations'      => $designations,
             'departments'       => $departments,
@@ -759,178 +769,17 @@ class EmployeeController extends BaseHRController
             'reportingToOptions'=> $reportingToOptions,
         ]));
     }
-
+    
+    /**
+     * Legacy masterEmployee method - redirects to main employee() method
+     * Kept for backwards compatibility with existing routes
+     * @deprecated Use employee() method instead (supports both All Events and specific event views)
+     */
     public function masterEmployee()
     {
-        // Clear event selection when viewing Employee Master
-        // This ensures updates to master employees modify the master table (contract_start_date, contract_end_date)
-        // instead of the pivot table (assigned_at, released_at)
-        session()->forget('selected_event_id');
-        
-        // Get ALL active employees without event filtering
-        $employees = Employee::active()
-            ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType', 'reportingTo'])
-            ->withCount(['documents as documents_count' => function ($query) {
-                $query->where('active_flag', 1);
-            }])
-            ->orderBy('full_name')
-            ->get()
-            ->map(function ($emp) {
-                return [
-                    'id'                => $emp->id,
-                    'name'              => $emp->full_name,
-                    
-                    // Contact Information
-                    'empNumber'         => $emp->employee_number,
-                    'agreementNumber'   => $emp->agreement_number,
-                    'salutation_id'     => $emp->salutation_id,
-                    'salutation'        => $emp->salutation->title ?? null,
-                    'firstName'         => $emp->first_name,
-                    'middleName'        => $emp->middle_name,
-                    'lastName'          => $emp->last_name,
-                    'email'             => $emp->work_email_address,
-                    'workEmail'         => $emp->work_email_address,
-                    'personalEmail'     => $emp->personal_email_address,
-                    'mobileNumber'      => $emp->mobile_number,
-                    'altPhone'          => $emp->alt_phone_number,
-                    
-                    // Employment Details
-                    'designation_id'    => $emp->designation_id,
-                    'role'              => $emp->designation->name ?? 'N/A',
-                    'department_id'     => $emp->department_id,
-                    'dept'              => $emp->department->name ?? 'N/A',
-                    'directorate_id'    => $emp->directorate_id,
-                    'directorate'       => $emp->directorate->title ?? null,
-                    'functional_area_id'=> $emp->functional_area_id,
-                    'functionalArea'    => $emp->functionalArea->title ?? null,
-                    'salary_basis_id'   => $emp->salary_basis_id,
-                    'employee_type'     => $emp->employee_type,
-                    'entity'            => $emp->entity->title ?? null,
-                    'entityId'          => $emp->entity_id,
-                    'contractType'      => $emp->contractType->title ?? null,
-                    'contractTypeId'    => $emp->contract_type_id,
-                    'reporting_to_id'   => $emp->reporting_to_id,
-                    'reportingTo'       => $emp->reportingTo->full_name ?? null,
-                    
-                    // Contract & Dates
-                    'contractStart'     => $emp->contract_start_date?->format('Y-m-d'),
-                    'contractEnd'       => $emp->contract_end_date?->format('Y-m-d'),
-                    'dateOfHire'        => $emp->date_of_hire?->format('Y-m-d'),
-                    'joinDate'          => $emp->join_date?->format('Y-m-d'),
-                    
-                    // Personal Information
-                    'gender_id'         => $emp->gender_id,
-                    'gender'            => $emp->gender->title ?? null,
-                    'marital_status_id' => $emp->marital_status_id,
-                    'maritalStatus'     => $emp->maritalStatus->title ?? null,
-                    'dateOfBirth'       => $emp->date_of_birth?->format('Y-m-d'),
-                    'town_of_birth'     => $emp->town_of_birth,
-                    'country_of_birth'  => $emp->country_of_birth,
-                    'nationality_id'    => $emp->nationality_id,
-                    'nationalityName'   => $emp->nationality->nationality ?? null,
-                    'nationalityCode'   => $emp->nationality->alpha_2_code ?? null,
-                    'language_id'       => $emp->language_id,
-                    
-                    // Identification
-                    'nationalId'        => $emp->national_identifier_number,
-                    'passportNumber'    => $emp->passport_number,
-                    'passportExpiry'    => $emp->passport_expiry?->format('Y-m-d'),
-                    'civilIdExpiry'     => $emp->civil_id_expiry?->format('Y-m-d'),
-                    
-                    // Sponsorship
-                    'sponsorship_id'    => $emp->sponsorship_id,
-                    'sponsorshipName'   => $emp->sponsorship_name,
-                    
-                    // Flags
-                    'managerFlag'       => $emp->manager_flag,
-                    'adminFlag'         => $emp->administrator_flag,
-                    
-                    // UI
-                    'c'                 => $emp->avatar_color,
-                    'initials'          => $emp->initials,
-                    
-                    // Documents
-                    'documentsCount'    => $emp->documents_count ?? 0,
-                ];
-            });
-
-        $salutations = Salutation::orderBy('title')->get()->map(function ($sal) {
-            return ['id' => $sal->id, 'title' => $sal->title];
-        });
-
-        $designations = Designation::orderBy('name')->get()->map(function ($d) {
-            return ['id' => $d->id, 'name' => $d->name];
-        });
-
-        $departments = Department::orderBy('name')->get()->map(function ($d) {
-            return ['id' => $d->id, 'name' => $d->name];
-        });
-
-        $directorates = Directorate::orderBy('title')->get()->map(function ($d) {
-            return ['id' => $d->id, 'title' => $d->title];
-        });
-
-        $functionalAreas = FunctionalArea::orderBy('title')->get()->map(function ($f) {
-            return ['id' => $f->id, 'title' => $f->title];
-        });
-
-        $entities = EmployeeEntity::orderBy('title')->get()->map(function ($e) {
-            return ['id' => $e->id, 'title' => $e->title];
-        });
-
-        $employeeTypes = EmployeeType::orderBy('title')->get()->map(function ($e) {
-            return ['id' => $e->id, 'title' => $e->title];
-        });
-
-        $contractTypes = EmployeeContractType::orderBy('title')->get()->map(function ($c) {
-            return ['id' => $c->id, 'title' => $c->title];
-        });
-
-        $salaryBases = SalaryBasis::orderBy('title')->get()->map(function ($s) {
-            return ['id' => $s->id, 'title' => $s->title];
-        });
-
-        $genders = Gender::orderBy('title')->get()->map(function ($g) {
-            return ['id' => $g->id, 'title' => $g->title];
-        });
-
-        $maritalStatuses = MaritalStatus::orderBy('title')->get()->map(function ($m) {
-            return ['id' => $m->id, 'title' => $m->title];
-        });
-
-        $nationalities = Nationality::orderBy('nationality')->get()->map(function ($n) {
-            return ['id' => $n->id, 'nationality' => $n->nationality];
-        });
-
-        $countries = Country::orderBy('country_name')->get()->map(function ($c) {
-            return ['id' => $c->id, 'name' => $c->country_name];
-        });
-
-        $reportingToOptions = Employee::active()
-            ->where('manager_flag', 'Y')
-            ->orderBy('full_name')
-            ->get()
-            ->map(function ($e) {
-                return ['id' => $e->id, 'name' => $e->full_name];
-            });
-
-        return Inertia::render('MeridianHR/Employee', array_merge($this->getCommonProps('master-employee'), [
-            'employees'         => $employees,
-            'salutations'       => $salutations,
-            'designations'      => $designations,
-            'departments'       => $departments,
-            'directorates'      => $directorates,
-            'functionalAreas'   => $functionalAreas,
-            'entities'          => $entities,
-            'employeeTypes'     => $employeeTypes,
-            'contractTypes'     => $contractTypes,
-            'salaryBases'       => $salaryBases,
-            'genders'           => $genders,
-            'maritalStatuses'   => $maritalStatuses,
-            'nationalities'     => $nationalities,
-            'countries'         => $countries,
-            'reportingToOptions'=> $reportingToOptions,
-        ]));
+        // Redirect to employee() with "All Events" context
+        // This ensures a unified employee management experience
+        return redirect()->route('hr.employee');
     }
 
     public function store(Request $request)

@@ -2,8 +2,8 @@
   <button 
     class="mhr-btn mhr-btn--primary" 
     @click="$emit('click')"
-    :disabled="processing"
-    :style="processing ? 'opacity:0.6;cursor:not-allowed;' : ''"
+    :disabled="processing || disabled"
+    :style="(processing || disabled) ? 'opacity:0.6;cursor:not-allowed;' : ''"
   >
     <span v-if="processing" style="display:flex;align-items:center;gap:8px;">
       <svg style="animation:spin 1s linear infinite;width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -19,6 +19,10 @@
 <script setup>
 defineProps({
   processing: {
+    type: Boolean,
+    default: false
+  },
+  disabled: {
     type: Boolean,
     default: false
   },

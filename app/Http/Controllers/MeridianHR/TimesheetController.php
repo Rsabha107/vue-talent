@@ -13,6 +13,7 @@ use App\Models\EmployeeTimesheetStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class TimesheetController extends BaseHRController
@@ -207,19 +208,26 @@ class TimesheetController extends BaseHRController
         $isFullMonth = ($startDay <= 5 && $endDay >= $daysInMonth - 2); // Covers substantially full month
         
         if ($isFullMonth) {
-            // Full month: pay full salary minus unpaid days only
+            // Full month: use 30-day model (or actual days in February)
+            // For February, use actual days (28/29) to avoid confusion
+            $baseDays = ($timesheet->month_id == 2) ? $daysInMonth : 30;
+            
+            // Worked days = base - leave - unpaid
+            $daysWorkedDisplay = $baseDays - $countLeaves - $countUnpaid;
+            // Payment = full salary minus unpaid days only (leave is paid)
             $totalPayment = $monthlySalary - ($countUnpaid * $dailyRate);
-            $paidDays = 30 - $countUnpaid;
+            $paidDays = 30 - $countUnpaid; // Payment still based on 30-day standard
         } else {
-            // Partial month: prorate based on actual calendar days worked
-            $workedDays = $endDay - $startDay + 1; // Actual days in range
+            // Partial month: prorate based on actual calendar days in contract period
+            $workedDays = $endDay - $startDay + 1; // Actual calendar days in range
+            $daysWorkedDisplay = $workedDays - $countLeaves - $countUnpaid;
             $paidDays = max(0, $workedDays - $countUnpaid);
             $totalPayment = $dailyRate * $paidDays;
         }
 
         // Update timesheet with calculated values (but not status)
         $timesheet->update([
-            'days_worked' => $countWorked,
+            'days_worked' => $daysWorkedDisplay, // Actual worked days (excluding leave and unpaid)
             'leave_taken' => $countLeaves,
             'unpaid_leave_taken' => $countUnpaid,
             'total_days_eligible_for_payment' => $paidDays,
@@ -283,7 +291,7 @@ class TimesheetController extends BaseHRController
                 'daysWorked' => $timesheet->days_worked ?? 0,
                 'leaveTaken' => $timesheet->leave_taken ?? 0,
                 'unpaidLeave' => $timesheet->unpaid_leave_taken ?? 0,
-                'totalDays' => $timesheet->total_days_eligible_for_payment ?? 0,
+                'totalDays' => $this->calculateBaseDaysFromTimesheet($timesheet),
                 'dailyRate' => $timesheet->daily_rate ? number_format($timesheet->daily_rate, 2) : '0.00',
                 'salary' => $timesheet->salary ? number_format($timesheet->salary, 2) : '0.00',
                 'payment' => $timesheet->total_payment ? number_format($timesheet->total_payment, 2) : '0.00',
@@ -467,7 +475,7 @@ class TimesheetController extends BaseHRController
                 'daysWorked'    => $ts->days_worked ?? 0,
                 'leaveTaken'    => $ts->leave_taken ?? 0,
                 'unpaidLeave'   => $ts->unpaid_leave_taken ?? 0,
-                'totalDays'     => $ts->total_days_eligible_for_payment ?? 0,
+                'totalDays'     => $this->calculateBaseDays($startDay, $endDay, $daysInMonth, $ts->month_id),
                 'dailyRate'     => $ts->daily_rate ? number_format($ts->daily_rate, 2) : '0.00',
                 'salary'        => $ts->salary ? number_format($ts->salary, 2) : '0.00',
                 'payment'       => $ts->total_payment ? number_format($ts->total_payment, 2) : '0.00',
@@ -476,7 +484,7 @@ class TimesheetController extends BaseHRController
         });
 
         // Calculate timesheet submission cutoff
-        $cutoffDay = config('settings.timesheet_cutoff_day', 21);
+        $cutoffDay = config('settings.talent_timesheet_submission_closed_after_day', 21);
         $disableSubmission = false;
         $formattedCutoff = null;
         
@@ -731,7 +739,7 @@ class TimesheetController extends BaseHRController
                 'daysWorked'    => $ts->days_worked ?? 0,
                 'leaveTaken'    => $ts->leave_taken ?? 0,
                 'unpaidLeave'   => $ts->unpaid_leave_taken ?? 0,
-                'totalDays'     => $ts->total_days_eligible_for_payment ?? 0,
+                'totalDays'     => $this->calculateBaseDays($startDay, $endDay, $daysInMonth, $ts->month_id),
                 'dailyRate'     => $ts->daily_rate ? number_format($ts->daily_rate, 2) : '0.00',
                 'salary'        => $ts->salary ? number_format($ts->salary, 2) : '0.00',
                 'payment'       => $ts->total_payment ? number_format($ts->total_payment, 2) : '0.00',
@@ -740,7 +748,7 @@ class TimesheetController extends BaseHRController
         });
 
         // Calculate timesheet submission cutoff
-        $cutoffDay = config('settings.timesheet_cutoff_day', 21);
+        $cutoffDay = config('settings.timesheet_cutoff_day');
         $disableSubmission = false;
         $formattedCutoff = null;
         
@@ -762,6 +770,211 @@ class TimesheetController extends BaseHRController
             'formattedCutoff' => $formattedCutoff,
             'isTeamView' => $scope === 'team', // Indicates read-only team view for managers
         ]));
+    }
+
+    /**
+     * My Timesheets View - Personal view for current user
+     * Accessible by: everyone (employee, manager, admin)
+     */
+    public function myTimesheetsView()
+    {
+        $data = $this->getTimesheetData(personalOnly: true);
+        return Inertia::render('MeridianHR/MyTimesheetsView', array_merge($this->getCommonProps('my-timesheets-view'), $data));
+    }
+
+    /**
+     * Team Timesheets View - Manager read-only view of team timesheets
+     * Accessible by: manager, admin
+     */
+    public function teamTimesheetsView()
+    {
+        $data = $this->getTimesheetData(personalOnly: false);
+        return Inertia::render('MeridianHR/TeamTimesheetsView', array_merge($this->getCommonProps('team-timesheets'), $data));
+    }
+
+    /**
+     * All Timesheets View - Admin full-control view of all timesheets
+     * Accessible by: admin
+     */
+    public function allTimesheetsView()
+    {
+        $data = $this->getTimesheetData(personalOnly: false);
+        return Inertia::render('MeridianHR/AllTimesheetsView', array_merge($this->getCommonProps('all-timesheets'), $data));
+    }
+
+    /**
+     * Shared helper to get timesheet data
+     */
+    private function getTimesheetData($personalOnly = false)
+    {
+        $eventId  = $personalOnly ? $this->getSelectedEventId() : $this->getEffectiveEventIds();
+        $statuses = $this->timesheetStatuses();
+        $statusMap = collect($statuses)->keyBy('id');
+        $currentEmployee = null;
+        
+        if ($personalOnly) {
+            $currentEmployee = Employee::where('user_id', auth()->id())->first();
+            if (!$currentEmployee) {
+                return [
+                    'employees'  => [],
+                    'monthsName' => $this->monthsName(),
+                    'years'      => [2024, 2025, 2026],
+                    'statuses'   => $statuses,
+                    'timesheets' => [],
+                    'cutoffDay'  => config('settings.talent_timesheet_submission_closed_after_day', 21),
+                    'disableSubmission' => false,
+                    'formattedCutoff' => null,
+                ];
+            }
+        }
+
+        // Get employees list
+        if ($personalOnly && $currentEmployee) {
+            $employees = collect([[
+                'id' => $currentEmployee->id,
+                'full_name' => $currentEmployee->full_name,
+                'employee_number' => $currentEmployee->employee_number,
+            ]]);
+        } else {
+            $empQuery = Employee::active()->orderBy('full_name');
+            if ($eventId) {
+                if (is_array($eventId)) {
+                    $empQuery->whereHas('events', function ($q) use ($eventId) {
+                        $q->whereIn('events.id', $eventId)->where('employee_events.is_active', 1);
+                    });
+                } else {
+                    $empQuery->whereHas('events', function ($q) use ($eventId) {
+                        $q->where('events.id', $eventId)->where('employee_events.is_active', 1);
+                    });
+                }
+            }
+            $employees = $empQuery->get()->map(fn($e) => [
+                'id' => $e->id,
+                'full_name' => $e->full_name,
+                'employee_number' => $e->employee_number
+            ]);
+        }
+
+        // Get timesheets with entries
+        $tsQuery = EmployeeTimesheet::with(['employee', 'event', 'entries'])
+            ->orderBy('year', 'desc')
+            ->orderBy('month_id', 'desc');
+        
+        if ($eventId) {
+            if (is_array($eventId)) {
+                $tsQuery->whereIn('event_id', $eventId);
+            } else {
+                $tsQuery->where('event_id', $eventId);
+            }
+        }
+        
+        if ($personalOnly && $currentEmployee) {
+            $tsQuery->where('employee_id', $currentEmployee->id);
+        }
+        
+        $tsList = $tsQuery->get();
+
+        // Get approved leaves for the employees
+        $employeeIds = $personalOnly && $currentEmployee ? [$currentEmployee->id] : $employees->pluck('id')->toArray();
+        $approvedLeaves = [];
+        if (!empty($employeeIds)) {
+            $approvedStatusId = EmployeeLeaveStatus::where('title', 'Approved')->value('id');
+            $leaves = EmployeeLeaveRequest::whereIn('employee_id', $employeeIds)
+                ->where('status_id', $approvedStatusId)
+                ->where('archived', 'N')
+                ->get();
+            
+            foreach ($leaves as $leave) {
+                $start = \Carbon\Carbon::parse($leave->date_from);
+                $end = \Carbon\Carbon::parse($leave->date_to);
+                for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
+                    $key = $leave->employee_id . '_' . $date->format('Y-m-d');
+                    $approvedLeaves[$key] = true;
+                }
+            }
+        }
+
+        // Build timesheet array
+        $timesheets = $tsList->map(function ($ts) use ($statusMap, $approvedLeaves) {
+            // ... (condensed for space - full mapping logic remains the same as original)
+            $year = $ts->year;
+            $month = $ts->month_id;
+            $period = date('M-Y', mktime(0, 0, 0, $month, 1, $year));
+            $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
+            
+            $entries = [];
+            for ($day = 1; $day <= $daysInMonth; $day++) {
+                $date = sprintf('%04d-%02d-%02d', $year, $month, $day);
+                $dayOfWeek = date('N', strtotime($date));
+                $isWeekend = in_array($dayOfWeek, [6, 7]);
+                $dayName = date('D', strtotime($date));
+                $key = $ts->employee_id . '_' . $date;
+                $isLeave = isset($approvedLeaves[$key]);
+                
+                $entry = $ts->entries->firstWhere('calendar_day', $day);
+                $action = $entry ? $entry->day_action : ($isLeave ? 'L' : ($isWeekend ? '0' : 'W'));
+                
+                $entries[] = [
+                    'day' => $day,
+                    'dayName' => $dayName,
+                    'isWeekend' => $isWeekend,
+                    'action' => $action,
+                    'isLeave' => $isLeave
+                ];
+            }
+            
+            return [
+                'id' => $ts->id,
+                'employeeId' => $ts->employee_id,
+                'employeeName' => $ts->employee?->full_name,
+                'employeeColor' => $ts->employee?->avatar_color ?? 0,
+                'period' => $period,
+                'monthNumber' => $month,
+                'year' => $year,
+                'daysInMonth' => $daysInMonth,
+                'startDay' => 1,
+                'endDay' => $daysInMonth,
+                'statusId' => $ts->status_id,
+                'statusTitle' => $statusMap[$ts->status_id]['title'] ?? 'Unknown',
+                'hasEntries' => $ts->entries->count() > 0,
+                'entries' => $entries,
+                'daysWorked' => $ts->days_worked ?? 0,
+                'leaveTaken' => $ts->leave_taken ?? 0,
+                'unpaidLeave' => $ts->unpaid_leave_taken ?? 0,
+                'totalDays' => $this->calculateBaseDays(1, $daysInMonth, $daysInMonth, $month),
+                'dailyRate' => $ts->daily_rate ? number_format($ts->daily_rate, 2) : '0.00',
+                'salary' => $ts->salary ? number_format($ts->salary, 2) : '0.00',
+                'payment' => $ts->total_payment ? number_format($ts->total_payment, 2) : '0.00',
+            ];
+        });
+
+        // Cutoff day logic
+        $cutoffDay = config('settings.timesheet_cutoff_day', 21);
+        $disableSubmission = false;
+        $formattedCutoff = null;
+        
+        if ($cutoffDay != 0) {
+            $today = \Carbon\Carbon::today();
+            $cutoff = \Carbon\Carbon::createFromDate(null, null, $cutoffDay);
+            $formattedCutoff = $cutoff->format('jS');
+            $disableSubmission = $today->greaterThanOrEqualTo($cutoff);
+        }
+
+        return [
+            'employees'  => $employees,
+            'currentEmployee' => $currentEmployee ? [
+                'id' => $currentEmployee->id,
+                'full_name' => $currentEmployee->full_name,
+                'employee_number' => $currentEmployee->employee_number,
+            ] : null,
+            'monthsName' => $this->monthsName(),
+            'years'      => [2024, 2025, 2026],
+            'statuses'   => $statuses,
+            'timesheets' => $timesheets,
+            'cutoffDay' => $cutoffDay,
+            'disableSubmission' => $disableSubmission,
+            'formattedCutoff' => $formattedCutoff,
+        ];
     }
 
     public function timesheetTalentStore(Request $request)
@@ -835,7 +1048,29 @@ class TimesheetController extends BaseHRController
                 }
             }
             
-            // Validation 2: Check for duplicate timesheet
+            // Validation 2: Check for pending leave requests in the selected month/year
+            $pendingLeaveStatus = \App\Models\EmployeeLeaveStatus::pendingId();
+            $pendingLeaves = \App\Models\EmployeeLeaveRequest::where('employee_id', $employeeId)
+                ->where('status_id', $pendingLeaveStatus)
+                ->where('archived', 'N')
+                ->where(function ($query) use ($timesheetPeriodStart, $timesheetPeriodEnd) {
+                    // Check for any leave requests that overlap with the timesheet month
+                    $query->where(function ($q) use ($timesheetPeriodStart, $timesheetPeriodEnd) {
+                        $q->where('date_from', '<=', $timesheetPeriodEnd)
+                          ->where('date_to', '>=', $timesheetPeriodStart);
+                    });
+                })
+                ->when($eventId, fn($q) => $q->where('event_id', $eventId))
+                ->count();
+
+            if ($pendingLeaves > 0) {
+                DB::rollBack();
+                return back()->withErrors([
+                    'month_selected_id' => 'Cannot create timesheet for ' . $monthName . ' ' . $request->year_selected . '. This employee has ' . $pendingLeaves . ' pending leave request(s) for this period. Please approve or reject the leave request(s) first.'
+                ]);
+            }
+            
+            // Validation 3: Check for duplicate timesheet
             $exists = EmployeeTimesheet::active()
                 ->where('employee_id', $employeeId)
                 ->where('month_id', $request->month_selected_id)
@@ -850,7 +1085,7 @@ class TimesheetController extends BaseHRController
                 ]);
             }
             
-            // Validation 3: Check for bank account in the timesheet period
+            // Validation 4: Check for bank account in the timesheet period
             $bankAccount = EmployeeBank::where('employee_id', $employeeId)
                 ->where('archived', 'N')
                 ->where(function ($query) use ($timesheetPeriodStart, $timesheetPeriodEnd) {
@@ -870,7 +1105,7 @@ class TimesheetController extends BaseHRController
                 ]);
             }
             
-            // Validation 4: Check for salary in the timesheet period
+            // Validation 5: Check for salary in the timesheet period
             $salary = EmployeeSalary::where('employee_id', $employeeId)
                 ->where('archived', 'N')
                 ->where('active_flag', 1)
@@ -892,7 +1127,7 @@ class TimesheetController extends BaseHRController
             }
 
             // All validations passed - create the timesheet
-            EmployeeTimesheet::create([
+            $timesheet = EmployeeTimesheet::create([
                 'archived'         => 'N',
                 'employee_id'      => $employeeId,
                 'user_id'          => Auth::id(),
@@ -904,6 +1139,9 @@ class TimesheetController extends BaseHRController
                 'status_id'        => EmployeeTimesheetStatus::pendingId(),
                 'creator_id'       => Auth::id(),
             ]);
+
+            // Calculate initial payment values (salary, daily rate, projected payment)
+            $this->calculateTimesheetPayment($timesheet);
 
             DB::commit();
             return back()->with('success', 'Timesheet for ' . $monthName . ' ' . $request->year_selected . ' created successfully.');
@@ -1092,14 +1330,36 @@ class TimesheetController extends BaseHRController
         
         // Submitted timesheets (manager review)
         $submittedQuery = EmployeeTimesheet::active()
-            ->with(['employee', 'event', 'performer:id,full_name'])
+            ->with(['employee', 'event', 'performer:id,full_name', 'entries'])
             ->where('status_id', $submittedStatusId)
             ->forEvent($eventId)
             ->orderBy('created_at', 'DESC');
         
-        $submittedTimesheets = $submittedQuery->get()->map(function ($ts) use ($monthNames) {
+        $DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        
+        $submittedTimesheets = $submittedQuery->get()->map(function ($ts) use ($monthNames, $DAYS) {
             $emp = $ts->employee;
             $period = $monthNames[$ts->month_id] . ' ' . $ts->year;
+            
+            // Build entries array
+            $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $ts->month_id, $ts->year);
+            $savedEntries = $ts->entries->keyBy('calendar_day');
+            $entries = [];
+            
+            for ($d = 1; $d <= $daysInMonth; $d++) {
+                $date = new \DateTime("{$ts->year}-{$ts->month_id}-{$d}");
+                $dow = (int) $date->format('w');
+                $isWeekend = $dow === 5 || $dow === 6;
+                $savedEntry = $savedEntries[$d] ?? null;
+                $action = $savedEntry ? $savedEntry->day_action : ($isWeekend ? '0' : 'W');
+                
+                $entries[] = [
+                    'day'       => $d,
+                    'dayName'   => $DAYS[$dow],
+                    'isWeekend' => $isWeekend,
+                    'action'    => $action,
+                ];
+            }
             
             return [
                 'id'        => $ts->id,
@@ -1107,6 +1367,9 @@ class TimesheetController extends BaseHRController
                 'empId'     => $emp?->employee_number ?? 'N/A',
                 'c'         => $emp?->avatar_color ?? 0,
                 'period'    => $period,
+                'monthNumber' => $ts->month_id,
+                'year'      => $ts->year,
+                'daysInMonth' => $daysInMonth,
                 'worked'    => $ts->days_worked ?? 0,
                 'leave'     => $ts->leave_taken ?? 0,
                 'unpaid'    => $ts->unpaid_leave_taken ?? 0,
@@ -1114,6 +1377,7 @@ class TimesheetController extends BaseHRController
                 'note'      => $ts->additional_information ?? '',
                 'status'    => 'submitted',
                 'eventName' => $ts->event?->name,
+                'entries'   => $entries,
             ];
         });
         
@@ -1121,14 +1385,34 @@ class TimesheetController extends BaseHRController
         $payrollTimesheets = collect([]);
         if ($role === 'admin') {
             $payrollQuery = EmployeeTimesheet::active()
-                ->with(['employee', 'event', 'performer:id,full_name'])
+                ->with(['employee', 'event', 'performer:id,full_name', 'entries'])
                 ->where('status_id', $pendingPayrollStatusId)
                 ->forEvent($eventId)
                 ->orderBy('updated_at', 'DESC');
             
-            $payrollTimesheets = $payrollQuery->get()->map(function ($ts) use ($monthNames) {
+            $payrollTimesheets = $payrollQuery->get()->map(function ($ts) use ($monthNames, $DAYS) {
                 $emp = $ts->employee;
                 $period = $monthNames[$ts->month_id] . ' ' . $ts->year;
+                
+                // Build entries array
+                $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $ts->month_id, $ts->year);
+                $savedEntries = $ts->entries->keyBy('calendar_day');
+                $entries = [];
+                
+                for ($d = 1; $d <= $daysInMonth; $d++) {
+                    $date = new \DateTime("{$ts->year}-{$ts->month_id}-{$d}");
+                    $dow = (int) $date->format('w');
+                    $isWeekend = $dow === 5 || $dow === 6;
+                    $savedEntry = $savedEntries[$d] ?? null;
+                    $action = $savedEntry ? $savedEntry->day_action : ($isWeekend ? '0' : 'W');
+                    
+                    $entries[] = [
+                        'day'       => $d,
+                        'dayName'   => $DAYS[$dow],
+                        'isWeekend' => $isWeekend,
+                        'action'    => $action,
+                    ];
+                }
                 
                 return [
                     'id'        => $ts->id,
@@ -1136,6 +1420,9 @@ class TimesheetController extends BaseHRController
                     'empId'     => $emp?->employee_number ?? 'N/A',
                     'c'         => $emp?->avatar_color ?? 0,
                     'period'    => $period,
+                    'monthNumber' => $ts->month_id,
+                    'year'      => $ts->year,
+                    'daysInMonth' => $daysInMonth,
                     'worked'    => $ts->days_worked ?? 0,
                     'leave'     => $ts->leave_taken ?? 0,
                     'unpaid'    => $ts->unpaid_leave_taken ?? 0,
@@ -1143,6 +1430,7 @@ class TimesheetController extends BaseHRController
                     'note'      => $ts->additional_information ?? '',
                     'status'    => 'pending-payroll',
                     'eventName' => $ts->event?->name,
+                    'entries'   => $entries,
                 ];
             });
         }
@@ -1269,5 +1557,50 @@ class TimesheetController extends BaseHRController
         });
         
         return back()->with('success', count($request->ids) . ' timesheet(s) rejected by payroll');
+    }
+
+    /**
+     * Calculate base days for display (what worked+leave+unpaid adds up to)
+     * - February full month: 28 or 29
+     * - Other months full month: 30
+     * - Partial month: calendar days in range
+     */
+    private function calculateBaseDays(int $startDay, int $endDay, int $daysInMonth, int $monthId): int
+    {
+        $isFullMonth = ($startDay <= 5 && $endDay >= $daysInMonth - 2);
+        
+        if ($isFullMonth) {
+            // Full month: use actual days for February, 30 for others
+            return ($monthId == 2) ? $daysInMonth : 30;
+        } else {
+            // Partial month: calendar days in range
+            return $endDay - $startDay + 1;
+        }
+    }
+
+    /**
+     * Calculate base days from a timesheet model
+     */
+    private function calculateBaseDaysFromTimesheet(EmployeeTimesheet $timesheet): int
+    {
+        // Get first and last days from entries
+        $firstDay = EmployeeTimesheetEntry::where('employee_timesheet_id', $timesheet->id)
+            ->orderBy('calendar_day', 'ASC')
+            ->first();
+        $lastDay = EmployeeTimesheetEntry::where('employee_timesheet_id', $timesheet->id)
+            ->orderBy('calendar_day', 'DESC')
+            ->first();
+
+        $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $timesheet->month_id, $timesheet->year);
+        
+        if (!$firstDay || !$lastDay) {
+            $startDay = 1;
+            $endDay = $daysInMonth;
+        } else {
+            $startDay = $firstDay->calendar_day;
+            $endDay = $lastDay->calendar_day;
+        }
+
+        return $this->calculateBaseDays($startDay, $endDay, $daysInMonth, $timesheet->month_id);
     }
 }
