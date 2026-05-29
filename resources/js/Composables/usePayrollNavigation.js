@@ -92,14 +92,14 @@ export function usePayrollNavigation() {
         id: 'payment-batches',
         label: 'Payment batches',
         icon: 'wallet',
-        route: 'payroll.payment-batches.index'
+        route: 'payroll.payment-batches'
       })
       
       payments.items.push({
         id: 'bank-files',
         label: 'Bank files',
         icon: 'doc',
-        route: 'payroll.bank-files.index'
+        route: 'payroll.bank-files'
       })
       
       nav.push(payments)

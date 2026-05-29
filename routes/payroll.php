@@ -40,14 +40,17 @@ Route::prefix('payroll')->name('payroll.')->middleware(['auth'])->group(function
     Route::get('/timesheets/all', [PayrollController::class, 'allTimesheets'])->name('timesheets.all');
     
     // Payment Batches
-    Route::get('/payment-batches', [PayrollController::class, 'paymentBatches'])->name('payment-batches.index');
+    Route::get('/payment-batches', [PayrollController::class, 'paymentBatches'])->name('payment-batches');
     Route::post('/payment-batches', [PayrollController::class, 'createPaymentBatch'])->name('payment-batches.store');
     Route::get('/payment-batches/{id}', [PayrollController::class, 'showPaymentBatch'])->name('payment-batches.show');
+    Route::get('/payment-batches/{id}/export', [PayrollController::class, 'exportPaymentBatch'])->name('payment-batches.export');
     Route::post('/payment-batches/{id}/finalize', [PayrollController::class, 'finalizePaymentBatch'])->name('payment-batches.finalize');
+    Route::post('/payment-batches/{id}/process', [PayrollController::class, 'processPaymentBatch'])->name('payment-batches.process');
     Route::delete('/payment-batches/{id}', [PayrollController::class, 'deletePaymentBatch'])->name('payment-batches.destroy');
     
     // Bank Files
-    Route::get('/bank-files', [PayrollController::class, 'bankFiles'])->name('bank-files.index');
+    Route::get('/bank-files', [PayrollController::class, 'bankFiles'])->name('bank-files');
     Route::post('/bank-files/generate', [PayrollController::class, 'generateBankFile'])->name('bank-files.generate');
     Route::get('/bank-files/{id}/download', [PayrollController::class, 'downloadBankFile'])->name('bank-files.download');
+    Route::delete('/bank-files/{id}', [PayrollController::class, 'destroyBankFile'])->name('bank-files.destroy');
 });

@@ -315,10 +315,10 @@ function getFirstDayOffset() {
               </th>
               <th>EMPLOYEE</th>
               <th>PERIOD</th>
-              <th>WORKED</th>
-              <th>LEAVE</th>
-              <th>UNPAID</th>
-              <th>PAYMENT</th>
+              <th style="text-align:right;">WORKED</th>
+              <th style="text-align:right;">LEAVE</th>
+              <th style="text-align:right;">UNPAID</th>
+              <th style="text-align:right;">PAYMENT</th>
               <th>MANAGER</th>
               <th style="width:140px;">ACTIONS</th>
             </tr>
@@ -344,10 +344,10 @@ function getFirstDayOffset() {
                 <div style="font-size:12px;color:var(--mhr-ink-3);">{{ ts.employeeNumber }}</div>
               </td>
               <td style="color:var(--mhr-ink-2);">{{ ts.period }}</td>
-              <td style="text-align:center;">{{ ts.daysWorked }}</td>
-              <td style="text-align:center;">{{ ts.leaveTaken }}</td>
-              <td style="text-align:center;">{{ ts.unpaidLeave }}</td>
-              <td style="font-weight:600;color:var(--mhr-ink);">{{ fmtMoney(ts.totalPayment) }}</td>
+              <td style="text-align:right;">{{ ts.daysWorked }}</td>
+              <td style="text-align:right;">{{ ts.leaveTaken }}</td>
+              <td style="text-align:right;">{{ ts.unpaidLeave }}</td>
+              <td style="text-align:right;font-weight:600;color:var(--mhr-ink);font-family:monospace;">{{ fmtMoney(ts.totalPayment) }}</td>
               <td style="color:var(--mhr-ink-3);font-size:12px;">{{ ts.approverName }}</td>
               <td>
                 <div style="display:flex;gap:4px;align-items:center;">

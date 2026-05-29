@@ -313,6 +313,26 @@ The system supports multi-event architecture where employees can be associated w
 
 **Type Coercion**: All foreign key fields (e.g., `country_of_birth`, `gender_id`, `marital_status_id`, `nationality_id`) must be explicitly converted to `Number()` in Vue forms before submission, as v-model returns strings but the backend expects integers.
 
+### Payroll Module: Organization-Wide Scope
+
+The **Payroll module operates organization-wide and does not filter by event**. This architectural decision reflects real-world payroll operations where:
+
+- Payroll admins process payments for all employees across all projects/events in a single run
+- Payment batches include all approved timesheets regardless of which event they belong to
+- Bank file generation is done once for the entire organization
+- No event selector is shown in the Payroll module UI
+
+**Implementation details:**
+- `PayrollController` extends `BaseHRController` but does not use `getSelectedEventId()` for filtering
+- `PaymentBatch.event_id` is set to `null` (column is nullable for potential future use)
+- Timesheet queries in payroll methods do not include `->forEvent()` or `->where('event_id', ...)` filters
+- Individual timesheets still retain their `event_id` for reference (displayed in payment details)
+- Employee assignment dates are fetched using the timesheet's specific `event_id` when needed
+
+**Contrast with HR module:**
+- HR module (leaves, timesheets, employees) **is event-scoped** — managers/admins see data filtered by selected event
+- Payroll module **is organization-wide** — payroll admins see all data regardless of event
+
 ## Design Reference: HTML Prototype
 
 The canonical design reference is `C:\Users\r.sabha\Downloads\Meridian HR _standalone_ (5).html` — a self-contained React prototype (compiled, not source). Open in a browser; use the **Tweaks panel** (bottom-right corner) to switch between `employee`, `manager`, and `admin` roles. There are also theme, density, accent colour, and font options there.

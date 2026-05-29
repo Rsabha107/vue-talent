@@ -31,7 +31,7 @@ function fmtDate(s) {
         <p class="mhr-page-head__sub">Overview of payroll operations and pending items</p>
       </div>
       <div class="mhr-page-head__actions">
-        <a :href="route('payroll.payment-batches.index')" class="mhr-btn mhr-btn--outline">
+        <a :href="route('payroll.payment-batches')" class="mhr-btn mhr-btn--outline">
           <AppIcon name="wallet" /> Payment Batches
         </a>
         <a :href="route('payroll.timesheets.review')" class="mhr-btn mhr-btn--primary">
@@ -151,7 +151,7 @@ function fmtDate(s) {
           <p class="mhr-card__sub">Latest processed payment batches</p>
         </div>
         <div class="mhr-card__hd-actions">
-          <a :href="route('payroll.payment-batches.index')" class="mhr-btn mhr-btn--ghost mhr-btn--sm">View all</a>
+          <a :href="route('payroll.payment-batches')" class="mhr-btn mhr-btn--ghost mhr-btn--sm">View all</a>
         </div>
       </div>
       <div class="mhr-table-wrap">

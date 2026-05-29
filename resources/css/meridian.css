@@ -33,6 +33,7 @@
   --mhr-warn-bg:  #fbf1df;
   --mhr-danger:   #a8413a;
   --mhr-danger-bg:#f7e3e1;
+  --mhr-danger-soft: #fef5f4;
   --mhr-info:     #3a6c8c;
   --mhr-info-bg:  #e3edf3;
 
@@ -78,6 +79,7 @@
   --mhr-warn:    #d59a4a;
   --mhr-danger-bg:#381e1c;
   --mhr-danger:  #d2756c;
+  --mhr-danger-soft: #2b1715;
   --mhr-info-bg: #1d2e38;
   --mhr-info:    #79a8c2;
 }

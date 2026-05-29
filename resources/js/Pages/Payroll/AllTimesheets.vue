@@ -196,10 +196,10 @@ function getDayTitle(entry) {
               <th>EMPLOYEE</th>
               <th>PERIOD</th>
               <th>STATUS</th>
-              <th>WORKED</th>
-              <th>LEAVE</th>
-              <th>UNPAID</th>
-              <th>PAYMENT</th>
+              <th style="text-align:right;">WORKED</th>
+              <th style="text-align:right;">LEAVE</th>
+              <th style="text-align:right;">UNPAID</th>
+              <th style="text-align:right;">PAYMENT</th>
               <th style="width:80px;">ACTIONS</th>
             </tr>
           </thead>
@@ -219,10 +219,10 @@ function getDayTitle(entry) {
               <td>
                 <span :class="['mhr-badge', getStatusClass(ts.statusTitle)]">{{ ts.statusTitle }}</span>
               </td>
-              <td style="text-align:center;">{{ ts.daysWorked }}</td>
-              <td style="text-align:center;">{{ ts.leaveTaken }}</td>
-              <td style="text-align:center;">{{ ts.unpaidLeave }}</td>
-              <td style="font-weight:600;color:var(--mhr-ink);">{{ fmtMoney(ts.payment) }}</td>
+              <td style="text-align:right;">{{ ts.daysWorked }}</td>
+              <td style="text-align:right;">{{ ts.leaveTaken }}</td>
+              <td style="text-align:right;">{{ ts.unpaidLeave }}</td>
+              <td style="text-align:right;font-weight:600;color:var(--mhr-ink);font-family:monospace;">{{ fmtMoney(ts.payment) }}</td>
               <td>
                 <button 
                   class="mhr-btn mhr-btn--ghost mhr-btn--sm" 

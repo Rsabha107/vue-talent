@@ -9,9 +9,16 @@ use App\Models\EmployeeTimesheetEntry;
 use App\Models\Employee;
 use App\Models\EmployeeLeaveRequest;
 use App\Models\EmployeeLeaveStatus;
+use App\Models\PaymentBatch;
+use App\Models\PaymentBatchItem;
+use App\Models\EmployeeBank;
+use App\Models\BankFile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Payroll Module Controller
@@ -23,7 +30,7 @@ use Inertia\Inertia;
  * - Bank Files (generate payment files)
  * - Missing Timesheets Report
  */
-class PayrollController extends Controller
+class PayrollController extends BaseHRController
 {
     /**
      * Show payroll dashboard
@@ -428,11 +435,35 @@ class PayrollController extends Controller
      */
     public function paymentBatches()
     {
-        // TODO: Implement payment batches logic
+        // Payroll is organization-wide, no event filtering
+        $batches = PaymentBatch::with(['creator', 'finalizer', 'processor'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($batch) {
+                return [
+                    'id' => $batch->id,
+                    'batchNumber' => $batch->batch_number,
+                    'batchName' => $batch->batch_name,
+                    'period' => $batch->period,
+                    'status' => $batch->status,
+                    'timesheetCount' => $batch->timesheet_count,
+                    'employeeCount' => $batch->employee_count,
+                    'totalAmount' => $batch->total_amount,
+                    'createdAt' => $batch->created_at?->format('Y-m-d'),
+                    'createdBy' => $batch->creator?->name,
+                    'finalizedAt' => $batch->finalized_at?->format('Y-m-d'),
+                    'finalizedBy' => $batch->finalizer?->name,
+                    'processedAt' => $batch->processed_at?->format('Y-m-d'),
+                    'processedBy' => $batch->processor?->name,
+                    'canEdit' => $batch->canEdit(),
+                    'canFinalize' => $batch->canFinalize(),
+                    'canProcess' => $batch->canProcess(),
+                ];
+            });
         
         return Inertia::render('Payroll/PaymentBatches', [
             'payrollPage' => 'payment-batches',
-            'batches' => [],
+            'batches' => $batches,
             'can' => $this->getPayrollPermissions(),
             'pendingCounts' => $this->getPendingCounts(),
             'modules' => $this->getAccessibleModules(),
@@ -441,20 +472,512 @@ class PayrollController extends Controller
     }
 
     /**
-     * Show bank files page
+     * Create a new payment batch from approved timesheets
      */
-    public function bankFiles()
+    public function createPaymentBatch(Request $request)
     {
-        // TODO: Implement bank files logic
-        
-        return Inertia::render('Payroll/BankFiles', [
-            'payrollPage' => 'bank-files',
-            'bankFiles' => [],
+        $request->validate([
+            'batch_name' => 'required|string|max:200',
+            'month_id' => 'required|integer',
+            'year' => 'required|string',
+            'notes' => 'nullable|string',
+        ]);
+
+        $approvedStatusId = EmployeeTimesheetStatus::approvedId();
+
+        try {
+            DB::beginTransaction();
+
+            // Log what we're looking for
+            \Log::info('Creating payment batch', [
+                'month_id' => $request->month_id,
+                'year' => $request->year,
+                'approved_status_id' => $approvedStatusId,
+            ]);
+
+            // Get approved timesheets for the period that aren't already in a batch
+            // Payroll is organization-wide, includes all events
+            $timesheets = EmployeeTimesheet::with(['employee', 'employee.banks'])
+                ->where('status_id', $approvedStatusId)
+                ->where('month_id', $request->month_id)
+                ->where('year', $request->year)
+                ->whereNotExists(function ($query) {
+                    $query->select(DB::raw(1))
+                        ->from('payment_batch_items')
+                        ->whereColumn('payment_batch_items.timesheet_id', 'employee_timesheets.id');
+                })
+                ->get();
+
+            \Log::info('Found timesheets', [
+                'count' => $timesheets->count(),
+            ]);
+
+            if ($timesheets->isEmpty()) {
+                DB::rollBack();
+                return back()->withErrors(['error' => 'No approved timesheets found for this period that are not already in a batch.']);
+            }
+
+            // Generate batch number (format: BATCH-YYYYMM-XXX)
+            $batchPrefix = 'BATCH-' . $request->year . str_pad($request->month_id, 2, '0', STR_PAD_LEFT);
+            $lastBatch = PaymentBatch::where('batch_number', 'LIKE', $batchPrefix . '%')
+                ->orderBy('batch_number', 'desc')
+                ->first();
+            
+            $sequence = 1;
+            if ($lastBatch) {
+                $lastSequence = (int) substr($lastBatch->batch_number, -3);
+                $sequence = $lastSequence + 1;
+            }
+            $batchNumber = $batchPrefix . '-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
+
+            // Create the payment batch
+            $batch = PaymentBatch::create([
+                'batch_number' => $batchNumber,
+                'batch_name' => $request->batch_name,
+                'event_id' => null, // Payroll is organization-wide
+                'period' => date('F Y', mktime(0, 0, 0, $request->month_id, 1, $request->year)),
+                'month_id' => $request->month_id,
+                'year' => $request->year,
+                'status' => 'draft',
+                'timesheet_count' => $timesheets->count(),
+                'employee_count' => $timesheets->pluck('employee_id')->unique()->count(),
+                'total_amount' => $timesheets->sum('total_payment'),
+                'notes' => $request->notes,
+                'created_by' => Auth::id(),
+            ]);
+
+            \Log::info('Payment batch created', [
+                'batch_id' => $batch->id,
+                'batch_number' => $batch->batch_number,
+            ]);
+
+            // Create batch items
+            foreach ($timesheets as $timesheet) {
+                // Get primary bank (last created bank with effective_end_date = 9999-12-31)
+                $primaryBank = $timesheet->employee->banks
+                    ->filter(function ($bank) {
+                        return $bank->effective_end_date && 
+                               $bank->effective_end_date->format('Y-m-d') === '9999-12-31';
+                    })
+                    ->sortByDesc('created_at')
+                    ->first();
+                
+                Log::info('Processing timesheet', [
+                    'timesheet_id' => $timesheet->id,
+                    'employee_id' => $timesheet->employee_id,
+                    'employee_name' => $timesheet->employee->full_name ?? 'N/A',
+                    'primary_bank_id' => $primaryBank?->id,
+                    'iban' => $primaryBank?->iban,
+                ]);
+
+                PaymentBatchItem::create([
+                    'payment_batch_id' => $batch->id,
+                    'timesheet_id' => $timesheet->id,
+                    'employee_id' => $timesheet->employee_id,
+                    'employee_number' => $timesheet->employee->employee_number,
+                    'employee_name' => $timesheet->employee->first_name . ' ' . $timesheet->employee->last_name,
+                    'bank_id' => $primaryBank?->id,
+                    'account_number' => $primaryBank?->iban, // IBAN from employee_banks table
+                    'days_worked' => $timesheet->days_worked,
+                    'leave_taken' => $timesheet->leave_taken,
+                    'unpaid_leave_taken' => $timesheet->unpaid_leave_taken,
+                    'total_days_paid' => $timesheet->total_days_eligible_for_payment,
+                    'daily_rate' => $timesheet->daily_rate,
+                    'payment_amount' => $timesheet->total_payment,
+                ]);
+            }
+
+            DB::commit();
+
+            return redirect()->route('payroll.payment-batches')
+                ->with('success', 'Payment batch created successfully with ' . $timesheets->count() . ' timesheet(s).');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors(['error' => 'Failed to create payment batch: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Show batch details
+     */
+    public function showPaymentBatch($id)
+    {
+        $batch = PaymentBatch::with([
+            'creator', 
+            'finalizer', 
+            'processor', 
+            'items.employee.designation',
+            'items.employee.contractType',
+            'items.bank',
+            'items.timesheet'
+        ])->findOrFail($id);
+
+        $batchData = [
+            'id' => $batch->id,
+            'batchNumber' => $batch->batch_number,
+            'batchName' => $batch->batch_name,
+            'period' => $batch->period,
+            'status' => $batch->status,
+            'timesheetCount' => $batch->timesheet_count,
+            'employeeCount' => $batch->employee_count,
+            'totalAmount' => $batch->total_amount,
+            'notes' => $batch->notes,
+            'createdAt' => $batch->created_at?->format('Y-m-d H:i'),
+            'createdBy' => $batch->creator?->name,
+            'finalizedAt' => $batch->finalized_at?->format('Y-m-d H:i'),
+            'finalizedBy' => $batch->finalizer?->name,
+            'processedAt' => $batch->processed_at?->format('Y-m-d H:i'),
+            'processedBy' => $batch->processor?->name,
+            'canEdit' => $batch->canEdit(),
+            'canFinalize' => $batch->canFinalize(),
+            'canProcess' => $batch->canProcess(),
+            'items' => $batch->items->map(function ($item) {
+                $employee = $item->employee;
+                $timesheet = $item->timesheet;
+                
+                // Get employee event assignment dates (from timesheet's event)
+                $assignment = $employee && $timesheet ? \DB::table('employee_events')
+                    ->where('employee_id', $employee->id)
+                    ->where('event_id', $timesheet->event_id)
+                    ->first() : null;
+
+                // Get latest salary
+                $latestSalary = $employee ? \App\Models\EmployeeSalary::where('employee_id', $employee->id)
+                    ->where('effective_start_date', '<=', now())
+                    ->orderBy('effective_start_date', 'desc')
+                    ->first() : null;
+
+                // Determine salary basis (full vs partial month)
+                $salaryBasis = 'N/A';
+                if ($timesheet) {
+                    $daysInMonth = $timesheet->days_in_month ?: 30;
+                    $eligibleDays = $timesheet->total_days_eligible_for_payment;
+                    // If eligible days >= 90% of month, consider it full month
+                    $salaryBasis = ($eligibleDays >= ($daysInMonth * 0.9)) ? 'Full Month' : 'Partial Month';
+                }
+
+                return [
+                    'id' => $item->id,
+                    'timesheetPeriod' => $timesheet?->timesheet_period,
+                    'agreementNumber' => $employee?->agreement_number ?: 'N/A',
+                    'employeeName' => $item->employee_name,
+                    'role' => $employee?->designation?->name ?? 'N/A',
+                    'startDate' => $assignment?->assigned_at ? \Carbon\Carbon::parse($assignment->assigned_at)->format('d M Y') : 'N/A',
+                    'endDate' => $assignment?->released_at ? \Carbon\Carbon::parse($assignment->released_at)->format('d M Y') : 'Ongoing',
+                    'monthlySalary' => $latestSalary?->net_salary ?? 0,
+                    'salaryBasis' => $salaryBasis,
+                    'daysWorked' => $item->days_worked,
+                    'paymentAmount' => $item->payment_amount,
+                    'iban' => $item->account_number ?: 'N/A',
+                    'accountHolderName' => $item->bank?->bank_account_name ?: 'N/A',
+                    // Keep old fields for backward compatibility
+                    'employeeNumber' => $item->employee_number,
+                    'bankName' => $item->bank?->bank_name,
+                    'accountNumber' => $item->account_number,
+                    'leaveTaken' => $item->leave_taken,
+                    'unpaidLeave' => $item->unpaid_leave_taken,
+                    'totalDaysPaid' => $item->total_days_paid,
+                    'dailyRate' => $item->daily_rate,
+                ];
+            }),
+        ];
+
+        return Inertia::render('Payroll/PaymentBatchDetails', [
+            'payrollPage' => 'payment-batches',
+            'batch' => $batchData,
             'can' => $this->getPayrollPermissions(),
             'pendingCounts' => $this->getPendingCounts(),
             'modules' => $this->getAccessibleModules(),
             'userRoles' => Auth::user()->roles->pluck('name')->toArray(),
         ]);
+    }
+
+    /**
+     * Export payment batch to Excel
+     */
+    public function exportPaymentBatch($id)
+    {
+        $batch = PaymentBatch::findOrFail($id);
+        
+        $fileName = 'Payment_Batch_' . $batch->batch_number . '_' . now()->format('Ymd') . '.xlsx';
+        
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\PaymentBatchExport($id),
+            $fileName
+        );
+    }
+
+    /**
+     * Finalize a payment batch (locks it)
+     */
+    public function finalizePaymentBatch($id)
+    {
+        $batch = PaymentBatch::findOrFail($id);
+
+        if (!$batch->canFinalize()) {
+            return back()->withErrors(['error' => 'This batch cannot be finalized.']);
+        }
+
+        $batch->update([
+            'status' => 'finalized',
+            'finalized_at' => now(),
+            'finalized_by' => Auth::id(),
+        ]);
+
+        return back()->with('success', 'Payment batch finalized successfully. It is now locked and ready for processing.');
+    }
+
+    /**
+     * Mark batch as processed
+     */
+    public function processPaymentBatch($id)
+    {
+        $batch = PaymentBatch::findOrFail($id);
+
+        if (!$batch->canProcess()) {
+            return back()->withErrors(['error' => 'This batch cannot be processed.']);
+        }
+
+        $batch->update([
+            'status' => 'processed',
+            'processed_at' => now(),
+            'processed_by' => Auth::id(),
+        ]);
+
+        return back()->with('success', 'Payment batch marked as processed.');
+    }
+
+    /**
+     * Delete a draft payment batch
+     */
+    public function deletePaymentBatch($id)
+    {
+        $batch = PaymentBatch::findOrFail($id);
+
+        if (!$batch->canEdit()) {
+            return back()->withErrors(['error' => 'Only draft batches can be deleted.']);
+        }
+
+        $batch->delete();
+
+        return redirect()->route('payroll.payment-batches')
+            ->with('success', 'Payment batch deleted successfully.');
+    }
+
+    /**
+     * Show bank files page
+     */
+    public function bankFiles()
+    {
+        // Payroll is organization-wide, no event filtering
+        // Get all finalized batches for dropdown
+        $finalizedBatches = PaymentBatch::finalized()
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($batch) {
+                return [
+                    'id' => $batch->id,
+                    'batchNumber' => $batch->batch_number,
+                    'batchName' => $batch->batch_name,
+                    'period' => $batch->period,
+                ];
+            });
+
+        // Get generated bank files
+        $bankFiles = BankFile::with(['batch', 'generator'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($file) {
+                return [
+                    'id' => $file->id,
+                    'fileName' => $file->file_name,
+                    'batchNumber' => $file->batch->batch_number,
+                    'batchName' => $file->batch->batch_name,
+                    'fileFormat' => strtoupper($file->file_format),
+                    'recordCount' => $file->record_count,
+                    'totalAmount' => $file->total_amount,
+                    'fileSize' => $file->getFileSize(),
+                    'generatedAt' => $file->created_at?->format('Y-m-d H:i'),
+                    'generatedBy' => $file->generator?->name,
+                    'exists' => $file->exists(),
+                ];
+            });
+        
+        return Inertia::render('Payroll/BankFiles', [
+            'payrollPage' => 'bank-files',
+            'bankFiles' => $bankFiles,
+            'finalizedBatches' => $finalizedBatches,
+            'can' => $this->getPayrollPermissions(),
+            'pendingCounts' => $this->getPendingCounts(),
+            'modules' => $this->getAccessibleModules(),
+            'userRoles' => Auth::user()->roles->pluck('name')->toArray(),
+        ]);
+    }
+
+    /**
+     * Generate bank file from payment batch
+     */
+    public function generateBankFile(Request $request)
+    {
+        $request->validate([
+            'payment_batch_id' => 'required|exists:payment_batches,id',
+            'file_format' => 'required|in:csv,txt',
+            'notes' => 'nullable|string',
+        ]);
+
+        $batch = PaymentBatch::with('items')->findOrFail($request->payment_batch_id);
+
+        if (!$batch->isFinalized()) {
+            return back()->withErrors(['error' => 'Only finalized batches can be exported to bank files.']);
+        }
+
+        try {
+            // Create directory if it doesn't exist
+            Storage::disk('local')->makeDirectory('bank_files');
+
+            // Generate file name
+            $timestamp = now()->format('YmdHis');
+            $fileName = 'PAYROLL_' . $batch->batch_number . '_' . $timestamp . '.' . $request->file_format;
+            $filePath = 'bank_files/' . $fileName;
+
+            // Generate file content based on format
+            $content = $this->generateBankFileContent($batch, $request->file_format);
+
+            // Save file
+            Storage::disk('local')->put($filePath, $content);
+
+            // Create bank file record
+            $bankFile = BankFile::create([
+                'payment_batch_id' => $batch->id,
+                'file_name' => $fileName,
+                'file_path' => $filePath,
+                'file_format' => $request->file_format,
+                'record_count' => $batch->items->count(),
+                'total_amount' => $batch->total_amount,
+                'generation_notes' => $request->notes,
+                'generated_by' => Auth::id(),
+            ]);
+
+            return back()->with('success', 'Bank file generated successfully: ' . $fileName);
+
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to generate bank file: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Generate bank file content based on format
+     */
+    private function generateBankFileContent(PaymentBatch $batch, string $format): string
+    {
+        if ($format === 'csv') {
+            return $this->generateCSVContent($batch);
+        } elseif ($format === 'txt') {
+            return $this->generateTXTContent($batch);
+        }
+
+        throw new \Exception('Unsupported file format: ' . $format);
+    }
+
+    /**
+     * Generate CSV format bank file
+     */
+    private function generateCSVContent(PaymentBatch $batch): string
+    {
+        $lines = [];
+        
+        // Header row
+        $lines[] = '"Timesheet Period","Emp Number","Name","IBAN","SWIFT","Amount"';
+
+        // Data rows
+        foreach ($batch->items as $item) {
+            $lines[] = sprintf(
+                '"%s","%s","%s","%s","%s","%s"',
+                $batch->period,
+                $item->employee_number ?: 'N/A',
+                $item->employee_name,
+                $item->account_number ?: 'N/A',
+                $item->bank?->swift_code ?: 'N/A',
+                number_format($item->payment_amount, 2, '.', '')
+            );
+        }
+
+        // Footer row with total
+        $lines[] = sprintf(
+            '"","","","","TOTAL","%s"',
+            number_format($batch->total_amount, 2, '.', '')
+        );
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Generate TXT format bank file (pipe-delimited)
+     */
+    private function generateTXTContent(PaymentBatch $batch): string
+    {
+        $lines = [];
+        
+        // Header
+        $lines[] = 'PAYMENT_BATCH|' . $batch->batch_number;
+        $lines[] = 'PERIOD|' . $batch->period;
+        $lines[] = 'RECORD_COUNT|' . $batch->items->count();
+        $lines[] = 'TOTAL_AMOUNT|' . number_format($batch->total_amount, 2, '.', '');
+        $lines[] = '';
+        $lines[] = 'TIMESHEET_PERIOD|EMP_NUMBER|NAME|IBAN|SWIFT|AMOUNT';
+
+        // Data rows
+        foreach ($batch->items as $item) {
+            $lines[] = sprintf(
+                '%s|%s|%s|%s|%s|%s',
+                $batch->period,
+                $item->employee_number ?: 'N/A',
+                $item->employee_name,
+                $item->account_number ?: 'N/A',
+                $item->bank?->swift_code ?: 'N/A',
+                number_format($item->payment_amount, 2, '.', '')
+            );
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Download bank file
+     */
+    public function downloadBankFile($id)
+    {
+        $bankFile = BankFile::findOrFail($id);
+
+        if (!Storage::disk('local')->exists($bankFile->file_path)) {
+            return back()->withErrors(['error' => 'File not found on server. Path: ' . $bankFile->file_path]);
+        }
+
+        return Storage::disk('local')->download($bankFile->file_path, $bankFile->file_name);
+    }
+
+    /**
+     * Delete bank file
+     */
+    public function destroyBankFile($id)
+    {
+        $bankFile = BankFile::findOrFail($id);
+
+        try {
+            // Delete physical file if it exists
+            if (Storage::disk('local')->exists($bankFile->file_path)) {
+                Storage::disk('local')->delete($bankFile->file_path);
+            }
+
+            // Delete database record
+            $bankFile->delete();
+
+            return back()->with('success', 'Bank file deleted successfully.');
+
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => 'Failed to delete bank file: ' . $e->getMessage()]);
+        }
     }
 
     /**
