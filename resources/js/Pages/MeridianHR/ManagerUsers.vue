@@ -23,6 +23,7 @@ const showDeleteModal = ref(false)
 const editingUser = ref(null)
 const userToDelete = ref(null)
 const openMenuId = ref(null)
+const menuPosition = ref({ top: 0, right: 0 })
 
 const addForm = useForm({
   name: '',
@@ -65,8 +66,20 @@ function refreshUsers() {
   })
 }
 
-function toggleMenu(id) {
-  openMenuId.value = openMenuId.value === id ? null : id
+function toggleMenu(id, event) {
+  if (openMenuId.value === id) {
+    openMenuId.value = null
+    return
+  }
+  const rect = event.currentTarget.getBoundingClientRect()
+  const estimatedHeight = 100
+  const openUp = rect.bottom + 4 + estimatedHeight > window.innerHeight
+  menuPosition.value = {
+    top:    openUp ? null : rect.bottom + 4,
+    bottom: openUp ? window.innerHeight - rect.top + 4 : null,
+    right:  window.innerWidth - rect.right,
+  }
+  openMenuId.value = id
 }
 
 function openAddModal() {
@@ -216,21 +229,21 @@ function toggleRole(form, roleId) {
                 {{ user.created_at || '—' }}
               </td>
               <td>
-                <div style="position:relative;">
-                  <button class="mhr-icon-btn" style="width:28px;height:28px;" @click.stop="toggleMenu(user.id)">
-                    <AppIcon name="more" :size="13" />
-                  </button>
-                  <div v-if="openMenuId === user.id" @click.stop class="mhr-dropdown" style="position:absolute;right:0;top:100%;margin-top:4px;min-width:160px;background:white;border:1px solid var(--mhr-line);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:1000;">
-                    <button @click="openEditModal(user)" class="mhr-dropdown-item">
+                <button class="mhr-icon-btn" style="width:28px;height:28px;" @click.stop="toggleMenu(user.id, $event)">
+                  <AppIcon name="more" :size="13" />
+                </button>
+                <Teleport to=".meridian-app" v-if="openMenuId === user.id">
+                  <div @click.stop class="mhr-dropdown" :style="{ position:'fixed', top: menuPosition.top != null ? menuPosition.top+'px' : 'auto', bottom: menuPosition.bottom != null ? menuPosition.bottom+'px' : 'auto', right: menuPosition.right+'px', minWidth:'160px', background:'var(--mhr-surface)', border:'1px solid var(--mhr-line)', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:9999 }">
+                    <button @click="openEditModal(user)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-ink);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
                       <AppIcon name="edit" :size="14" />
                       <span>Edit</span>
                     </button>
-                    <button @click="confirmDelete(user)" class="mhr-dropdown-item" style="color:var(--mhr-danger);">
+                    <button @click="confirmDelete(user)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-danger);" @mouseenter="$event.target.style.background='var(--mhr-surface)'" @mouseleave="$event.target.style.background='transparent'">
                       <AppIcon name="trash" :size="14" />
                       <span>Delete</span>
                     </button>
                   </div>
-                </div>
+                </Teleport>
               </td>
             </tr>
           </tbody>

@@ -26,6 +26,9 @@ use Inertia\Inertia;
 // ============================================================================
 
 Route::inertia('MyAuth/Login', 'MyAuth/Login')->name('mylogin');
+// Alternative Meridian-styled login page:
+// Route::inertia('login', 'MeridianHR/Login')->name('mylogin');
+
 Route::inertia('MyAuth/Register', 'MyAuth/Register')->name('myregister');
 Route::inertia('MyAuth/ForgotPassword', 'MyAuth/ForgotPassword')->name('myforgotpassword');
 

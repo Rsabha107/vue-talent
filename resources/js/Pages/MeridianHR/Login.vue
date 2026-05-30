@@ -154,6 +154,29 @@ const submit = () => {
                 Sign in
               </span>
             </button>
+
+            <!-- Divider -->
+            <div style="position:relative;margin:8px 0;">
+              <div style="position:absolute;top:50%;left:0;right:0;border-top:1px solid var(--mhr-line);"></div>
+              <div style="position:relative;text-align:center;">
+                <span style="background:var(--mhr-surface);padding:0 16px;color:var(--mhr-ink-3);font-size:13px;font-weight:500;">OR</span>
+              </div>
+            </div>
+
+            <!-- Microsoft SSO Button -->
+            <a
+              :href="route('auth.microsoft')"
+              class="mhr-btn mhr-btn--outline mhr-btn--block"
+              style="display:flex;align-items:center;justify-content:center;gap:10px;"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 23 23">
+                <path fill="#f25022" d="M0 0h11v11H0z"/>
+                <path fill="#00a4ef" d="M12 0h11v11H12z"/>
+                <path fill="#7fba00" d="M0 12h11v11H0z"/>
+                <path fill="#ffb900" d="M12 12h11v11H12z"/>
+              </svg>
+              <span>Sign in with Microsoft</span>
+            </a>
           </form>
 
           <!-- Footer -->

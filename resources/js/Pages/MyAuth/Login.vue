@@ -197,7 +197,34 @@ const currentYear = new Date().getFullYear();
                       {{ form.processing ? "Signing in..." : "Login" }}
                     </button>
                   </div>
-                  <div class="mt-4 text-center">
+
+                  <!-- Microsoft SSO Button -->
+                  <div class="mt-3">
+                    <div class="position-relative">
+                      <div class="text-center" style="position: relative;">
+                        <div style="position: absolute; top: 50%; left: 0; right: 0; border-top: 1px solid #e0e0e0; z-index: 0;"></div>
+                        <span style="background: white; padding: 0 12px; position: relative; z-index: 1; color: #6c757d; font-size: 13px;">OR</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="mt-3 d-grid">
+                    <a
+                      :href="route('auth.microsoft')"
+                      class="btn btn-outline-secondary d-flex align-items-center justify-content-center gap-2"
+                      style="padding: 10px;"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 23 23">
+                        <path fill="#f25022" d="M0 0h11v11H0z"/>
+                        <path fill="#00a4ef" d="M12 0h11v11H12z"/>
+                        <path fill="#7fba00" d="M0 12h11v11H0z"/>
+                        <path fill="#ffb900" d="M12 12h11v11H12z"/>
+                      </svg>
+                      <span>Sign in with Microsoft</span>
+                    </a>
+                  </div>
+
+                  <div class="mt-4 text-center" style="display: none;">
                     <h5 class="font-size-14 mb-3">Sign in with</h5>
                     <ul class="list-inline">
                       <li class="list-inline-item">
