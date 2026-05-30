@@ -238,7 +238,6 @@ onUnmounted(() => {
   text-align: left;
 }
 
-
 .event-dropdown-item:hover {
   background: var(--mhr-bg);
 }

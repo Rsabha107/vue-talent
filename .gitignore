@@ -29,4 +29,6 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
-node_modules
+node_modules/
+dist/
+.vite/
