@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Model;
 class Venue extends Model
 {
     use HasFactory;
-    protected $guarded = [];
     protected $table = 'venues';
-
+    protected $fillable = ['title', 'short_name', 'active_flag', 'created_by', 'updated_by'];
 }

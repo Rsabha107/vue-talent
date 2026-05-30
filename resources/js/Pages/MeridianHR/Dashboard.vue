@@ -17,6 +17,7 @@ const props = defineProps({
   upcomingLeaves:    { type: Array,  default: () => [] },
   employees:         { type: Array,  default: () => [] },
   headcountByDept:   { type: Array,  default: () => [] },
+  availableEvents:   { type: Array,  default: () => [] },
 })
 
 function greet() {
@@ -70,17 +71,8 @@ const maxHeadcount = computed(() => {
           {{ greet() }}, <em>{{ (me.name || '').split(' ')[0] }}</em>
         </h1>
         <p class="mhr-page-head__sub">
-          {{ todayPretty() }} ·
-          {{ hrRole === 'admin' ? 'HR Administrator' : hrRole === 'manager' ? 'Design team · 6 reports' : 'Design team' }}
+          {{ todayPretty() }} · {{ me.systemRole }}<template v-if="me.systemRoles && me.systemRoles.length > 1"> +{{ me.systemRoles.length - 1 }}</template>
         </p>
-      </div>
-      <div class="mhr-page-head__actions">
-        <a :href="route('hr.timesheet')" class="mhr-btn mhr-btn--outline">
-          <AppIcon name="clock" /> Log time
-        </a>
-        <a :href="route('hr.leave')" class="mhr-btn mhr-btn--primary">
-          <AppIcon name="plus" /> Request time off
-        </a>
       </div>
     </div>
 
@@ -172,6 +164,22 @@ const maxHeadcount = computed(() => {
 
     <!-- Manager view -->
     <template v-else-if="hrRole === 'manager'">
+      <!-- Empty state: No events assigned -->
+      <div v-if="availableEvents.length === 0" class="mhr-card" style="max-width:600px;margin:0 auto;text-align:center;padding:48px 32px;">
+        <div style="width:64px;height:64px;border-radius:32px;background:var(--mhr-accent-soft);color:var(--green-700);display:grid;place-items:center;margin:0 auto 24px;">
+          <AppIcon name="calendar" :size="28" />
+        </div>
+        <h2 style="font-size:20px;font-weight:600;color:var(--mhr-ink);margin-bottom:12px;">Welcome, Manager!</h2>
+        <p style="font-size:14px;color:var(--mhr-ink-2);line-height:1.6;margin-bottom:24px;">
+          You are not currently assigned to any events. To view and manage team data, you need to be assigned to at least one event.
+        </p>
+        <p style="font-size:13px;color:var(--mhr-ink-3);">
+          Please contact your HR administrator to be assigned to events.
+        </p>
+      </div>
+
+      <!-- Manager dashboard content (only show if events exist) -->
+      <template v-else>
       <div class="mhr-grid-4" style="margin-bottom:24px;">
         <div class="mhr-stat" style="cursor:pointer;border-color:var(--green-300);" @click="$inertia.get(route('hr.approvals.leave'))">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0;">
@@ -238,6 +246,7 @@ const maxHeadcount = computed(() => {
           </div>
         </div>
       </div>
+      </template>
     </template>
 
     <!-- Admin view -->

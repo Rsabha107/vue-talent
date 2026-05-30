@@ -645,6 +645,17 @@
   border-color: var(--green-500);
   box-shadow: 0 0 0 3px var(--mhr-accent-soft);
 }
+.meridian-app .mhr-input--error,
+.meridian-app .mhr-select--error,
+.meridian-app .mhr-textarea--error {
+  border-color: var(--mhr-danger);
+}
+.meridian-app .mhr-input--error:focus,
+.meridian-app .mhr-select--error:focus,
+.meridian-app .mhr-textarea--error:focus {
+  border-color: var(--mhr-danger);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
 
 /* ─── Modal ──────────────────────────────────────────────────────── */
 .meridian-app .mhr-modal__scrim {

@@ -8,8 +8,10 @@ use App\Http\Controllers\MeridianHR\EmployeeLeaveRequestController;
 use App\Http\Controllers\MeridianHR\EventController as MeridianEventController;
 use App\Http\Controllers\MeridianHR\EventTeamTemplateController;
 use App\Http\Controllers\MeridianHR\LeaveTypeController;
+use App\Http\Controllers\MeridianHR\LookupTablesController;
 use App\Http\Controllers\MeridianHR\SalaryController;
 use App\Http\Controllers\MeridianHR\SettingsController;
+use App\Http\Controllers\MeridianHR\SetupController;
 use App\Http\Controllers\MeridianHR\TimesheetController;
 use App\Http\Controllers\MeridianHR\RolesPermissionsController;
 use App\Http\Controllers\MeridianHR\UserManagementController;
@@ -34,11 +36,16 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     
     // Employee Import/Export
     Route::get('/employee/template/download', [EmployeeController::class, 'downloadTemplate'])->name('employee.template');
+    Route::get('/employee/template/base/download', [EmployeeController::class, 'downloadBaseTemplate'])->name('employee.base-template');
+    Route::get('/employee/template/event-assignment/download', [EmployeeController::class, 'downloadEventAssignmentTemplate'])->name('employee.event-assignment-template');
     Route::post('/employee/import', [EmployeeController::class, 'import'])->name('employee.import');
+    Route::post('/employee/import/base', [EmployeeController::class, 'importBase'])->name('employee.import.base');
+    Route::post('/employee/import/event-assignment', [EmployeeController::class, 'importEventAssignment'])->name('employee.import.event-assignment');
     Route::get('/employee/export-failed', [EmployeeController::class, 'exportFailedRows'])->name('employee.export.failed');
     
     // Event-Employee Assignment
     Route::post('/employee/assign-to-event', [EmployeeController::class, 'assignToEvent'])->name('employee.assign-to-event');
+    Route::post('/employee/unassign-from-event', [EmployeeController::class, 'unassignFromEvent'])->name('employee.unassign-from-event');
     
     // Bank Management (Admin manages all employees' banks)
     Route::get('/banks', [BankController::class, 'index'])->name('banks');
@@ -73,6 +80,15 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::post('/settings', [SettingsController::class, 'store'])->name('settings.store');
     Route::put('/settings/{id}', [SettingsController::class, 'update'])->name('settings.update');
     Route::delete('/settings/{id}', [SettingsController::class, 'destroy'])->name('settings.destroy');
+    
+    // Setup Page (Events & Venues Management)
+    Route::get('/setup', [SetupController::class, 'index'])->name('setup');
+    
+    // Lookup Tables (Generic Settings Management)
+    Route::get('/lookup/{type}', [LookupTablesController::class, 'index'])->name('lookup');
+    Route::post('/lookup/{type}', [LookupTablesController::class, 'store'])->name('lookup.store');
+    Route::put('/lookup/{type}/{id}', [LookupTablesController::class, 'update'])->name('lookup.update');
+    Route::delete('/lookup/{type}/{id}', [LookupTablesController::class, 'destroy'])->name('lookup.destroy');
     
     // Leave Request Management (Admin View)
     Route::get('/leave-requests', [EmployeeLeaveRequestController::class, 'index'])->name('leave-requests'); // Legacy route

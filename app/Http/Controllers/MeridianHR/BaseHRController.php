@@ -265,17 +265,72 @@ abstract class BaseHRController extends Controller
         $employee = Employee::where('user_id', $user->id)->with(['designation', 'department', 'reportingTo'])->first();
         
         if ($employee) {
+            // Get selected event for event-scoped data
+            $selectedEventId = $this->getSelectedEventId();
+            $hrRole = $this->getHRRole();
+            
+            // Get event-specific data if event is selected and not an array (manager with multiple events)
+            $designation = null;
+            $department = null;
+            $manager = null;
+            $hasEventAssignment = false;
+            
+            if ($selectedEventId && !is_array($selectedEventId)) {
+                $designation = $employee->getEventDesignation($selectedEventId);
+                $department = $employee->getEventDepartment($selectedEventId);
+                $manager = $employee->getEventManager($selectedEventId);
+                
+                // Check if user has an assignment to this event
+                $hasEventAssignment = $employee->events()
+                    ->wherePivot('event_id', $selectedEventId)
+                    ->wherePivot('is_active', 1)
+                    ->exists();
+            }
+            
+            // Check if employee has any active event assignments
+            $hasAnyEventAssignment = $employee->events()
+                ->wherePivot('is_active', 1)
+                ->exists();
+            
+            // Only fall back to legacy data if:
+            // - No event is selected
+            // - Employee has at least one active event assignment
+            if (!$selectedEventId && $hasAnyEventAssignment) {
+                $designation = $employee->designation;
+                $department = $employee->department;
+                $manager = $employee->reportingTo;
+            }
+            
+            // Map HR role to friendly name
+            $systemRoles = [];
+            
+            // Primary role
+            $primaryRole = match($hrRole) {
+                'admin' => 'HR Administrator',
+                'manager' => 'Manager',
+                'employee-full', 'employee-basic' => 'Employee',
+                default => 'Employee'
+            };
+            $systemRoles[] = $primaryRole;
+            
+            // Add payroll role if applicable
+            if ($user->can('payroll.access')) {
+                $systemRoles[] = 'Payroll Admin';
+            }
+            
             return [
                 'id' => $employee->id,
                 'name' => $employee->full_name,
                 'email' => $employee->work_email_address ?? $employee->personal_email_address,
-                'role' => $employee->designation?->name ?? 'Employee',
-                'department' => $employee->department?->name,
+                'role' => $designation?->name, // Designation (job title) - may be null
+                'systemRole' => $primaryRole, // Primary system role
+                'systemRoles' => $systemRoles, // All system roles (for multi-role display)
+                'department' => $department?->name,
                 'empNumber' => $employee->employee_number,
                 'avatarColor' => $employee->avatarColor,
                 'initials' => $employee->initials,
                 'joinDate' => $employee->join_date,
-                'manager' => $employee->reportingTo?->full_name,
+                'manager' => $manager?->full_name,
             ];
         }
         
@@ -283,7 +338,9 @@ abstract class BaseHRController extends Controller
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
-            'role' => 'Employee',
+            'role' => null,
+            'systemRole' => 'Employee',
+            'systemRoles' => ['Employee'],
             'department' => null,
             'empNumber' => null,
             'avatarColor' => $user->id % 7,
@@ -304,13 +361,21 @@ abstract class BaseHRController extends Controller
      */
     protected function getPendingCounts(): array
     {
-        $eventId = $this->getSelectedEventId();
+        $effectiveEventIds = $this->getEffectiveEventIds();
+        
+        // If empty array (manager with no events), return zero counts
+        if (is_array($effectiveEventIds) && empty($effectiveEventIds)) {
+            return [
+                'pendingLeaves' => 0,
+                'pendingTimesheets' => 0,
+            ];
+        }
         
         // Get current employee to exclude from approval counts
         $currentEmployee = \App\Models\Employee::where('user_id', auth()->id())->first();
         
         // Get pending leave requests count for selected event (excluding manager's own)
-        $pendingLeavesQuery = \App\Models\EmployeeLeaveRequest::forEvent($eventId)
+        $pendingLeavesQuery = \App\Models\EmployeeLeaveRequest::forEvent($effectiveEventIds)
             ->where('status_id', \App\Models\EmployeeLeaveStatus::pendingId())
             ->active();
         
@@ -321,7 +386,7 @@ abstract class BaseHRController extends Controller
         $pendingLeaves = $pendingLeavesQuery->count();
         
         // Get pending timesheets count for selected event (excluding manager's own)
-        $pendingTimesheetsQuery = \App\Models\EmployeeTimesheet::forEvent($eventId)
+        $pendingTimesheetsQuery = \App\Models\EmployeeTimesheet::forEvent($effectiveEventIds)
             ->where('status_id', \App\Models\EmployeeTimesheetStatus::submittedId())
             ->active();
         

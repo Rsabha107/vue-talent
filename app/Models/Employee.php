@@ -45,12 +45,13 @@ class Employee extends Model
         'alt_area_code',
         'nationality_id',
         'language_id',
-        'reporting_to_id',
-        'department_id',
-        'designation_id',
-        'directorate_id',
-        'functional_area_id',
-        'job_level_id',
+        // Organizational fields moved to employee_events pivot (Phase 4)
+        // 'reporting_to_id',
+        // 'department_id',
+        // 'designation_id',
+        // 'directorate_id',
+        // 'functional_area_id',
+        // 'job_level_id',
         'civil_id_expiry',
         'passport_number',
         'passport_expiry',
@@ -75,11 +76,17 @@ class Employee extends Model
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * @deprecated Department is now event-specific. Use getEventDepartment($eventId) or access via $employee->events[0]->pivot->department_id
+     */
     public function department()
     {
         return $this->belongsTo(\App\Models\Department::class);
     }
 
+    /**
+     * @deprecated Designation is now event-specific. Use getEventDesignation($eventId) or access via $employee->events[0]->pivot->designation_id
+     */
     public function designation()
     {
         return $this->belongsTo(\App\Models\Designation::class);
@@ -90,11 +97,17 @@ class Employee extends Model
         return $this->belongsTo(\App\Models\Salutation::class);
     }
 
+    /**
+     * @deprecated Directorate is now event-specific. Use getEventDirectorate($eventId) or access via $employee->events[0]->pivot->directorate_id
+     */
     public function directorate()
     {
         return $this->belongsTo(\App\Models\Directorate::class);
     }
 
+    /**
+     * @deprecated FunctionalArea is now event-specific. Use getEventFunctionalArea($eventId) or access via $employee->events[0]->pivot->functional_area_id
+     */
     public function functionalArea()
     {
         return $this->belongsTo(\App\Models\FunctionalArea::class);
@@ -144,34 +157,23 @@ class Employee extends Model
     public function events()
     {
         return $this->belongsToMany(\App\Models\Ems\Event::class, 'employee_events', 'employee_id', 'event_id')
-            ->withPivot(['assigned_at', 'released_at', 'event_role', 'event_department_id', 'is_active'])
+            ->withPivot([
+                'assigned_at',
+                'released_at',
+                'is_active',
+                'agreement_number',
+                'entity_id',
+                'contract_type_id',
+                'department_id',
+                'designation_id',
+                'directorate_id',
+                'functional_area_id',
+                'job_level_id',
+                'reporting_to_id',
+                'employee_type',
+                'salary_basis_id',
+            ])
             ->withTimestamps();
-    }
-
-    // Personal data relationships
-    public function addresses()
-    {
-        return $this->hasMany(EmployeeAddress::class, 'employee_id');
-    }
-
-    public function banks()
-    {
-        return $this->hasMany(EmployeeBank::class, 'employee_id');
-    }
-
-    public function salaries()
-    {
-        return $this->hasMany(EmployeeSalary::class, 'employee_id');
-    }
-
-    public function emergencyContacts()
-    {
-        return $this->hasMany(EmployeeEmergencyContact::class, 'employee_id');
-    }
-
-    public function documents()
-    {
-        return $this->hasMany(EmployeeDocument::class, 'employee_id');
     }
 
     public function activeEvents()
@@ -179,9 +181,70 @@ class Employee extends Model
         return $this->events()->wherePivot('is_active', 1);
     }
 
+    /**
+     * Get event-specific organizational attributes for a given event
+     * 
+     * @param int $eventId
+     * @return object|null Event assignment with organizational attributes
+     */
+    public function getEventAssignment($eventId)
+    {
+        return $this->events()
+            ->wherePivot('event_id', $eventId)
+            ->wherePivot('is_active', 1)
+            ->first();
+    }
+
+    /**
+     * Get event-specific department
+     */
+    public function getEventDepartment($eventId)
+    {
+        $assignment = $this->getEventAssignment($eventId);
+        return $assignment ? Department::find($assignment->pivot->department_id) : null;
+    }
+
+    /**
+     * Get event-specific designation
+     */
+    public function getEventDesignation($eventId)
+    {
+        $assignment = $this->getEventAssignment($eventId);
+        return $assignment ? Designation::find($assignment->pivot->designation_id) : null;
+    }
+
+    /**
+     * Get event-specific manager
+     */
+    public function getEventManager($eventId)
+    {
+        $assignment = $this->getEventAssignment($eventId);
+        return $assignment ? Employee::find($assignment->pivot->reporting_to_id) : null;
+    }
+
     public function leaveBalances()
     {
         return $this->hasMany(EmployeeLeaveBalance::class);
+    }
+
+    public function documents()
+    {
+        return $this->hasMany(EmployeeDocument::class);
+    }
+
+    public function addresses()
+    {
+        return $this->hasMany(EmployeeAddress::class);
+    }
+
+    public function emergencyContacts()
+    {
+        return $this->hasMany(EmployeeEmergencyContact::class);
+    }
+
+    public function banks()
+    {
+        return $this->hasMany(EmployeeBank::class);
     }
 
     // Accessors

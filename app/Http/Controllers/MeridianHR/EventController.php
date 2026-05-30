@@ -121,7 +121,7 @@ class EventController extends BaseHRController
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'active_flag' => ['required', 'exists:global_statuses,id'],
+            'active_flag' => ['nullable', 'exists:global_statuses,id'],
             'logo' => ['nullable', 'image', 'max:2048'],
             'venue_ids' => ['nullable', 'array'],
             'venue_ids.*' => ['exists:venues,id'],
@@ -129,6 +129,11 @@ class EventController extends BaseHRController
 
         $venueIds = $data['venue_ids'] ?? [];
         unset($data['venue_ids'], $data['logo']);
+        
+        // Default active_flag to 1 if not provided
+        if (!isset($data['active_flag'])) {
+            $data['active_flag'] = 1;
+        }
 
         if ($request->hasFile('logo')) {
             $data['event_logo'] = basename($request->file('logo')->store('event-logos', 'public'));
@@ -147,7 +152,7 @@ class EventController extends BaseHRController
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'active_flag' => ['required', 'exists:global_statuses,id'],
+            'active_flag' => ['nullable', 'exists:global_statuses,id'],
             'logo' => ['nullable', 'image', 'max:2048'],
             'venue_ids' => ['nullable', 'array'],
             'venue_ids.*' => ['exists:venues,id'],
@@ -155,6 +160,11 @@ class EventController extends BaseHRController
 
         $venueIds = $data['venue_ids'] ?? [];
         unset($data['venue_ids'], $data['logo']);
+        
+        // Keep existing active_flag if not provided
+        if (!isset($data['active_flag'])) {
+            unset($data['active_flag']);
+        }
 
         if ($request->hasFile('logo')) {
             if ($event->event_logo) {

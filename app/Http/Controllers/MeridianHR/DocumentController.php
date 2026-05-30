@@ -18,7 +18,7 @@ class DocumentController extends BaseHRController
     {
         $user = Auth::user();
         $hrRole = $this->getHRRole();
-        $isAdmin = in_array($hrRole, ['admin', 'manager']);
+        $isAdmin = $hrRole === 'admin';
         $selectedEventId = $this->getSelectedEventId();
         
         $query = EmployeeDocument::with(['employee', 'category', 'uploadedBy', 'event'])
@@ -27,9 +27,13 @@ class DocumentController extends BaseHRController
         // Note: Event filtering is now handled on frontend via dropdown
         // Backend returns all documents, frontend filters by selected event
         
-        // Employees only see their own documents
-        if (!$isAdmin && $user->employee_id) {
-            $query->where('employee_id', $user->employee_id);
+        // Employees and managers see only their own documents
+        // Only admins see all documents
+        if (!$isAdmin) {
+            $currentEmployee = Employee::where('user_id', $user->id)->first();
+            if ($currentEmployee) {
+                $query->where('employee_id', $currentEmployee->id);
+            }
         }
         
         $documents = $query->latest()->get()->map(function ($doc) {
@@ -83,6 +87,9 @@ class DocumentController extends BaseHRController
     
     public function store(Request $request)
     {
+        $hrRole = $this->getHRRole();
+        $user = Auth::user();
+        
         $request->validate([
             'file' => 'required|file|mimes:pdf|max:10240', // 10MB max
             'employee_id' => 'required|exists:employees_all,id',
@@ -94,6 +101,15 @@ class DocumentController extends BaseHRController
             'file.mimes' => 'Only PDF files are allowed',
             'file.max' => 'File size must not exceed 10MB',
         ]);
+        
+        // Employees and managers can only upload documents for themselves
+        // Only admins can upload documents for other employees
+        if ($hrRole !== 'admin') {
+            $currentEmployee = Employee::where('user_id', $user->id)->first();
+            if (!$currentEmployee || $request->employee_id != $currentEmployee->id) {
+                return back()->with('error', 'You can only upload documents for yourself');
+            }
+        }
         
         $file = $request->file('file');
         
@@ -172,11 +188,14 @@ class DocumentController extends BaseHRController
     {
         $user = Auth::user();
         $hrRole = $this->getHRRole();
-        $isAdmin = in_array($hrRole, ['admin', 'manager']);
         
-        // Admin/Manager can access all, employees only their own
-        if (!$isAdmin && $document->employee_id != $user->employee_id) {
-            abort(403, 'Unauthorized access to document');
+        // Only admins can access all documents
+        // Employees and managers can only access their own documents
+        if ($hrRole !== 'admin') {
+            $currentEmployee = Employee::where('user_id', $user->id)->first();
+            if (!$currentEmployee || $document->employee_id != $currentEmployee->id) {
+                abort(403, 'Unauthorized access to document');
+            }
         }
     }
 }

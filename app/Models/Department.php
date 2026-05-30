@@ -32,9 +32,33 @@ class Department extends Model
         return $this->hasMany(Department::class, 'parent_id');
     }
 
+    /**
+     * Get employees assigned to this department through event assignments
+     * Note: department_id is now in employee_events pivot table
+     */
     public function employees()
     {
-        return $this->hasMany(Employee::class);
+        return $this->belongsToMany(
+            Employee::class,
+            'employee_events',
+            'department_id',
+            'employee_id'
+        )->wherePivot('is_active', 1);
+    }
+
+    /**
+     * Get employees for a specific event with this department
+     */
+    public function employeesForEvent($eventId)
+    {
+        return $this->belongsToMany(
+            Employee::class,
+            'employee_events',
+            'department_id',
+            'employee_id'
+        )
+        ->wherePivot('event_id', $eventId)
+        ->wherePivot('is_active', 1);
     }
 
     public function scopeActive($query)

@@ -313,6 +313,39 @@ The system supports multi-event architecture where employees can be associated w
 
 **Type Coercion**: All foreign key fields (e.g., `country_of_birth`, `gender_id`, `marital_status_id`, `nationality_id`) must be explicitly converted to `Number()` in Vue forms before submission, as v-model returns strings but the backend expects integers.
 
+### Employee Page: Dual-Table Views
+
+The Employee page (`Employee.vue`) implements **two distinct table layouts** based on whether "All Events" or a specific event is selected:
+
+**All Events View** (Directory/Cross-Organizational Mode):
+- Triggered when event selector is set to "All Events" (`isAllEvents = true`)
+- Shows **simplified columns**: Employee, Employee #, Events Assigned, Nationality, Gender, Docs, Actions
+- Backend eager-loads all active events per employee via `$query->with(['events' => ...])`
+- Props include `eventsAssigned` (array of event names) and `eventsCount` (integer)
+- Events Assigned column displays badge with count + comma-separated event names with hover tooltip
+- **Event filter buttons**: Shows all unique event names extracted from employees' assignments
+  - Filter checks `p.eventsAssigned.includes(eventFilter.value)`
+  - Only visible when there are multiple events to filter by
+  - Uses same pill-button styling as department filter
+
+**Specific Event View** (Organizational Structure Mode):
+- Triggered when a specific event is selected
+- Shows **full organizational columns**: dept, role, manager, contract dates, agreement number, etc. (30+ optional columns)
+- Employees are already filtered by event via `Employee::forEvent($eventId)` scope
+- **Department filter buttons**: Shows all unique departments in the selected event
+  - Filter checks `p.dept === dept.value`
+  - Uses pill-button styling with green highlight for active filter
+
+**Filter Implementation**:
+- Both filters use the same UI pattern: pill-shaped button group, green highlight for active, "All" option
+- `filtered` computed property handles both filters with separate logic paths:
+  ```javascript
+  const deptMatch = dept.value === 'All' || p.dept === dept.value
+  const eventMatch = !props.isAllEvents || eventFilter.value === 'All' || 
+    (p.eventsAssigned && p.eventsAssigned.includes(eventFilter.value))
+  ```
+- Filters close dropdown menus on change via `watch([q, dept, eventFilter, ...], () => { openMenuId.value = null })`
+
 ### Payroll Module: Organization-Wide Scope
 
 The **Payroll module operates organization-wide and does not filter by event**. This architectural decision reflects real-world payroll operations where:
@@ -332,6 +365,147 @@ The **Payroll module operates organization-wide and does not filter by event**. 
 **Contrast with HR module:**
 - HR module (leaves, timesheets, employees) **is event-scoped** — managers/admins see data filtered by selected event
 - Payroll module **is organization-wide** — payroll admins see all data regardless of event
+
+## Setup Page & Generic Lookup Tables System
+
+### Architecture Overview
+
+The system uses a **generic, configuration-driven approach** for managing lookup tables and reference data. Instead of creating duplicate pages for each entity type, a single controller and Vue page handle all lookup tables dynamically.
+
+### Components
+
+**Setup.vue** (`resources/js/Pages/MeridianHR/Setup.vue`):
+- Navigation hub displaying cards for all system configuration entities
+- Each card shows: icon, title, description, record count, and "Manage" button
+- Routes to dedicated management pages (Events, Venues, Leave Types) or generic lookup page
+- ~180 lines (reduced from 577 lines through card-based approach)
+
+**LookupTablesController** (`app/Http/Controllers/MeridianHR/LookupTablesController.php`):
+- Single controller handling CRUD operations for all lookup tables
+- Configuration-driven: `getEntityConfig()` method defines all entity metadata
+- Routes: `GET/POST/PUT/DELETE /hr/lookup/{type}`
+- Error handling: `getCounts()` uses try-catch to gracefully handle missing tables (returns 0)
+
+**LookupTables.vue** (`resources/js/Pages/MeridianHR/LookupTables.vue`):
+- Generic dynamic page that renders any lookup table based on `entityConfig` prop
+- Builds forms and tables dynamically from configuration
+- Supports text and select field types
+- "Back to Setup" button for navigation
+
+### Entity Configuration Structure
+
+Each entity is defined in `LookupTablesController::getEntityConfig()` with:
+
+```php
+'entity-key' => [
+    'model' => ModelClass::class,           // Model class name
+    'title' => 'Plural Title',              // Display name (plural)
+    'singular' => 'Singular Title',         // Singular form
+    'icon' => 'icon-name',                  // Icon identifier (used by AppIcon)
+    'color' => '#hex',                      // Brand color for the entity
+    'description' => 'Short description',   // Subtitle text
+    'fields' => [                           // Form field definitions
+        [
+            'name' => 'field_name',         // Database column name
+            'label' => 'Field Label',       // Display label
+            'type' => 'text|select',        // Input type
+            'required' => true|false,       // Validation rule
+            'options' => 'departments',     // For select: options source
+        ],
+    ],
+    'columns' => [                          // Table column definitions
+        [
+            'key' => 'column_key',          // Data key
+            'label' => 'Column Header',     // Display header
+            'width' => '80px',              // Optional fixed width
+        ],
+    ],
+    'hasActiveFlag' => true|false,          // Whether entity uses active_flag
+    'hasAudit' => true|false,               // Whether to track created_by/updated_by
+],
+```
+
+### Configured Entities (16 Lookup Tables)
+
+| Entity Key | Model | Table | Active Flag | Audit Trail |
+|---|---|---|---|---|
+| `departments` | Department | departments | ✓ | ✓ |
+| `designations` | Designation | designations | ✓ | ✓ |
+| `contract-types` | EmployeeContractType | employee_contract_types | ✓ | ✓ |
+| `genders` | Gender | genders | ✗ | ✓ |
+| `marital-statuses` | MaritalStatus | marital_statuses | ✗ | ✓ |
+| `relationships` | Relationship | relationships | ✗ | ✓ |
+| `directorates` | Directorate | directorate | ✗ | ✓ |
+| `salary-basis` | SalaryBasis | salary_basis | ✓ | ✓ |
+| `countries` | Country | countries | ✗ | ✗ |
+| `nationalities` | Nationality | nationalities | ✗ | ✗ |
+| `sponsorships` | EmployeeSponsorship | employee_sponsorship | ✓ | ✓ |
+| `entities` | EmployeeEntity | employee_entity | ✗ | ✓ |
+| `salutations` | Salutation | salutations | ✗ | ✓ |
+| `address-types` | AddressType | address_types | ✗ | ✓ |
+| `pay-periods` | PayPeriod | payroll_periods | ✗ | ✓ |
+| `invoice-notes` | InvoiceNote | invoice_notes | ✗ | ✓ |
+
+**Plus 3 dedicated pages** (not in generic system):
+- Events (`hr.events`)
+- Venues (`hr.venues`)
+- Leave Types (`hr.leave-types`)
+
+**Total: 19 configuration entities** accessible from Setup dashboard.
+
+### Key Design Patterns
+
+**Parent-Child Relationships**:
+- Departments support hierarchical structure via `parent_id` field
+- Select dropdown populates from same entity for self-referential lookups
+
+**Graceful Degradation**:
+- Missing tables don't crash the setup page
+- `getCounts()` returns 0 if table doesn't exist
+- Allows incremental migration rollout
+
+**Audit Trail Pattern**:
+- `created_by` / `updated_by` automatically populated when `hasAudit = true`
+- Set to `Auth::id()` on store/update operations
+
+**Active Flag Pattern**:
+- `active_flag` (0/1) used for soft deletion when `hasActiveFlag = true`
+- List queries filter `->where('active_flag', 1)`
+- Update route can toggle active status
+
+**Route Parameters**:
+- URL: `/hr/lookup/{type}` where `{type}` matches entity key
+- Controller resolves configuration from type parameter
+- Single route handles all entity types
+
+### Adding New Lookup Tables
+
+To add a new entity to the system:
+
+1. **Create Model** (if doesn't exist) with proper `$table` and `$fillable`
+2. **Add Configuration** in `LookupTablesController::getEntityConfig()`:
+   ```php
+   'new-entity' => [
+       'model' => NewModel::class,
+       'title' => 'New Entities',
+       // ... full config
+   ],
+   ```
+3. **Add Card** in `Setup.vue` `setupCards` array:
+   ```javascript
+   {
+     key: 'new-entity',
+     title: 'New Entities',
+     icon: 'icon-name',
+     iconColor: '#color',
+     count: () => props.lookupCounts['new-entity'] || 0,
+     route: 'hr.lookup',
+     routeParams: { type: 'new-entity' },
+   }
+   ```
+4. **Import Model** in LookupTablesController use statements
+
+No additional routes, controllers, or Vue pages needed.
 
 ## Design Reference: HTML Prototype
 
@@ -377,6 +551,31 @@ When branching on role in Vue templates, always guard against all variants — n
 
 The `hrRole` prop is passed to every Meridian HR page via `BaseHRController::getCommonProps()`. `MeridianLayout` uses it for sidebar navigation (separate nav structures for `employee-basic`, `employee-full`, `manager`, `admin`).
 
+### Multi-Role Display
+
+When users have multiple Spatie roles, the UI displays them compactly using badges to avoid horizontal space congestion:
+
+**Backend** (`BaseHRController::me()` method):
+- Returns `systemRole` (string) — the primary role text (e.g., "Manager")
+- Returns `systemRoles` (array) — all role names (e.g., `["Manager", "Payroll Admin"]`)
+- Primary role is determined by priority order: admin > payroll-admin > manager > employee-full > employee-basic
+
+**Frontend Display**:
+- **Sidebar** (`BaseModuleLayout.vue`): Shows primary role as text, additional roles as small badge pills below
+- **Profile** (`Profile.vue`): Same pattern — primary role text with badge pills for additional roles
+- **Dashboard** (`Dashboard.vue`): Shows primary role with count indicator (e.g., "Manager +1" for 2 roles total)
+
+**CSS Classes**:
+- `.role-badges` — flex container with wrap and 4px gap
+- `.role-badge` — small uppercase pill with accent color background
+
+**Example**: A user with Manager + Payroll Admin roles sees:
+```
+Manager
+[PAYROLL ADMIN]
+```
+Where the bracket represents a small green badge pill.
+
 ### Manager Access Control & Navigation
 
 Manager navigation follows a **personal workspace + team oversight** pattern:
@@ -395,6 +594,15 @@ Manager navigation follows a **personal workspace + team oversight** pattern:
 
 **Personal**:
 - Documents, Emergency contact, My profile
+
+**Managers Without Event Assignments**:
+
+When a manager has no active event assignments (`availableEvents.length === 0`), the navigation is restricted to prevent access to empty or unusable sections:
+
+- **Hidden sections**: Workspace (My leaves, My timesheets), Approvals, Team
+- **Visible sections**: Home, Emergency contact, My address, My documents, My profile
+- **Logic**: `isManagerWithoutEvents = computed(() => isManager && !isAdmin && availableEvents.length === 0)` in `useHRNavigation.js`
+- **Rationale**: Managers without events have no team data to view, no leaves/timesheets to manage, and no approvals to process
 
 #### Scope-Based Filtering
 

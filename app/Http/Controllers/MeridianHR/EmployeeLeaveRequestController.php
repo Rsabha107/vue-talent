@@ -263,6 +263,17 @@ class EmployeeLeaveRequestController extends BaseHRController
     public function teamLeaves()
     {
         $eventId = $this->getEffectiveEventIds(); // Support manager "All My Events"
+        
+        // If empty array (manager with no events), return empty data
+        if (is_array($eventId) && empty($eventId)) {
+            return Inertia::render('MeridianHR/TeamLeaves', array_merge($this->getCommonProps('team-leaves'), [
+                'leaveRequests'  => [],
+                'employees'      => [],
+                'leaveBalances'  => [],
+                'leaveTypes'     => LeaveType::active()->orderBy('title')->get(['id', 'title']),
+                'statuses'       => EmployeeLeaveStatus::active()->orderBy('title')->get(['id', 'title', 'color']),
+            ]));
+        }
 
         // Get team leave requests (all employees in manager's events)
         $leaveRequests = EmployeeLeaveRequest::with(['employee', 'event', 'user', 'leaveType', 'status', 'performer'])

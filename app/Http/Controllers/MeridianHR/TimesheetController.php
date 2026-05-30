@@ -161,7 +161,8 @@ class TimesheetController extends BaseHRController
             ->where('effective_start_date', '<=', $timesheetPeriodEnd)
             ->where(function ($query) use ($timesheetPeriodStart) {
                 $query->where('effective_end_date', '>=', $timesheetPeriodStart)
-                    ->orWhere('effective_end_date', '9999-12-31');
+                    ->orWhere('effective_end_date', '9999-12-31')
+                    ->orWhereNull('effective_end_date');
             })
             ->orderBy('effective_start_date', 'DESC')
             ->first();
@@ -172,7 +173,8 @@ class TimesheetController extends BaseHRController
             ->where('effective_start_date', '<=', $timesheetPeriodEnd)
             ->where(function ($query) use ($timesheetPeriodStart) {
                 $query->where('effective_end_date', '>=', $timesheetPeriodStart)
-                    ->orWhere('effective_end_date', '9999-12-31');
+                    ->orWhere('effective_end_date', '9999-12-31')
+                    ->orWhereNull('effective_end_date');
             })
             ->orderBy('effective_start_date', 'DESC')
             ->first();
@@ -812,6 +814,21 @@ class TimesheetController extends BaseHRController
         $statusMap = collect($statuses)->keyBy('id');
         $currentEmployee = null;
         
+        // If empty array (manager with no events), return empty data for team views
+        if (!$personalOnly && is_array($eventId) && empty($eventId)) {
+            return [
+                'employees'  => [],
+                'monthsName' => $this->monthsName(),
+                'years'      => [2024, 2025, 2026],
+                'statuses'   => $statuses,
+                'timesheets' => [],
+                'leaveDays'  => [],
+                'cutoffDay'  => config('settings.talent_timesheet_submission_closed_after_day', 21),
+                'disableSubmission' => false,
+                'formattedCutoff' => null,
+            ];
+        }
+        
         if ($personalOnly) {
             $currentEmployee = Employee::where('user_id', auth()->id())->first();
             if (!$currentEmployee) {
@@ -1092,7 +1109,8 @@ class TimesheetController extends BaseHRController
                     $query->where('effective_start_date', '<=', $timesheetPeriodEnd)
                         ->where(function ($q) use ($timesheetPeriodStart) {
                             $q->where('effective_end_date', '>=', $timesheetPeriodStart)
-                                ->orWhere('effective_end_date', '9999-12-31');
+                                ->orWhere('effective_end_date', '9999-12-31')
+                                ->orWhereNull('effective_end_date');
                         });
                 })
                 ->orderBy('effective_start_date', 'DESC')
@@ -1113,7 +1131,8 @@ class TimesheetController extends BaseHRController
                     $query->where('effective_start_date', '<=', $timesheetPeriodEnd)
                         ->where(function ($q) use ($timesheetPeriodStart) {
                             $q->where('effective_end_date', '>=', $timesheetPeriodStart)
-                                ->orWhere('effective_end_date', '9999-12-31');
+                                ->orWhere('effective_end_date', '9999-12-31')
+                                ->orWhereNull('effective_end_date');
                         });
                 })
                 ->orderBy('effective_start_date', 'DESC')

@@ -45,8 +45,18 @@ class VenueController extends BaseHRController
     {
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
-            'active_flag' => ['required', 'exists:global_statuses,id'],
+            'short_name' => ['nullable', 'string', 'max:50'],
+            'active_flag' => ['nullable', 'exists:global_statuses,id'],
         ]);
+        
+        // Default active_flag to 1 if not provided
+        if (!isset($data['active_flag'])) {
+            $data['active_flag'] = 1;
+        }
+        
+        // Set created_by and updated_by
+        $data['created_by'] = auth()->user()?->id ?? 1;
+        $data['updated_by'] = auth()->user()?->id ?? 1;
 
         Venue::create($data);
 
@@ -57,8 +67,17 @@ class VenueController extends BaseHRController
     {
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
-            'active_flag' => ['required', 'exists:global_statuses,id'],
+            'short_name' => ['nullable', 'string', 'max:50'],
+            'active_flag' => ['nullable', 'exists:global_statuses,id'],
         ]);
+        
+        // Keep existing active_flag if not provided
+        if (!isset($data['active_flag'])) {
+            unset($data['active_flag']);
+        }
+        
+        // Update updated_by
+        $data['updated_by'] = auth()->user()?->id ?? 1;
 
         $venue->update($data);
 

@@ -35,7 +35,18 @@ function fmtDate(s) {
         <h3 style="font-family:var(--mhr-font-display);font-size:22px;font-weight:500;margin:16px 0 4px;letter-spacing:-0.01em;">
           {{ me.name }}
         </h3>
-        <div style="color:var(--mhr-ink-3);font-size:13.5px;">{{ me.role }}</div>
+        <div style="color:var(--mhr-ink-3);font-size:13.5px;">
+          <div>{{ me.systemRole }}<template v-if="me.role"> · {{ me.role }}</template></div>
+          <div v-if="me.systemRoles && me.systemRoles.length > 1" style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:6px;">
+            <span 
+              v-for="(role, idx) in me.systemRoles.slice(1)" 
+              :key="idx" 
+              style="display:inline-block;padding:2px 8px;font-size:10px;font-weight:500;color:var(--mhr-accent);background:var(--mhr-accent-soft);border-radius:3px;text-transform:uppercase;letter-spacing:0.3px;"
+            >
+              {{ role }}
+            </span>
+          </div>
+        </div>
         <div style="margin-top:16px;padding:10px 14px;background:var(--mhr-accent-soft);border-radius:8px;font-size:12px;color:var(--green-800);">
           <span class="mhr-mono">{{ me.empNumber }}</span> · joined {{ fmtDate(me.joinDate) }}
         </div>

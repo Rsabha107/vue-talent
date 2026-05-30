@@ -57,7 +57,9 @@ const me = computed(() => page.props.me || {
   name: auth.value.user?.name || 'User', 
   initials: 'U', 
   avatarColor: 0, 
-  role: 'Employee' 
+  role: null,
+  systemRole: 'Employee',
+  systemRoles: ['Employee']
 })
 
 // Responsive handling
@@ -157,7 +159,18 @@ defineExpose({ showToast })
           <AppAvatar :name="me.name" :c="me.avatarColor" :initials="me.initials" />
           <div class="mhr-sidebar__user-meta">
             <div class="mhr-sidebar__user-name">{{ me.name }}</div>
-            <div class="mhr-sidebar__user-role">{{ me.role }}</div>
+            <div class="mhr-sidebar__user-role">
+              <span>{{ me.systemRole }}<template v-if="me.role"> · {{ me.role }}</template></span>
+              <div v-if="me.systemRoles && me.systemRoles.length > 1" class="role-badges">
+                <span 
+                  v-for="(role, idx) in me.systemRoles.slice(1)" 
+                  :key="idx" 
+                  class="role-badge"
+                >
+                  {{ role }}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -287,5 +300,25 @@ defineExpose({ showToast })
   .module-switcher {
     display: none; /* Hide on mobile, show in separate menu */
   }
+}
+
+/* Role badges for multi-role users */
+.role-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.role-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--mhr-accent);
+  background: var(--mhr-accent-soft);
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 </style>

@@ -553,10 +553,10 @@ class PayrollController extends BaseHRController
 
             // Create batch items
             foreach ($timesheets as $timesheet) {
-                // Get primary bank (last created bank with effective_end_date = 9999-12-31)
+                // Get primary bank (last created bank with no end date - still active)
                 $primaryBank = $timesheet->employee->banks
                     ->filter(function ($bank) {
-                        return $bank->effective_end_date && 
+                        return !$bank->effective_end_date || 
                                $bank->effective_end_date->format('Y-m-d') === '9999-12-31';
                     })
                     ->sortByDesc('created_at')

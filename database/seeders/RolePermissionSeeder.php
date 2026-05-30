@@ -153,6 +153,9 @@ class RolePermissionSeeder extends Seeder
             'view.team.timesheets',
             'approve.leaves',
             'approve.timesheets',
+            // Personal data access (managers need access to their own data)
+            'view-documents',
+            'view-addresses',
             // Legacy
             'approve-leave',
             'approve-timesheet',

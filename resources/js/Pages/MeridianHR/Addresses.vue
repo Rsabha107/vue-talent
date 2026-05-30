@@ -14,6 +14,7 @@ const props = defineProps({
   countries: { type: Array, default: () => [] },
   employees: { type: Array, default: () => [] },
   addressTypes: { type: Array, default: () => [] },
+  currentEmployee: { type: Object, default: null },
 })
 
 const page = usePage()
@@ -30,7 +31,7 @@ const openMenuId = ref(null)
 const isRefreshing = ref(false)
 
 const form = useForm({
-  employee_id: props.hrRole === 'employee' ? currentEmployeeId.value : null,
+  employee_id: props.currentEmployee?.id || null,
   address_type: null,
   primary_address: 'N',
   address1: '',
@@ -83,7 +84,7 @@ function getAddressTypeName(typeId) {
 
 function resetAddForm() {
   form.reset()
-  form.employee_id = props.hrRole === 'employee' ? currentEmployeeId.value : null
+  form.employee_id = props.currentEmployee?.id || null
 }
 
 function resetEditForm() {
@@ -280,7 +281,8 @@ function refreshAddresses() {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <div v-if="hrRole !== 'employee'" class="mhr-field" style="grid-column:1/-1;">
+            <!-- Employee field for admin: searchable dropdown -->
+            <div v-if="employees.length > 0" class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">EMPLOYEE *</label>
               <EmployeeSelector
                 v-model="form.employee_id"
@@ -288,6 +290,15 @@ function refreshAddresses() {
                 placeholder="Select employee..."
                 :required="true"
               />
+            </div>
+
+            <!-- Employee field for employee/manager role: fixed display -->
+            <div v-else class="mhr-field" style="grid-column:1/-1;">
+              <label class="mhr-field__label">EMPLOYEE</label>
+              <div style="padding:12px 16px;background:var(--mhr-surface-2);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
+                <div style="font-weight:500;font-size:14px;">{{ currentEmployee?.full_name || 'N/A' }}</div>
+                <div style="font-size:13px;margin-top:2px;opacity:0.8;">{{ currentEmployee?.employee_number || '' }}</div>
+              </div>
             </div>
 
             <div class="mhr-field">

@@ -148,8 +148,15 @@ class EmployeeController extends BaseHRController
 
     protected function pendingLeaves(): array
     {
+        $effectiveEventIds = $this->getEffectiveEventIds();
+        
+        // If empty array (manager with no events), return empty result
+        if (is_array($effectiveEventIds) && empty($effectiveEventIds)) {
+            return [];
+        }
+        
         $query = EmployeeLeaveRequest::with(['employee', 'leaveType', 'status', 'event'])
-            ->forEvent() // Filter by selected event from session
+            ->forEvent($effectiveEventIds) // Pass effective event IDs
             ->where('status_id', EmployeeLeaveStatus::pendingId())
             ->active()
             ->orderBy('created_at', 'asc');
@@ -196,8 +203,15 @@ class EmployeeController extends BaseHRController
 
     protected function pendingTimesheets(): array
     {
+        $effectiveEventIds = $this->getEffectiveEventIds();
+        
+        // If empty array (manager with no events), return empty result
+        if (is_array($effectiveEventIds) && empty($effectiveEventIds)) {
+            return [];
+        }
+        
         $query = \App\Models\EmployeeTimesheet::with(['employee', 'status', 'event'])
-            ->forEvent() // Filter by selected event from session
+            ->forEvent($effectiveEventIds) // Pass effective event IDs
             ->where('status_id', \App\Models\EmployeeTimesheetStatus::submittedId())
             ->active()
             ->orderBy('created_at', 'asc');
@@ -243,7 +257,13 @@ class EmployeeController extends BaseHRController
                 $query->where('archived', 'N');
                 if ($eventId) {
                     $query->whereHas('events', function ($eq) use ($eventId) {
-                        $eq->where('events.id', $eventId);
+                        $eq->where('events.id', $eventId)
+                            ->where('employee_events.is_active', 1);
+                    });
+                } else {
+                    // Count employees with any active event assignment
+                    $query->whereHas('events', function ($eq) {
+                        $eq->where('employee_events.is_active', 1);
                     });
                 }
             }])
@@ -256,12 +276,19 @@ class EmployeeController extends BaseHRController
         
         foreach ($departments as $dept) {
             if ($dept->employees_count > 0) {
-                // Count employees on leave today
+                // Count employees on leave today for this department
                 $onLeaveToday = Employee::where('archived', 'N')
-                    ->where('department_id', $dept->id)
-                    ->when($eventId, function ($query) use ($eventId) {
-                        return $query->whereHas('events', function ($eq) use ($eventId) {
-                            $eq->where('events.id', $eventId);
+                    ->when($eventId, function ($query) use ($eventId, $dept) {
+                        return $query->whereHas('events', function ($eq) use ($eventId, $dept) {
+                            $eq->where('events.id', $eventId)
+                                ->where('employee_events.is_active', 1)
+                                ->where('employee_events.department_id', $dept->id);
+                        });
+                    }, function ($query) use ($dept) {
+                        // No specific event, count across all active assignments for this dept
+                        return $query->whereHas('events', function ($eq) use ($dept) {
+                            $eq->where('employee_events.is_active', 1)
+                                ->where('employee_events.department_id', $dept->id);
                         });
                     })
                     ->whereHas('leaveRequests', function ($query) use ($today) {
@@ -561,13 +588,22 @@ class EmployeeController extends BaseHRController
         
         // Base query for active employees
         $query = Employee::active()
-            ->with(['department', 'designation', 'directorate', 'functionalArea', 'salutation', 'maritalStatus', 'nationality', 'gender', 'entity', 'contractType', 'reportingTo'])
+            ->with(['salutation', 'maritalStatus', 'nationality', 'gender'])
             ->withCount(['documents as documents_count' => function ($query) use ($eventId) {
                 $query->where('active_flag', 1);
                 if ($eventId) {
                     $query->where('event_id', $eventId);
                 }
             }]);
+        
+        // For All Events view, eager load all events with names
+        if ($isAllEvents) {
+            $query->with(['events' => function ($q) {
+                $q->where('employee_events.is_active', 1)
+                  ->select('events.id', 'events.name')
+                  ->orderBy('events.name');
+            }]);
+        }
         
         // Filter by event assignment only if specific event is selected
         if (!$isAllEvents) {
@@ -576,45 +612,80 @@ class EmployeeController extends BaseHRController
                   ->where('employee_events.is_active', 1);
             })->with(['events' => function ($q) use ($eventId) {
                 $q->where('events.id', $eventId)
-                  ->select('events.id', 'events.name');
+                  ->select('events.id', 'events.name')
+                  ->withPivot([
+                      'assigned_at', 'released_at', 'is_active',
+                      'agreement_number', 'department_id', 'designation_id',
+                      'directorate_id', 'functional_area_id', 'job_level_id',
+                      'reporting_to_id', 'entity_id', 'contract_type_id',
+                      'employee_type', 'salary_basis_id'
+                  ]);
             }]);
         }
         
         $employees = $query->orderBy('full_name')
             ->get()
             ->map(function ($emp) use ($eventId, $isAllEvents) {
-                // Event name - only relevant when viewing specific event
+                // Get event-specific pivot data
+                $pivotData = null;
                 $eventName = null;
                 if (!$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty()) {
-                    $eventName = $emp->events->first()->name;
+                    $event = $emp->events->first();
+                    $pivotData = $event->pivot;
+                    $eventName = $event->name;
                 }
+                
+                // For event context, get organizational data from pivot
+                // For All Events context, show as unassigned (null values)
+                $departmentId = $pivotData?->department_id ?? null;
+                $designationId = $pivotData?->designation_id ?? null;
+                $directorateId = $pivotData?->directorate_id ?? null;
+                $functionalAreaId = $pivotData?->functional_area_id ?? null;
+                $reportingToId = $pivotData?->reporting_to_id ?? null;
+                $entityId = $pivotData?->entity_id ?? null;
+                $contractTypeId = $pivotData?->contract_type_id ?? null;
+                $agreementNumber = $pivotData?->agreement_number ?? null;
+                $employeeType = $pivotData?->employee_type ?? null;
+                $salaryBasisId = $pivotData?->salary_basis_id ?? null;
+                
+                // Lazy load related models only when needed
+                $department = $departmentId ? Department::find($departmentId) : null;
+                $designation = $designationId ? Designation::find($designationId) : null;
+                $directorate = $directorateId ? Directorate::find($directorateId) : null;
+                $functionalArea = $functionalAreaId ? FunctionalArea::find($functionalAreaId) : null;
+                $reportingTo = $reportingToId ? Employee::find($reportingToId) : null;
+                $entity = $entityId ? EmployeeEntity::find($entityId) : null;
+                $contractType = $contractTypeId ? EmployeeContractType::find($contractTypeId) : null;
                 
                 return [
                     'id'                => $emp->id,
                     'name'              => $emp->full_name,
                     'eventName'         => $eventName,
                     
-                    // Event-specific data (only when viewing specific event)
-                    'eventRole'         => !$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty() 
-                        ? $emp->events->first()->pivot->event_role 
-                        : null,
-                    'assignedAt'        => !$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty() 
-                        ? $emp->events->first()->pivot->assigned_at 
-                        : null,
-                    'releasedAt'        => !$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty() 
-                        ? $emp->events->first()->pivot->released_at 
-                        : null,
+                    // Events assigned (for All Events view)
+                    'eventsAssigned'    => $isAllEvents && $emp->relationLoaded('events') 
+                        ? $emp->events->pluck('name')->toArray()
+                        : [],
+                    'eventsCount'       => $isAllEvents && $emp->relationLoaded('events')
+                        ? $emp->events->count()
+                        : 0,
+                    'eventIds'          => $isAllEvents && $emp->relationLoaded('events')
+                        ? $emp->events->pluck('id')->toArray()
+                        : ($emp->relationLoaded('events') ? $emp->events->pluck('id')->toArray() : []),
                     
-                    // Basic Information
+                    // Event-specific data (from pivot)
+                    'assignedAt'        => $pivotData?->assigned_at,
+                    'releasedAt'        => $pivotData?->released_at,
+                    
+                    // Basic Information (from employees table)
                     'firstName'         => $emp->first_name,
                     'middleName'        => $emp->middle_name,
                     'lastName'          => $emp->last_name,
                     'salutation_id'     => $emp->salutation_id,
                     'salutation'        => $emp->salutation->title ?? null,
                     'empNumber'         => $emp->employee_number,
-                    'agreementNumber'   => $emp->agreement_number,
                     
-                    // Contact Information
+                    // Contact Information (from employees table)
                     'email'             => $emp->work_email_address,
                     'workEmail'         => $emp->work_email_address,
                     'personalEmail'     => $emp->personal_email_address,
@@ -624,37 +695,32 @@ class EmployeeController extends BaseHRController
                     'alt_area_code'     => $emp->alt_area_code,
                     'altPhone'          => $emp->alt_phone_number,
                     
-                    // Employment Details
-                    'designation_id'    => $emp->designation_id,
-                    'role'              => $emp->designation->name ?? 'N/A',
-                    'department_id'     => $emp->department_id,
-                    'dept'              => $emp->department->name ?? 'N/A',
-                    'directorate_id'    => $emp->directorate_id,
-                    'directorate'       => $emp->directorate->title ?? null,
-                    'functional_area_id'=> $emp->functional_area_id,
-                    'functionalArea'    => $emp->functionalArea->title ?? null,
-                    'salary_basis_id'   => $emp->salary_basis_id,
-                    'employee_type'     => $emp->employee_type,
-                    'entity'            => $emp->entity->title ?? null,
-                    'entityId'          => $emp->entity_id,
-                    'contractType'      => $emp->contractType->title ?? null,
-                    'contractTypeId'    => $emp->contract_type_id,
-                    'reporting_to_id'   => $emp->reporting_to_id,
-                    'reportingTo'       => $emp->reportingTo->full_name ?? null,
+                    // Employment Details (from pivot when in event context)
+                    'agreementNumber'   => $agreementNumber,
+                    'designation_id'    => $designationId,
+                    'role'              => $designation?->name ?? ($isAllEvents ? 'Unassigned' : 'N/A'),
+                    'department_id'     => $departmentId,
+                    'dept'              => $department?->name ?? ($isAllEvents ? 'Unassigned' : 'N/A'),
+                    'directorate_id'    => $directorateId,
+                    'directorate'       => $directorate?->title ?? null,
+                    'functional_area_id'=> $functionalAreaId,
+                    'functionalArea'    => $functionalArea?->title ?? null,
+                    'entity'            => $entity?->title ?? null,
+                    'entityId'          => $entityId,
+                    'contractType'      => $contractType?->title ?? null,
+                    'contractTypeId'    => $contractTypeId,
+                    'reporting_to_id'   => $reportingToId,
+                    'reportingTo'       => $reportingTo?->full_name ?? null,
+                    'employeeType'      => $employeeType,
+                    'salaryBasisId'     => $salaryBasisId,
                     
-                    // Contract & Dates
-                    // In All Events mode: show master contract dates
-                    // In specific event mode: show event assignment dates (assigned_at/released_at)
-                    'contractStart'     => !$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty()
-                        ? $emp->events->first()->pivot->assigned_at
-                        : $emp->contract_start_date?->format('Y-m-d'),
-                    'contractEnd'       => !$isAllEvents && $emp->relationLoaded('events') && $emp->events->isNotEmpty()
-                        ? $emp->events->first()->pivot->released_at
-                        : $emp->contract_end_date?->format('Y-m-d'),
+                    // Contract & Dates (from pivot when in event context)
+                    'contractStart'     => $pivotData?->assigned_at,
+                    'contractEnd'       => $pivotData?->released_at,
                     'dateOfHire'        => $emp->date_of_hire?->format('Y-m-d'),
                     'joinDate'          => $emp->join_date?->format('Y-m-d'),
                     
-                    // Personal Information
+                    // Personal Information (from employees table)
                     'gender_id'         => $emp->gender_id,
                     'gender'            => $emp->gender->title ?? null,
                     'marital_status_id' => $emp->marital_status_id,
@@ -667,17 +733,17 @@ class EmployeeController extends BaseHRController
                     'nationalityCode'   => $emp->nationality->alpha_2_code ?? null,
                     'language_id'       => $emp->language_id,
                     
-                    // Identification
+                    // Identification (from employees table)
                     'nationalId'        => $emp->national_identifier_number,
                     'passportNumber'    => $emp->passport_number,
                     'passportExpiry'    => $emp->passport_expiry?->format('Y-m-d'),
                     'civilIdExpiry'     => $emp->civil_id_expiry?->format('Y-m-d'),
                     
-                    // Sponsorship
+                    // Sponsorship (from employees table)
                     'sponsorship_id'    => $emp->sponsorship_id,
                     'sponsorshipName'   => $emp->sponsorship_name,
                     
-                    // Flags
+                    // Flags (from employees table)
                     'managerFlag'       => $emp->manager_flag,
                     'adminFlag'         => $emp->administrator_flag,
                     
@@ -784,13 +850,13 @@ class EmployeeController extends BaseHRController
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        // Validate personal fields (stored in employees_all)
+        $personalFields = $request->validate([
             // Basic Information
             'first_name'                => 'required|string|max:50',
             'middle_name'               => 'nullable|string|max:100',
             'last_name'                 => 'required|string|max:50',
             'employee_number'           => 'required|string|max:15|unique:employees_all,employee_number',
-            'agreement_number'          => 'nullable|string|max:45',
             'salutation_id'             => 'nullable|integer',
             
             // Contact Information
@@ -801,23 +867,6 @@ class EmployeeController extends BaseHRController
             'phone_area_code'           => 'nullable|string|max:10',
             'alt_area_code'             => 'nullable|string|max:10',
             
-            // Employment Details
-            'designation_id'            => 'nullable|integer|exists:designations,id',
-            'department_id'             => 'nullable|integer|exists:departments,id',
-            'directorate_id'            => 'nullable|integer',
-            'functional_area_id'        => 'nullable|integer',
-            'salary_basis_id'           => 'nullable|integer',
-            'employee_type'             => 'nullable|integer',
-            'entity_id'                 => 'nullable|integer',
-            'contract_type_id'          => 'nullable|integer',
-            'reporting_to_id'           => 'nullable|integer|exists:employees_all,id',
-            
-            // Contract & Dates
-            'contract_start_date'       => 'nullable|date',
-            'contract_end_date'         => 'nullable|date',
-            'date_of_hire'              => 'nullable|date',
-            'join_date'                 => 'nullable|date',
-            
             // Personal Information
             'gender_id'                 => 'nullable|integer',
             'marital_status_id'         => 'nullable|integer',
@@ -826,6 +875,8 @@ class EmployeeController extends BaseHRController
             'country_of_birth'          => 'nullable|integer',
             'nationality_id'            => 'nullable|integer',
             'language_id'               => 'nullable|string|max:50',
+            'date_of_hire'              => 'nullable|date',
+            'join_date'                 => 'nullable|date',
             
             // Identification
             'national_identifier_number'=> 'nullable|string|max:100',
@@ -840,25 +891,78 @@ class EmployeeController extends BaseHRController
             // Flags
             'manager_flag'              => 'nullable|string|max:5',
             'administrator_flag'        => 'nullable|string|max:5',
+            
+            // Event assignment flag
+            'assign_to_event'           => 'nullable|boolean',
         ]);
 
+        // Validate event-specific fields (stored in employee_events pivot) if assigning to event
+        $eventFields = [];
+        if ($request->input('assign_to_event')) {
+            $eventFields = $request->validate([
+                'event_id'              => 'required|integer|exists:events,id',
+                'agreement_number'      => 'nullable|string|max:45',
+                'department_id'         => 'nullable|integer|exists:departments,id',
+                'designation_id'        => 'nullable|integer|exists:designations,id',
+                'directorate_id'        => 'nullable|integer',
+                'functional_area_id'    => 'nullable|integer',
+                'job_level_id'          => 'nullable|integer',
+                'reporting_to_id'       => 'nullable|integer|exists:employees_all,id',
+                'entity_id'             => 'nullable|integer',
+                'contract_type_id'      => 'nullable|integer',
+                'employee_type'         => 'nullable|integer',
+                'salary_basis_id'       => 'nullable|integer',
+                'assigned_at'           => 'required|date',
+                'released_at'           => 'nullable|date',
+            ]);
+        }
+
         // Generate full name
-        $validated['full_name'] = trim(
-            ($validated['first_name'] ?? '') . ' ' . 
-            ($validated['middle_name'] ?? '') . ' ' . 
-            ($validated['last_name'] ?? '')
+        $personalFields['full_name'] = trim(
+            ($personalFields['first_name'] ?? '') . ' ' . 
+            ($personalFields['middle_name'] ?? '') . ' ' . 
+            ($personalFields['last_name'] ?? '')
         );
 
         // Set default archived flag
-        $validated['archived'] = 'N';
+        $personalFields['archived'] = 'N';
+        
+        // Remove non-personal fields
+        unset($personalFields['assign_to_event']);
 
-        $employee = Employee::create($validated);
+        // Create employee (personal data only)
+        $employee = Employee::create($personalFields);
 
-        // Initialize leave balances for the new employee
-        $eventId = $this->getSelectedEventId();
-        LeaveBalanceService::initializeLeaveBalance(null, $employee, $eventId);
+        // Assign to event if requested
+        if ($request->input('assign_to_event') && !empty($eventFields)) {
+            $employee->events()->attach($eventFields['event_id'], [
+                'assigned_at'           => $eventFields['assigned_at'],
+                'released_at'           => $eventFields['released_at'] ?? null,
+                'is_active'             => 1,
+                'agreement_number'      => $eventFields['agreement_number'] ?? null,
+                'department_id'         => $eventFields['department_id'] ?? null,
+                'designation_id'        => $eventFields['designation_id'] ?? null,
+                'directorate_id'        => $eventFields['directorate_id'] ?? null,
+                'functional_area_id'    => $eventFields['functional_area_id'] ?? null,
+                'job_level_id'          => $eventFields['job_level_id'] ?? null,
+                'reporting_to_id'       => $eventFields['reporting_to_id'] ?? null,
+                'entity_id'             => $eventFields['entity_id'] ?? null,
+                'contract_type_id'      => $eventFields['contract_type_id'] ?? null,
+                'employee_type'         => $eventFields['employee_type'] ?? null,
+                'salary_basis_id'       => $eventFields['salary_basis_id'] ?? null,
+                'created_by'            => Auth::id() ?? 1,
+                'updated_by'            => Auth::id() ?? 1,
+            ]);
 
-        return redirect()->route('hr.employee')->with('success', 'Employee added successfully.');
+            // Initialize leave balances for the event
+            LeaveBalanceService::initializeLeaveBalance(null, $employee, $eventFields['event_id']);
+        }
+
+        $message = $request->input('assign_to_event') 
+            ? 'Employee added and assigned to event successfully.' 
+            : 'Employee added successfully (not assigned to any event).';
+
+        return redirect()->route('hr.employee')->with('success', $message);
     }
 
     public function edit($id)
@@ -876,14 +980,14 @@ class EmployeeController extends BaseHRController
     {
         $employee = Employee::findOrFail($id);
 
-        $validated = $request->validate([
+        // Validate personal fields (stored in employees_all)
+        $personalFields = $request->validate([
             // Basic Information
             'first_name'                    => 'required|string|max:50',
             'middle_name'                   => 'nullable|string|max:100',
             'last_name'                     => 'required|string|max:50',
             'salutation_id'                 => 'nullable|integer',
             'employee_number'               => ['required', 'string', 'max:15', Rule::unique('employees_all', 'employee_number')->ignore($employee->id)],
-            'agreement_number'              => 'nullable|string|max:100',
             
             // Contact Information
             'work_email_address'            => ['required', 'email', 'max:250', Rule::unique('employees_all', 'work_email_address')->ignore($employee->id)],
@@ -893,23 +997,6 @@ class EmployeeController extends BaseHRController
             'alt_area_code'                 => 'nullable|string|max:10',
             'alt_phone_number'              => 'nullable|string|max:50',
             
-            // Employment Details
-            'designation_id'                => 'nullable|integer|exists:designations,id',
-            'department_id'                 => 'nullable|integer|exists:departments,id',
-            'directorate_id'                => 'nullable|integer',
-            'functional_area_id'            => 'nullable|integer',
-            'salary_basis_id'               => 'nullable|integer',
-            'employee_type'                 => 'nullable|integer',
-            'entity_id'                     => 'nullable|integer',
-            'contract_type_id'              => 'nullable|integer',
-            'reporting_to_id'               => 'nullable|integer|exists:employees_all,id',
-            
-            // Contract & Dates
-            'contract_start_date'           => 'nullable|date',
-            'contract_end_date'             => 'nullable|date',
-            'date_of_hire'                  => 'nullable|date',
-            'join_date'                     => 'nullable|date',
-            
             // Personal Information
             'gender_id'                     => 'nullable|integer',
             'marital_status_id'             => 'nullable|integer',
@@ -918,6 +1005,8 @@ class EmployeeController extends BaseHRController
             'country_of_birth'              => 'nullable|integer',
             'nationality_id'                => 'nullable|integer',
             'language_id'                   => 'nullable|string|max:50',
+            'date_of_hire'                  => 'nullable|date',
+            'join_date'                     => 'nullable|date',
             
             // Identification
             'national_identifier_number'    => 'nullable|string|max:50',
@@ -932,44 +1021,96 @@ class EmployeeController extends BaseHRController
             // Flags
             'manager_flag'                  => 'nullable|string|max:5',
             'administrator_flag'            => 'nullable|string|max:5',
+            
+            // Event assignment flag
+            'assign_to_event'               => 'nullable|boolean',
         ]);
 
-        // Update full name
-        $validated['full_name'] = trim(
-            ($validated['first_name'] ?? '') . ' ' . 
-            ($validated['middle_name'] ?? '') . ' ' . 
-            ($validated['last_name'] ?? '')
-        );
-
-        $eventId = $this->getSelectedEventId();
-
-        // Handle contract dates based on context
-        if ($eventId) {
-            // In event context: update pivot table (assigned_at, released_at)
-            // Remove contract dates from validated data to prevent updating master table
-            $assignedAt = $validated['contract_start_date'] ?? null;
-            $releasedAt = $validated['contract_end_date'] ?? null;
-            unset($validated['contract_start_date'], $validated['contract_end_date']);
-            
-            // Update master employee (without contract dates)
-            $employee->update($validated);
-            
-            // Update pivot table with event assignment dates
-            if ($assignedAt !== null || $releasedAt !== null) {
-                $event = \App\Models\Ems\Event::findOrFail($eventId);
-                $pivotData = ['updated_by' => Auth::id() ?? 1];
-                if ($assignedAt !== null) $pivotData['assigned_at'] = $assignedAt;
-                if ($releasedAt !== null) $pivotData['released_at'] = $releasedAt;
-                
-                $event->employees()->updateExistingPivot($employee->id, $pivotData);
-            }
-        } else {
-            // In master employee view: update master table (contract_start_date, contract_end_date)
-            $employee->update($validated);
+        // Validate event-specific fields if assigning/updating event assignment
+        $eventFields = [];
+        if ($request->input('assign_to_event')) {
+            $eventFields = $request->validate([
+                'event_id'              => 'required|integer|exists:events,id',
+                'agreement_number'      => 'nullable|string|max:45',
+                'department_id'         => 'nullable|integer|exists:departments,id',
+                'designation_id'        => 'nullable|integer|exists:designations,id',
+                'directorate_id'        => 'nullable|integer',
+                'functional_area_id'    => 'nullable|integer',
+                'job_level_id'          => 'nullable|integer',
+                'reporting_to_id'       => 'nullable|integer|exists:employees_all,id',
+                'entity_id'             => 'nullable|integer',
+                'contract_type_id'      => 'nullable|integer',
+                'employee_type'         => 'nullable|integer',
+                'salary_basis_id'       => 'nullable|integer',
+                'assigned_at'           => 'required|date',
+                'released_at'           => 'nullable|date',
+            ]);
         }
 
-        // Recalculate leave balances when employee details change (contract dates, department, etc.)
-        LeaveBalanceService::initializeLeaveBalance(null, $employee, $eventId);
+        // Update full name
+        $personalFields['full_name'] = trim(
+            ($personalFields['first_name'] ?? '') . ' ' . 
+            ($personalFields['middle_name'] ?? '') . ' ' . 
+            ($personalFields['last_name'] ?? '')
+        );
+
+        // Remove non-personal fields
+        unset($personalFields['assign_to_event']);
+
+        // Update employee (personal data only)
+        $employee->update($personalFields);
+
+        // Handle event assignment
+        if ($request->input('assign_to_event') && !empty($eventFields)) {
+            $eventId = $eventFields['event_id'];
+            
+            // Check if assignment already exists
+            $existingAssignment = $employee->events()->where('events.id', $eventId)->exists();
+            
+            if ($existingAssignment) {
+                // Update existing assignment
+                $employee->events()->updateExistingPivot($eventId, [
+                    'assigned_at'           => $eventFields['assigned_at'],
+                    'released_at'           => $eventFields['released_at'] ?? null,
+                    'is_active'             => 1,
+                    'agreement_number'      => $eventFields['agreement_number'] ?? null,
+                    'department_id'         => $eventFields['department_id'] ?? null,
+                    'designation_id'        => $eventFields['designation_id'] ?? null,
+                    'directorate_id'        => $eventFields['directorate_id'] ?? null,
+                    'functional_area_id'    => $eventFields['functional_area_id'] ?? null,
+                    'job_level_id'          => $eventFields['job_level_id'] ?? null,
+                    'reporting_to_id'       => $eventFields['reporting_to_id'] ?? null,
+                    'entity_id'             => $eventFields['entity_id'] ?? null,
+                    'contract_type_id'      => $eventFields['contract_type_id'] ?? null,
+                    'employee_type'         => $eventFields['employee_type'] ?? null,
+                    'salary_basis_id'       => $eventFields['salary_basis_id'] ?? null,
+                    'updated_by'            => Auth::id() ?? 1,
+                ]);
+            } else {
+                // Create new assignment
+                $employee->events()->attach($eventId, [
+                    'assigned_at'           => $eventFields['assigned_at'],
+                    'released_at'           => $eventFields['released_at'] ?? null,
+                    'is_active'             => 1,
+                    'agreement_number'      => $eventFields['agreement_number'] ?? null,
+                    'department_id'         => $eventFields['department_id'] ?? null,
+                    'designation_id'        => $eventFields['designation_id'] ?? null,
+                    'directorate_id'        => $eventFields['directorate_id'] ?? null,
+                    'functional_area_id'    => $eventFields['functional_area_id'] ?? null,
+                    'job_level_id'          => $eventFields['job_level_id'] ?? null,
+                    'reporting_to_id'       => $eventFields['reporting_to_id'] ?? null,
+                    'entity_id'             => $eventFields['entity_id'] ?? null,
+                    'contract_type_id'      => $eventFields['contract_type_id'] ?? null,
+                    'employee_type'         => $eventFields['employee_type'] ?? null,
+                    'salary_basis_id'       => $eventFields['salary_basis_id'] ?? null,
+                    'created_by'            => Auth::id() ?? 1,
+                    'updated_by'            => Auth::id() ?? 1,
+                ]);
+            }
+
+            // Recalculate leave balances for the event
+            LeaveBalanceService::initializeLeaveBalance(null, $employee, $eventId);
+        }
 
         return redirect()->route('hr.employee')->with('success', 'Employee updated successfully.');
     }
@@ -1001,6 +1142,14 @@ class EmployeeController extends BaseHRController
         return \Maatwebsite\Excel\Facades\Excel::download(
             new \App\Exports\EmployeesTemplateExport(),
             'employee_import_template.xlsx'
+        );
+    }
+
+    public function downloadBaseTemplate()
+    {
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\BaseEmployeesTemplateExport(),
+            'employee_base_import_template.xlsx'
         );
     }
 
@@ -1043,6 +1192,125 @@ class EmployeeController extends BaseHRController
                 'message' => $stats['success'] > 0 
                     ? "{$stats['success']} employee(s) imported successfully" 
                     : "Import completed",
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Import failed: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function importBase(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'file' => 'required|mimes:xlsx,xls,csv|max:10240',
+        ]);
+
+        try {
+            $import = new \App\Imports\BaseEmployeesImport();
+            \Maatwebsite\Excel\Facades\Excel::import($import, $request->file('file'));
+
+            $stats = $import->getStats();
+            $failures = $import->failures();
+            
+            $errorMessages = [];
+            $failedRows = [];
+            
+            if (count($failures) > 0) {
+                foreach ($failures as $failure) {
+                    $errorMessages[] = "Row {$failure->row()}: " . implode(', ', $failure->errors());
+                    $failedRows[] = [
+                        'row' => $failure->row(),
+                        'errors' => $failure->errors(),
+                        'values' => $failure->values(),
+                    ];
+                }
+                
+                // Store failed rows in session for export
+                session(['failed_import_rows' => $failedRows]);
+            }
+
+            // Return stats as JSON
+            return response()->json([
+                'success' => true,
+                'stats' => $stats,
+                'errors' => $errorMessages,
+                'hasFailures' => count($failures) > 0,
+                'message' => $stats['success'] > 0 
+                    ? "{$stats['success']} employee(s) imported successfully (no event assignment)" 
+                    : "Import completed",
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Import failed: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function downloadEventAssignmentTemplate()
+    {
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\EventAssignmentTemplateExport(),
+            'event_assignment_import_template.xlsx'
+        );
+    }
+
+    public function importEventAssignment(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'file' => 'required|mimes:xlsx,xls,csv|max:10240',
+        ]);
+
+        try {
+            $import = new \App\Imports\EventAssignmentImport();
+            \Maatwebsite\Excel\Facades\Excel::import($import, $request->file('file'));
+
+            $stats = $import->getStats();
+            $failures = $import->failures();
+            
+            $errorMessages = [];
+            $failedRows = [];
+            
+            // Add custom errors from import
+            foreach ($import->getErrors() as $error) {
+                $errorMessages[] = $error;
+            }
+            
+            if (count($failures) > 0) {
+                foreach ($failures as $failure) {
+                    $errorMessages[] = "Row {$failure->row()}: " . implode(', ', $failure->errors());
+                    $failedRows[] = [
+                        'row' => $failure->row(),
+                        'errors' => $failure->errors(),
+                        'values' => $failure->values(),
+                    ];
+                }
+                
+                // Store failed rows in session for export
+                session(['failed_import_rows' => $failedRows]);
+            }
+
+            // Build success message
+            $messages = [];
+            if ($stats['success'] > 0) {
+                $messages[] = "{$stats['success']} new assignment(s) created";
+            }
+            if ($stats['updated'] > 0) {
+                $messages[] = "{$stats['updated']} assignment(s) updated";
+            }
+            $successMessage = !empty($messages) ? implode(', ', $messages) : "Import completed";
+
+            // Return stats as JSON
+            return response()->json([
+                'success' => true,
+                'stats' => $stats,
+                'errors' => $errorMessages,
+                'hasFailures' => count($failures) > 0 || count($import->getErrors()) > 0,
+                'message' => $successMessage,
             ]);
 
         } catch (\Exception $e) {
@@ -1204,15 +1472,28 @@ class EmployeeController extends BaseHRController
 
     public function assignToEvent(\Illuminate\Http\Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'employee_ids' => 'required|array|min:1',
             'employee_ids.*' => 'exists:employees_all,id',
             'event_id' => 'required|exists:events,id',
+            'assigned_at' => 'required|date',
+            'released_at' => 'nullable|date',
+            'agreement_number' => 'nullable|string|max:45',
+            'department_id' => 'nullable|integer|exists:departments,id',
+            'designation_id' => 'nullable|integer|exists:designations,id',
+            'directorate_id' => 'nullable|integer',
+            'functional_area_id' => 'nullable|integer',
+            'job_level_id' => 'nullable|integer',
+            'reporting_to_id' => 'nullable|integer|exists:employees_all,id',
+            'entity_id' => 'nullable|integer',
+            'contract_type_id' => 'nullable|integer',
+            'employee_type' => 'nullable|integer',
+            'salary_basis_id' => 'nullable|integer',
         ]);
 
         try {
-            $employeeIds = $request->input('employee_ids');
-            $eventId = $request->input('event_id');
+            $employeeIds = $validated['employee_ids'];
+            $eventId = $validated['event_id'];
             
             // Get event details for response message
             $event = \App\Models\Ems\Event::findOrFail($eventId);
@@ -1228,13 +1509,25 @@ class EmployeeController extends BaseHRController
             $employeesToAssign = array_diff($employeeIds, $existingAssignments);
             
             if (count($employeesToAssign) > 0) {
-                // Prepare pivot data for bulk attach
+                // Prepare pivot data for bulk attach (with organizational attributes)
                 $pivotData = [];
                 $now = now();
                 foreach ($employeesToAssign as $employeeId) {
                     $pivotData[$employeeId] = [
-                        'assigned_at' => $now->format('Y-m-d'),
+                        'assigned_at' => $validated['assigned_at'],
+                        'released_at' => $validated['released_at'] ?? null,
                         'is_active' => 1,
+                        'agreement_number' => $validated['agreement_number'] ?? null,
+                        'department_id' => $validated['department_id'] ?? null,
+                        'designation_id' => $validated['designation_id'] ?? null,
+                        'directorate_id' => $validated['directorate_id'] ?? null,
+                        'functional_area_id' => $validated['functional_area_id'] ?? null,
+                        'job_level_id' => $validated['job_level_id'] ?? null,
+                        'reporting_to_id' => $validated['reporting_to_id'] ?? null,
+                        'entity_id' => $validated['entity_id'] ?? null,
+                        'contract_type_id' => $validated['contract_type_id'] ?? null,
+                        'employee_type' => $validated['employee_type'] ?? null,
+                        'salary_basis_id' => $validated['salary_basis_id'] ?? null,
                         'created_by' => auth()->id() ?? 1,
                         'updated_by' => auth()->id() ?? 1,
                         'created_at' => $now,
@@ -1273,6 +1566,49 @@ class EmployeeController extends BaseHRController
         }
     }
 
+    public function unassignFromEvent(\Illuminate\Http\Request $request)
+    {
+        $validated = $request->validate([
+            'employee_ids' => 'required|array|min:1',
+            'employee_ids.*' => 'exists:employees_all,id',
+            'event_id' => 'required|exists:events,id',
+        ]);
+
+        try {
+            $employeeIds = $validated['employee_ids'];
+            $eventId = $validated['event_id'];
+            
+            // Get event details for response message
+            $event = \App\Models\Ems\Event::findOrFail($eventId);
+            
+            // Delete pivot records (hard removal)
+            $deleted = \Illuminate\Support\Facades\DB::table('employee_events')
+                ->where('event_id', $eventId)
+                ->whereIn('employee_id', $employeeIds)
+                ->delete();
+            
+            if ($deleted > 0) {
+                $message = sprintf(
+                    'Successfully unassigned %d employee(s) from %s',
+                    $deleted,
+                    $event->name
+                );
+                
+                return redirect()->back()->with('success', $message);
+            } else {
+                return redirect()->back()->with('error', 'No assignments found for the selected employees in this event.');
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to unassign employees from event', [
+                'error' => $e->getMessage(),
+                'employee_ids' => $request->input('employee_ids'),
+                'event_id' => $request->input('event_id'),
+            ]);
+            
+            return redirect()->back()->with('error', 'Failed to unassign employees from event: ' . $e->getMessage());
+        }
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // Personal Data Methods
     // ══════════════════════════════════════════════════════════════════
@@ -1286,17 +1622,19 @@ class EmployeeController extends BaseHRController
         $role = $this->getHRRole();
 
         // Get addresses based on role
-        if ($role === 'employee') {
+        // Employees and Managers see only their own addresses
+        // Only Admins see all addresses
+        if ($role === 'admin') {
+            $addresses = \App\Models\EmployeeAddress::with(['employee', 'country'])
+                ->active()
+                ->orderBy('created_at', 'desc')
+                ->get();
+        } else {
+            // Employees and managers see only their own
             $addresses = \App\Models\EmployeeAddress::with(['country'])
                 ->where('employee_id', $me['id'])
                 ->active()
                 ->orderBy('primary_address', 'desc')
-                ->orderBy('created_at', 'desc')
-                ->get();
-        } else {
-            // Admin/Manager can see all addresses
-            $addresses = \App\Models\EmployeeAddress::with(['employee', 'country'])
-                ->active()
                 ->orderBy('created_at', 'desc')
                 ->get();
         }
@@ -1330,11 +1668,22 @@ class EmployeeController extends BaseHRController
         });
 
         $employees = [];
-        if ($role !== 'employee') {
+        // Only admins can see employee dropdown for managing other employees' addresses
+        if ($role === 'admin') {
             $employees = Employee::select('id', 'employee_number', 'full_name')
                 ->orderBy('full_name')
                 ->get()
                 ->toArray();
+        }
+
+        // Pass current employee info for employee and manager roles
+        $currentEmployee = null;
+        if (!in_array($role, ['admin'])) {
+            $currentEmployee = [
+                'id' => $me['id'],
+                'full_name' => $me['name'],
+                'employee_number' => $me['empNumber'] ?? 'N/A',
+            ];
         }
 
         return Inertia::render('MeridianHR/Addresses', array_merge(
@@ -1343,6 +1692,7 @@ class EmployeeController extends BaseHRController
                 'addresses' => $formattedAddresses,
                 'countries' => $countries,
                 'employees' => $employees,
+                'currentEmployee' => $currentEmployee,
                 'addressTypes' => [
                     ['id' => 1, 'name' => 'Home'],
                     ['id' => 2, 'name' => 'Work'],
@@ -1373,8 +1723,9 @@ class EmployeeController extends BaseHRController
             'country_id' => 'required|integer|min:1|max:214748367|exists:countries,id',
         ]);
 
-        // Employees can only add their own addresses
-        if ($role === 'employee' && $validated['employee_id'] != $me['id']) {
+        // Employees and managers can only add their own addresses
+        // Only admins can add addresses for other employees
+        if ($role !== 'admin' && $validated['employee_id'] != $me['id']) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'employee_id' => 'You can only add your own addresses.'
             ]);
@@ -1412,8 +1763,9 @@ class EmployeeController extends BaseHRController
 
         $address = \App\Models\EmployeeAddress::findOrFail($id);
 
-        // Employees can only update their own addresses
-        if ($role === 'employee' && $address->employee_id != $me['id']) {
+        // Employees and managers can only update their own addresses
+        // Only admins can update addresses for other employees
+        if ($role !== 'admin' && $address->employee_id != $me['id']) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'employee_id' => 'You can only update your own addresses.'
             ]);
@@ -1460,8 +1812,9 @@ class EmployeeController extends BaseHRController
 
         $address = \App\Models\EmployeeAddress::findOrFail($id);
 
-        // Employees can only delete their own addresses
-        if ($role === 'employee' && $address->employee_id != $me['id']) {
+        // Employees and managers can only delete their own addresses
+        // Only admins can delete addresses for other employees
+        if ($role !== 'admin' && $address->employee_id != $me['id']) {
             return redirect()->back()->with('error', 'You can only delete your own addresses.');
         }
 

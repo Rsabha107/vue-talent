@@ -16,11 +16,15 @@ export function useHRNavigation() {
   
   const hrPage = computed(() => page.props.hrPage || 'dashboard')
   const pendingCounts = computed(() => page.props.pendingCounts || { pendingLeaves: 0, pendingTimesheets: 0 })
+  const availableEvents = computed(() => page.props.availableEvents || [])
   
   // Legacy hrRole fallback during transition period
   const hrRole = computed(() => page.props.hrRole || 'employee')
   const isAdmin = computed(() => hrRole.value === 'admin' || hasRole('admin'))
   const isManager = computed(() => hrRole.value === 'manager' || hasRole('manager'))
+  
+  // Check if manager has no events - they should not see team/approval sections
+  const isManagerWithoutEvents = computed(() => isManager.value && !isAdmin.value && availableEvents.value.length === 0)
   
   /**
    * Build navigation structure based on permissions
@@ -45,7 +49,8 @@ export function useHRNavigation() {
       route: 'hr.dashboard'
     })
     
-    if (can.value.viewOwnLeaves) {
+    // Hide personal leaves/timesheets for managers without events
+    if (can.value.viewOwnLeaves && !isManagerWithoutEvents.value) {
       workspace.items.push({
         id: 'my-leaves',
         label: 'My leaves',
@@ -54,7 +59,7 @@ export function useHRNavigation() {
       })
     }
     
-    if (can.value.viewOwnTimesheets) {
+    if (can.value.viewOwnTimesheets && !isManagerWithoutEvents.value) {
       workspace.items.push({
         id: 'my-timesheets',
         label: 'My timesheets',
@@ -74,7 +79,7 @@ export function useHRNavigation() {
       
       workspace.items.push({
         id: 'addresses',
-        label: 'Addresses',
+        label: 'My address',
         icon: 'pin',
         route: 'hr.addresses'
       })
@@ -83,9 +88,9 @@ export function useHRNavigation() {
     nav.push(workspace)
     
     // ═════════════════════════════════════════════════════════════════
-    // Approvals Section (Manager Only)
+    // Approvals Section (Manager Only - Hidden if no events assigned)
     // ═════════════════════════════════════════════════════════════════
-    if (can.value.approveLeaves || can.value.approveTimesheets) {
+    if ((can.value.approveLeaves || can.value.approveTimesheets) && !isManagerWithoutEvents.value) {
       const approvals = {
         group: 'Approvals',
         items: []
@@ -115,9 +120,9 @@ export function useHRNavigation() {
     }
     
     // ═════════════════════════════════════════════════════════════════
-    // Team Section (Manager Read-Only Views - Not shown to Admins)
+    // Team Section (Manager Read-Only Views - Hidden if no events assigned)
     // ═════════════════════════════════════════════════════════════════
-    if ((can.value.viewTeamLeaves || can.value.viewTeamTimesheets) && !isAdmin.value) {
+    if ((can.value.viewTeamLeaves || can.value.viewTeamTimesheets) && !isAdmin.value && !isManagerWithoutEvents.value) {
       const team = {
         group: 'Team',
         items: []
@@ -198,7 +203,7 @@ export function useHRNavigation() {
       if (hasExtendedAccess) {
         personal.items.push({
           id: 'addresses',
-          label: 'Addresses',
+          label: 'My address',
           icon: 'pin',
           route: 'hr.addresses'
         })
@@ -239,7 +244,7 @@ export function useHRNavigation() {
       
       records.items.push({
         id: 'documents',
-        label: 'Documents',
+        label: isManager.value && !isAdmin.value ? 'My documents' : 'Documents',
         icon: 'doc',
         route: 'hr.documents'
       })
@@ -268,7 +273,7 @@ export function useHRNavigation() {
       if (personalSection) {
         personalSection.items.push({
           id: 'documents',
-          label: 'Documents',
+          label: 'My documents',
           icon: 'doc',
           route: 'hr.documents'
         })
@@ -291,6 +296,16 @@ export function useHRNavigation() {
         items: []
       }
       
+      // Setup - Events & Venues management
+      if (isAdmin.value) {
+        settings.items.push({
+          id: 'setup',
+          label: 'Setup',
+          icon: 'settings',
+          route: 'hr.setup'
+        })
+      }
+      
       settings.items.push({
         id: 'application-settings',
         label: 'Application settings',
@@ -308,24 +323,10 @@ export function useHRNavigation() {
       }
       
       settings.items.push({
-        id: 'events',
-        label: 'Events',
-        icon: 'calendar',
-        route: 'hr.events'
-      })
-      
-      settings.items.push({
         id: 'event-templates',
         label: 'Event templates',
         icon: 'users',
         route: 'hr.event-templates'
-      })
-      
-      settings.items.push({
-        id: 'venues',
-        label: 'Venues',
-        icon: 'pin',
-        route: 'hr.venues'
       })
       
       nav.push(settings)
@@ -386,6 +387,7 @@ export function useHRNavigation() {
     'timesheet-talent': 'Timesheet Talent',
     'team-leave-requests': 'Team Leaves',
     'team-timesheets': 'Team Timesheets',
+    setup: 'Setup',
     events: 'Events',
     'event-templates': 'Event Templates',
     venues: 'Venues',
