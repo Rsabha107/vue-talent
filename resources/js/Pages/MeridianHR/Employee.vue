@@ -30,6 +30,7 @@ const props = defineProps({
   maritalStatuses:     { type: Array,  default: () => [] },
   nationalities:       { type: Array,  default: () => [] },
   countries:           { type: Array,  default: () => [] },
+  sponsorships:        { type: Array,  default: () => [] },
   reportingToOptions:  { type: Array,  default: () => [] },
 })
 
@@ -95,6 +96,7 @@ const isAssigning = ref(false)
 const isUnassigning = ref(false)
 const assignEventErrors = ref({})
 const unassignEventErrors = ref({})
+const formErrors = ref({})
 const assignEventForm = ref({
   assignedAt: null,
   releasedAt: null,
@@ -347,6 +349,13 @@ watch(() => form.value.assignToEvent, (newValue) => {
 watch(() => editForm.value.assignToEvent, (newValue) => {
   if (newValue && !props.isAllEvents && selectedEventId.value) {
     editForm.value.eventId = selectedEventId.value
+  }
+})
+
+// Clear form validation errors when modal opens
+watch(showAddModal, (newValue) => {
+  if (newValue) {
+    formErrors.value = {}
   }
 })
 
@@ -667,20 +676,53 @@ function parseDate(dateStr) {
   return null
 }
 
-function addEmployee() {
-  // Validate required fields when assigning to event
+function validateForm() {
+  formErrors.value = {}
+  let isValid = true
+
+  // Required field validation
+  if (!form.value.firstName || form.value.firstName.trim() === '') {
+    formErrors.value.firstName = 'First name is required'
+    isValid = false
+  }
+  if (!form.value.lastName || form.value.lastName.trim() === '') {
+    formErrors.value.lastName = 'Last name is required'
+    isValid = false
+  }
+  if (!form.value.employeeNumber || form.value.employeeNumber.trim() === '') {
+    formErrors.value.employeeNumber = 'Employee number is required'
+    isValid = false
+  }
+  if (!form.value.workEmail || form.value.workEmail.trim() === '') {
+    formErrors.value.workEmail = 'Work email is required'
+    isValid = false
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.value.workEmail)) {
+    formErrors.value.workEmail = 'Please enter a valid email address'
+    isValid = false
+  }
+
+  // Event assignment validation
   if (form.value.assignToEvent) {
     if (!form.value.assignedAt) {
-      toast.value = 'Assignment Start Date is required when assigning to an event'
-      setTimeout(() => { toast.value = null }, 5000)
-      return
+      formErrors.value.assignedAt = 'Assignment start date is required'
+      isValid = false
     }
     const eventId = form.value.eventId || selectedEventId.value
     if (!eventId) {
-      toast.value = 'Event selection is required when assigning to an event'
-      setTimeout(() => { toast.value = null }, 5000)
-      return
+      formErrors.value.eventId = 'Event selection is required'
+      isValid = false
     }
+  }
+
+  return isValid
+}
+
+function addEmployee() {
+  // Validate form
+  if (!validateForm()) {
+    toast.value = 'Please fill in all required fields'
+    setTimeout(() => { toast.value = null }, 5000)
+    return
   }
 
   router.post(route('hr.employee.store'), {
@@ -1155,9 +1197,6 @@ function updateEmployee() {
             </button>
           </div>
         </div>
-        <button v-if="hrRole === 'admin' && isAllEvents" class="mhr-btn mhr-btn--outline" @click="downloadTemplate">
-          <AppIcon name="download" :size="14" /> Download Template
-        </button>
         <button v-if="hrRole === 'admin' && isAllEvents" class="mhr-btn mhr-btn--outline" @click="openImportModal">
           <AppIcon name="upload" :size="14" /> Import
         </button>
@@ -1730,7 +1769,8 @@ function updateEmployee() {
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">First Name *</label>
-                <input class="mhr-input" v-model="form.firstName" placeholder="Jane" />
+                <input class="mhr-input" :class="{ 'mhr-input--error': formErrors.firstName }" v-model="form.firstName" @input="formErrors.firstName = ''" placeholder="Jane" />
+                <div v-if="formErrors.firstName" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ formErrors.firstName }}</div>
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Middle Name</label>
@@ -1740,11 +1780,13 @@ function updateEmployee() {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
               <div class="mhr-field">
                 <label class="mhr-field__label">Last Name *</label>
-                <input class="mhr-input" v-model="form.lastName" placeholder="Smith" />
+                <input class="mhr-input" :class="{ 'mhr-input--error': formErrors.lastName }" v-model="form.lastName" @input="formErrors.lastName = ''" placeholder="Smith" />
+                <div v-if="formErrors.lastName" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ formErrors.lastName }}</div>
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Employee Number *</label>
-                <input class="mhr-input" v-model="form.employeeNumber" placeholder="EMP-00001" />
+                <input class="mhr-input" :class="{ 'mhr-input--error': formErrors.employeeNumber }" v-model="form.employeeNumber" @input="formErrors.employeeNumber = ''" placeholder="EMP-00001" />
+                <div v-if="formErrors.employeeNumber" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ formErrors.employeeNumber }}</div>
               </div>
             </div>
           </div>
@@ -1755,7 +1797,8 @@ function updateEmployee() {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="mhr-field">
                 <label class="mhr-field__label">Work Email *</label>
-                <input class="mhr-input" type="email" v-model="form.workEmail" placeholder="jane.smith@company.com" />
+                <input class="mhr-input" :class="{ 'mhr-input--error': formErrors.workEmail }" type="email" v-model="form.workEmail" @input="formErrors.workEmail = ''" placeholder="jane.smith@company.com" />
+                <div v-if="formErrors.workEmail" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ formErrors.workEmail }}</div>
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Personal Email</label>
@@ -1832,10 +1875,6 @@ function updateEmployee() {
                 </select>
               </div>
             </div>
-            <div class="mhr-field" style="margin-top:12px;">
-              <label class="mhr-field__label">Language</label>
-              <input class="mhr-input" v-model="form.languageId" placeholder="English" />
-            </div>
           </div>
 
           <!-- Identification Section -->
@@ -1880,12 +1919,15 @@ function updateEmployee() {
             <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--mhr-ink);">Sponsorship</h3>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="mhr-field">
-                <label class="mhr-field__label">Sponsorship ID</label>
-                <input class="mhr-input" v-model="form.sponsorshipId" placeholder="SPON-001" />
+                <label class="mhr-field__label">Sponsorship</label>
+                <select class="mhr-select" v-model="form.sponsorshipId">
+                  <option value="">Select sponsorship</option>
+                  <option v-for="s in sponsorships" :key="s.id" :value="s.id">{{ s.name }}</option>
+                </select>
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Sponsorship Name</label>
-                <input class="mhr-input" v-model="form.sponsorshipName" placeholder="Company Sponsorship" />
+                <input class="mhr-input" v-model="form.sponsorshipName" placeholder="Enter sponsorship name" />
               </div>
             </div>
           </div>
@@ -1912,7 +1954,7 @@ function updateEmployee() {
           </div>
 
           <!-- Event Assignment Section (Optional) -->
-          <div style="margin-top:24px;padding-top:16px;border-top:2px solid var(--mhr-line);">
+          <div v-if="!isAllEvents" style="margin-top:24px;padding-top:16px;border-top:2px solid var(--mhr-line);">
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
               <input 
                 type="checkbox" 
@@ -1936,12 +1978,13 @@ function updateEmployee() {
               <!-- Event Selection (only show if viewing All Events) -->
               <div v-if="isAllEvents" class="mhr-field" style="margin-bottom:12px;">
                 <label class="mhr-field__label" style="color:var(--mhr-ink);font-weight:500;">Event <span style="color:var(--mhr-danger);">*</span></label>
-                <select class="mhr-select" v-model="form.eventId">
+                <select class="mhr-select" :class="{ 'mhr-select--error': formErrors.eventId }" v-model="form.eventId">
                   <option :value="null">Select event...</option>
                   <option v-for="event in availableEvents" :key="event.id" :value="event.id">
                     {{ event.name }}
                   </option>
                 </select>
+                <div v-if="formErrors.eventId" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ formErrors.eventId }}</div>
               </div>
               <div v-else style="margin-bottom:12px;padding:8px 12px;background:var(--mhr-surface);border-radius:6px;border:1px solid var(--mhr-line-2);">
                 <div style="font-size:12px;color:var(--mhr-ink-3);margin-bottom:2px;">Assigning to event:</div>
@@ -1955,11 +1998,12 @@ function updateEmployee() {
                   <DatePicker v-model="form.assignedAt" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
                     <template #default="{ inputValue, inputEvents }">
                       <div style="position:relative;">
-                        <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                        <input class="mhr-input" :class="{ 'mhr-input--error': formErrors.assignedAt }" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
                         <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
                       </div>
                     </template>
                   </DatePicker>
+                  <div v-if="formErrors.assignedAt" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ formErrors.assignedAt }}</div>
                 </div>
                 <div class="mhr-field">
                   <label class="mhr-field__label">Assignment End Date</label>
@@ -2078,6 +2122,23 @@ function updateEmployee() {
         </div>
         <div class="mhr-modal__body" style="max-height:calc(90vh - 140px);overflow-y:auto;padding-right:8px;">
           
+          <!-- All Events Info Banner -->
+          <div v-if="isAllEvents && editingEmployee && editingEmployee.eventIds && editingEmployee.eventIds.length > 0" style="margin-bottom:24px;padding:16px 18px;background:linear-gradient(135deg, var(--green-600), var(--green-800));border-radius:10px;display:flex;align-items:start;gap:14px;box-shadow:0 4px 12px rgba(59, 111, 67, 0.25);">
+            <div style="flex-shrink:0;width:40px;height:40px;background:rgba(255,255,255,0.2);border-radius:8px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px);">
+              <AppIcon name="info" :size="20" style="color:#ffffff;" />
+            </div>
+            <div style="flex:1;padding-top:2px;">
+              <div style="font-size:14px;font-weight:600;color:#ffffff;margin-bottom:6px;letter-spacing:0.3px;">
+                🔍 Event-Specific Details Not Visible
+              </div>
+              <div style="font-size:13px;color:rgba(255,255,255,0.95);line-height:1.6;">
+                This employee is assigned to <strong style="color:#ffffff;">{{ editingEmployee.eventsCount }} event{{ editingEmployee.eventsCount > 1 ? 's' : '' }}</strong>. 
+                To view or edit event-specific details (department, designation, agreement number, etc.), 
+                <strong style="color:#ffffff;">select a specific event</strong> from the event selector above.
+              </div>
+            </div>
+          </div>
+          
           <!-- Basic Information Section -->
           <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--mhr-line-2);">
             <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--mhr-ink);">Basic Information</h3>
@@ -2193,10 +2254,6 @@ function updateEmployee() {
                 </select>
               </div>
             </div>
-            <div class="mhr-field" style="margin-top:12px;">
-              <label class="mhr-field__label">Language</label>
-              <input class="mhr-input" v-model="editForm.languageId" placeholder="English" />
-            </div>
           </div>
 
           <!-- Identification Section -->
@@ -2241,12 +2298,15 @@ function updateEmployee() {
             <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--mhr-ink);">Sponsorship</h3>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="mhr-field">
-                <label class="mhr-field__label">Sponsorship ID</label>
-                <input class="mhr-input" v-model="editForm.sponsorshipId" placeholder="SPON-001" />
+                <label class="mhr-field__label">Sponsorship</label>
+                <select class="mhr-select" v-model="editForm.sponsorshipId">
+                  <option value="">Select sponsorship</option>
+                  <option v-for="s in sponsorships" :key="s.id" :value="s.id">{{ s.name }}</option>
+                </select>
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Sponsorship Name</label>
-                <input class="mhr-input" v-model="editForm.sponsorshipName" placeholder="Company Sponsorship" />
+                <input class="mhr-input" v-model="editForm.sponsorshipName" placeholder="Enter sponsorship name" />
               </div>
             </div>
           </div>
@@ -2273,7 +2333,7 @@ function updateEmployee() {
           </div>
 
           <!-- Event Assignment Section (Optional) -->
-          <div style="margin-top:24px;padding-top:16px;border-top:2px solid var(--mhr-line);">
+          <div v-if="!isAllEvents" style="margin-top:24px;padding-top:16px;border-top:2px solid var(--mhr-line);">
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
               <input 
                 type="checkbox" 

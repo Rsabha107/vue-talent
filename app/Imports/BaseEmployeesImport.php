@@ -8,6 +8,7 @@ use App\Models\Gender;
 use App\Models\MaritalStatus;
 use App\Models\Nationality;
 use App\Models\Country;
+use App\Models\EmployeeSponsorship;
 use Maatwebsite\Excel\Concerns\ToModel;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Concerns\WithValidation;
@@ -23,7 +24,7 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
 {
     use SkipsFailures;
 
-    protected int $successCount = 0;
+    protected int $processedCount = 0;
     protected int $skipCount = 0;
     protected array $errors = [];
 
@@ -69,6 +70,17 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
             ? Country::where('name', $row['country_of_birth'])->first() 
             : null;
 
+        // Lookup Sponsorship Type (support both old and new column names)
+        $sponsorshipType = null;
+        $sponsorshipValue = $row['sponsorship_type'] ?? $row['sponsorship_id'] ?? null;
+        
+        if (!empty($sponsorshipValue)) {
+            $sponsorshipType = EmployeeSponsorship::firstOrCreate(
+                ['title' => $sponsorshipValue],
+                ['active_flag' => 1, 'created_by' => 1, 'updated_by' => 1]
+            );
+        }
+
         // Generate full name
         $fullName = trim(
             ($row['first_name'] ?? '') . ' ' . 
@@ -76,7 +88,7 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
             ($row['last_name'] ?? '')
         );
 
-        $this->successCount++;
+        $this->processedCount++;
 
         return new Employee([
             // Personal Information
@@ -114,7 +126,7 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
             'civil_id_expiry' => $this->parseDate($row['civil_id_expiry'] ?? null),
             
             // Sponsorship
-            'sponsorship_id' => $row['sponsorship_id'] ?? null,
+            'sponsorship_id' => $sponsorshipType?->id,
             'sponsorship_name' => $row['sponsorship_name'] ?? null,
             
             // Flags
@@ -172,12 +184,12 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
 
     public function getSuccessCount(): int
     {
-        return $this->successCount;
+        return max(0, $this->processedCount - count($this->failures()));
     }
 
     public function getFailureCount(): int
     {
-        return count($this->failures());
+        return collect($this->failures())->map(fn($f) => $f->row())->unique()->count();
     }
 
     public function getSkipCount(): int
@@ -187,11 +199,15 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
 
     public function getStats(): array
     {
+        // Count unique failed rows (row() is a method, not a property)
+        $failures = $this->failures();
+        $uniqueFailedRows = collect($failures)->map(fn($f) => $f->row())->unique()->count();
+        
         return [
-            'success' => $this->successCount,
-            'failed' => count($this->failures()),
+            'success' => $this->processedCount,
+            'failed' => $uniqueFailedRows,
             'skipped' => $this->skipCount,
-            'total' => $this->successCount + count($this->failures()) + $this->skipCount,
+            'total' => $this->processedCount + $uniqueFailedRows + $this->skipCount,
         ];
     }
 }

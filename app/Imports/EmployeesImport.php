@@ -3,6 +3,7 @@
 namespace App\Imports;
 
 use App\Models\Employee;
+use App\Models\Ems\Event;
 use App\Models\Department;
 use App\Models\Designation;
 use App\Models\Salutation;
@@ -11,18 +12,25 @@ use App\Models\FunctionalArea;
 use App\Models\Gender;
 use App\Models\MaritalStatus;
 use App\Models\Nationality;
+use App\Models\Country;
+use App\Models\EmployeeSponsorship;
+use App\Models\EmployeeEntity;
+use App\Models\EmployeeContractType;
+use App\Models\EmployeeType;
+use App\Models\SalaryBasis;
 use Maatwebsite\Excel\Concerns\ToModel;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Concerns\WithValidation;
 use Maatwebsite\Excel\Concerns\SkipsOnFailure;
 use Maatwebsite\Excel\Concerns\SkipsFailures;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsOnFailure
 {
     use SkipsFailures;
 
-    protected int $successCount = 0;
+    protected int $processedCount = 0;
     protected int $skipCount = 0;
     protected array $errors = [];
 
@@ -32,6 +40,17 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
         if (empty($row['first_name']) && empty($row['last_name']) && empty($row['work_email'])) {
             $this->skipCount++;
             return null;
+        }
+
+        // Find event if event_name is provided (Mode 2: Employee + Event Assignment)
+        $event = null;
+        if (!empty($row['event_name'])) {
+            $event = Event::where('name', $row['event_name'])->first();
+            if (!$event) {
+                $this->errors[] = "Row skipped: Event '{$row['event_name']}' not found";
+                $this->skipCount++;
+                return null;
+            }
         }
 
         // Find or create related models
@@ -76,6 +95,34 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
             )
             : null;
 
+        $entity = !empty($row['entity']) 
+            ? EmployeeEntity::firstOrCreate(
+                ['title' => $row['entity']],
+                ['active_flag' => 1, 'created_by' => 1, 'updated_by' => 1]
+            )
+            : null;
+
+        $contractType = !empty($row['contract_type']) 
+            ? EmployeeContractType::firstOrCreate(
+                ['title' => $row['contract_type']],
+                ['active_flag' => 1, 'created_by' => 1, 'updated_by' => 1]
+            )
+            : null;
+
+        $employeeType = !empty($row['employee_type']) 
+            ? EmployeeType::firstOrCreate(
+                ['title' => $row['employee_type']],
+                ['active_flag' => 1]
+            )
+            : null;
+
+        $salaryBasis = !empty($row['salary_basis']) 
+            ? SalaryBasis::firstOrCreate(
+                ['title' => $row['salary_basis']],
+                ['active_flag' => 1, 'created_by' => 1, 'updated_by' => 1]
+            )
+            : null;
+
         $gender = !empty($row['gender']) 
             ? Gender::firstOrCreate(
                 ['title' => $row['gender']],
@@ -94,6 +141,25 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
             ? Nationality::where('nationality', $row['nationality'])->first() 
             : null;
 
+        // Lookup Country for country_of_birth
+        $countryOfBirth = null;
+        if (!empty($row['country_of_birth'])) {
+            $countryOfBirth = Country::where('country_name', $row['country_of_birth'])
+                ->orWhere('name', $row['country_of_birth'])
+                ->first();
+        }
+
+        // Lookup Sponsorship Type (support both old and new column names)
+        $sponsorshipType = null;
+        $sponsorshipValue = $row['sponsorship_type'] ?? $row['sponsorship_id'] ?? null;
+        
+        if (!empty($sponsorshipValue)) {
+            $sponsorshipType = EmployeeSponsorship::firstOrCreate(
+                ['title' => $sponsorshipValue],
+                ['active_flag' => 1, 'created_by' => 1, 'updated_by' => 1]
+            );
+        }
+
         // Generate full name
         $fullName = trim(
             ($row['first_name'] ?? '') . ' ' . 
@@ -101,9 +167,8 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
             ($row['last_name'] ?? '')
         );
 
-        $this->successCount++;
-
-        return new Employee([
+        // Create employee
+        $employee = new Employee([
             'first_name' => $row['first_name'] ?? null,
             'middle_name' => $row['middle_name'] ?? null,
             'last_name' => $row['last_name'] ?? null,
@@ -111,23 +176,23 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
             'work_email_address' => $row['work_email'] ?? null,
             'personal_email_address' => $row['personal_email'] ?? null,
             'phone_number' => $row['phone_number'] ?? null,
+            'phone_area_code' => $row['phone_area_code'] ?? null,
             'alt_phone_number' => $row['alt_phone_number'] ?? null,
+            'alt_area_code' => $row['alt_area_code'] ?? null,
             'employee_number' => $row['employee_number'] ?? null,
-            'agreement_number' => $row['agreement_number'] ?? null,
             'national_identifier_number' => $row['national_id'] ?? null,
-            'department_id' => $department?->id,
-            'designation_id' => $designation?->id,
             'salutation_id' => $salutation?->id,
-            'directorate_id' => $directorate?->id,
-            'functional_area_id' => $functionalArea?->id,
             'gender_id' => $gender?->id,
             'marital_status_id' => $maritalStatus?->id,
             'nationality_id' => $nationality?->id,
             'contract_start_date' => $this->parseDate($row['contract_start_date'] ?? null),
             'contract_end_date' => $this->parseDate($row['contract_end_date'] ?? null),
             'date_of_birth' => $this->parseDate($row['date_of_birth'] ?? null),
+            'town_of_birth' => $row['town_of_birth'] ?? null,
+            'country_of_birth' => $countryOfBirth?->id,
             'date_of_hire' => $this->parseDate($row['date_of_hire'] ?? null),
             'join_date' => $this->parseDate($row['join_date'] ?? null),
+            'sponsorship_id' => $sponsorshipType?->id,
             'sponsorship_name' => $row['sponsorship_name'] ?? null,
             'passport_number' => $row['passport_number'] ?? null,
             'passport_expiry' => $this->parseDate($row['passport_expiry'] ?? null),
@@ -136,11 +201,42 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
             'administrator_flag' => strtoupper($row['admin_flag'] ?? 'N') === 'Y' ? 'Y' : 'N',
             'archived' => 'N',
         ]);
+
+        // Save employee first
+        $employee->save();
+
+        // If event is provided, assign employee to event with organizational details
+        if ($event) {
+            DB::table('employee_events')->insert([
+                'employee_id' => $employee->id,
+                'event_id' => $event->id,
+                'department_id' => $department?->id,
+                'designation_id' => $designation?->id,
+                'directorate_id' => $directorate?->id,
+                'functional_area_id' => $functionalArea?->id,
+                'entity_id' => $entity?->id,
+                'contract_type_id' => $contractType?->id,
+                'employee_type' => $employeeType?->id,
+                'salary_basis_id' => $salaryBasis?->id,
+                'agreement_number' => $row['agreement_number'] ?? null,
+                'assigned_at' => $this->parseDate($row['contract_start_date'] ?? null) ?? now(),
+                'released_at' => $this->parseDate($row['contract_end_date'] ?? null),
+                'is_active' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $this->processedCount++;
+
+        // Return null because we already saved the employee
+        return null;
     }
 
     public function rules(): array
     {
         return [
+            'event_name' => 'nullable|string',
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'work_email' => 'required|email|unique:employees_all,work_email_address',
@@ -150,6 +246,7 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
     public function customValidationMessages()
     {
         return [
+            'event_name.string' => 'Event name must be text',
             'first_name.required' => 'First name is required',
             'last_name.required' => 'Last name is required',
             'work_email.required' => 'Work email is required',
@@ -184,12 +281,12 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
 
     public function getSuccessCount(): int
     {
-        return $this->successCount;
+        return $this->processedCount;
     }
 
     public function getFailureCount(): int
     {
-        return count($this->failures());
+        return collect($this->failures())->map(fn($f) => $f->row())->unique()->count();
     }
 
     public function getSkipCount(): int
@@ -199,11 +296,15 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
 
     public function getStats(): array
     {
+        // Count unique failed rows (row() is a method, not a property)
+        $failures = $this->failures();
+        $uniqueFailedRows = collect($failures)->map(fn($f) => $f->row())->unique()->count();
+        
         return [
-            'success' => $this->successCount,
-            'failed' => count($this->failures()),
+            'success' => $this->processedCount,
+            'failed' => $uniqueFailedRows,
             'skipped' => $this->skipCount,
-            'total' => $this->successCount + count($this->failures()) + $this->skipCount,
+            'total' => $this->processedCount + $uniqueFailedRows + $this->skipCount,
         ];
     }
 }

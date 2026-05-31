@@ -14,8 +14,6 @@ class EmployeeType extends Model
     protected $fillable = [
         'title',
         'active_flag',
-        'created_by',
-        'updated_by',
     ];
 
     public function employees()

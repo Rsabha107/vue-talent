@@ -11,6 +11,7 @@ use App\Models\EmployeeContractType;
 use App\Models\EmployeeEntity;
 use App\Models\EmployeeLeaveRequest;
 use App\Models\EmployeeLeaveStatus;
+use App\Models\EmployeeSponsorship;
 use App\Models\EmployeeTimesheet;
 use App\Models\EmployeeTimesheetEntry;
 use App\Models\EmployeeType;
@@ -808,6 +809,13 @@ class EmployeeController extends BaseHRController
             return ['id' => $c->id, 'name' => $c->country_name];
         });
 
+        $sponsorships = EmployeeSponsorship::where('active_flag', 1)
+            ->orderBy('title')
+            ->get()
+            ->map(function ($s) {
+                return ['id' => $s->id, 'name' => $s->title];
+            });
+
         $reportingToOptions = Employee::active()
             ->where('manager_flag', 'Y')
             ->orderBy('full_name')
@@ -832,6 +840,7 @@ class EmployeeController extends BaseHRController
             'maritalStatuses'   => $maritalStatuses,
             'nationalities'     => $nationalities,
             'countries'         => $countries,
+            'sponsorships'      => $sponsorships,
             'reportingToOptions'=> $reportingToOptions,
         ]));
     }

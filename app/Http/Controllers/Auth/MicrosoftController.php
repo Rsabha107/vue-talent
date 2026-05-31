@@ -61,7 +61,7 @@ class MicrosoftController extends Controller
         // Flash into the fresh session so it survives the Microsoft round-trip
         $request->session()->flash('error', $errorMessage);
 
-        $postLogoutRedirect = route('mylogin');
+        $postLogoutRedirect = route('login');
         $microsoftLogoutUrl = Socialite::driver('microsoft')->getLogoutUrl($postLogoutRedirect);
         Log::info('Microsoft logout URL: ' . $microsoftLogoutUrl);
 

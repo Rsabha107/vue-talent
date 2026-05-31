@@ -69,7 +69,7 @@ class AuthenticatedSessionController extends Controller
 
             // now redirect to Microsoft logout URL which will then redirect back to our login page
             $microsoft = Socialite::driver('microsoft');
-            $microsoftLogoutUrl = $microsoft->getLogoutUrl(route('mylogin'));
+            $microsoftLogoutUrl = $microsoft->getLogoutUrl(route('login'));
             // Log::info('AuthenticatedSessionController:destroy microsoftLogoutUrl: ' . $microsoftLogoutUrl);
             return Inertia::location($microsoftLogoutUrl);
         } else {

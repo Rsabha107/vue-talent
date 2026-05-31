@@ -60,7 +60,7 @@ class OtpController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect()->intended(route('mypage', absolute: false));
+        return redirect()->intended(route('home', absolute: false));
     }
 
     public function resend(Request $request): RedirectResponse

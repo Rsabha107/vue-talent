@@ -9,6 +9,7 @@ use App\Models\Directorate;
 use App\Models\FunctionalArea;
 use App\Models\EmployeeEntity;
 use App\Models\EmployeeContractType;
+use App\Models\EmployeeType;
 use App\Models\SalaryBasis;
 use App\Models\Ems\Event;
 use Maatwebsite\Excel\Concerns\ToModel;
@@ -112,7 +113,7 @@ class EventAssignmentImport implements ToModel, WithHeadingRow, WithValidation, 
             $contractType = !empty($row['contract_type']) 
                 ? EmployeeContractType::firstOrCreate(
                     ['title' => $row['contract_type']],
-                    ['created_by' => 1, 'updated_by' => 1]
+                    ['active_flag' => 1, 'created_by' => 1, 'updated_by' => 1]
                 )
                 : null;
 
@@ -120,6 +121,13 @@ class EventAssignmentImport implements ToModel, WithHeadingRow, WithValidation, 
                 ? SalaryBasis::firstOrCreate(
                     ['title' => $row['salary_basis']],
                     ['active_flag' => 1, 'created_by' => 1, 'updated_by' => 1]
+                )
+                : null;
+
+            $employeeType = !empty($row['employee_type']) 
+                ? EmployeeType::firstOrCreate(
+                    ['title' => $row['employee_type']],
+                    ['active_flag' => 1]
                 )
                 : null;
 
@@ -142,7 +150,7 @@ class EventAssignmentImport implements ToModel, WithHeadingRow, WithValidation, 
                 'salary_basis_id' => $salaryBasis?->id,
                 'reporting_to_id' => $reportingTo,
                 'agreement_number' => $row['agreement_number'] ?? null,
-                'employee_type' => $row['employee_type'] ?? null,
+                'employee_type' => $employeeType?->id,
                 'assigned_at' => $this->parseDate($row['assigned_at'] ?? null),
                 'released_at' => $this->parseDate($row['released_at'] ?? null),
                 'is_active' => !empty($row['released_at']) && Carbon::parse($row['released_at'])->isPast() ? 0 : 1,
