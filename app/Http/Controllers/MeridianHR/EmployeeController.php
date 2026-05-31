@@ -7,6 +7,7 @@ use App\Models\Department;
 use App\Models\Designation;
 use App\Models\Directorate;
 use App\Models\Employee;
+use App\Models\User;
 use App\Models\EmployeeContractType;
 use App\Models\EmployeeEntity;
 use App\Models\EmployeeLeaveRequest;
@@ -26,6 +27,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -34,6 +36,47 @@ class EmployeeController extends BaseHRController
 {
     // ── Shared mock data ──────────────────────────────────────────────
     // Note: me() and getHRRole() are inherited from BaseHRController
+
+    /**
+     * Create a user account for an employee if one doesn't exist
+     * and assign the default 'employee-basic' role.
+     */
+    protected function createUserForEmployee(Employee $employee): void
+    {
+        // Check if employee already has a user account
+        if ($employee->user_id) {
+            return;
+        }
+
+        // Check if a user with this email already exists
+        $existingUser = User::where('email', $employee->work_email_address)->first();
+        
+        if ($existingUser) {
+            // Link existing user to employee
+            $employee->user_id = $existingUser->id;
+            $employee->save();
+            
+            // Ensure user has employee-basic role if they don't have any roles
+            if ($existingUser->roles->isEmpty()) {
+                $existingUser->assignRole('employee-basic');
+            }
+        } else {
+            // Create new user with default password
+            $user = User::create([
+                'name' => $employee->full_name,
+                'email' => $employee->work_email_address,
+                'password' => Hash::make('Welcome@' . date('Y')), // Default password
+                'email_verified_at' => now(), // Auto-verify
+            ]);
+            
+            // Assign default employee-basic role
+            $user->assignRole('employee-basic');
+            
+            // Link user to employee
+            $employee->user_id = $user->id;
+            $employee->save();
+        }
+    }
 
     protected function leaveBalance(): array
     {
@@ -941,6 +984,9 @@ class EmployeeController extends BaseHRController
 
         // Create employee (personal data only)
         $employee = Employee::create($personalFields);
+
+        // Create user account if one doesn't exist
+        $this->createUserForEmployee($employee);
 
         // Assign to event if requested
         if ($request->input('assign_to_event') && !empty($eventFields)) {

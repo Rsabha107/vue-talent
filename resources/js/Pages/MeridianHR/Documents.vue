@@ -13,6 +13,7 @@ const props = defineProps({
   employees: { type: Array, default: () => null },
   events: { type: Array, default: () => null },
   hrRole: { type: String, default: 'employee' },
+  currentEmployee: { type: Object, default: () => null },
 })
 
 const isAdmin = computed(() => ['admin', 'manager'].includes(props.hrRole))
@@ -156,7 +157,7 @@ function shortDate(s) {
 function openUploadModal() {
   uploadForm.value = {
     file: null,
-    employee_id: null,
+    employee_id: isAdmin.value ? null : (props.currentEmployee?.id || null),
     category_id: activeCat.value || props.categories[0]?.id || null,
     event_id: null,
     description: '',
@@ -190,6 +191,7 @@ function submitUpload() {
   if (!uploadForm.value.file) return showToast('Please select a file')
   if (!uploadForm.value.category_id) return showToast('Please select a category')
   if (isAdmin.value && !uploadForm.value.employee_id) return showToast('Please select an employee')
+  if (!isAdmin.value && !uploadForm.value.employee_id) return showToast('Employee information is missing')
 
   const formData = new FormData()
   formData.append('file', uploadForm.value.file)
@@ -265,7 +267,7 @@ function formatFileSize(bytes) {
         <p class="mhr-page-head__sub">Contracts, identity, certificates and policies</p>
       </div>
       <div class="mhr-page-head__actions">
-        <button v-if="isAdmin" class="mhr-btn mhr-btn--primary" @click="openUploadModal">
+        <button class="mhr-btn mhr-btn--primary" @click="openUploadModal">
           <AppIcon name="upload" :size="15" /> Upload
         </button>
       </div>
@@ -367,7 +369,7 @@ function formatFileSize(bytes) {
           <div v-if="currentCategoryDocs.length === 0" class="docs-list-empty">
             <AppIcon name="doc" :size="32" style="color:var(--mhr-ink-4);" />
             <p>No documents in this category</p>
-            <button v-if="isAdmin" class="mhr-btn mhr-btn--outline mhr-btn--sm" @click="openUploadModal">
+            <button class="mhr-btn mhr-btn--outline mhr-btn--sm" @click="openUploadModal">
               <AppIcon name="upload" :size="14" /> Upload
             </button>
           </div>
@@ -465,6 +467,13 @@ function formatFileSize(bytes) {
           <div v-if="isAdmin" class="mhr-field">
             <label class="mhr-field__label">Employee <span style="color:var(--mhr-danger);">*</span></label>
             <EmployeeSelector v-model="uploadForm.employee_id" :employees="employees" :required="true" placeholder="Select employee..." />
+          </div>
+
+          <div v-else class="mhr-field">
+            <label class="mhr-field__label">Employee</label>
+            <div class="mhr-input" style="background:var(--mhr-surface);cursor:not-allowed;opacity:0.7;">
+              {{ currentEmployee?.name || 'N/A' }}
+            </div>
           </div>
 
           <div class="mhr-field">

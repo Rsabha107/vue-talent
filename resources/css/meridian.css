@@ -700,11 +700,11 @@
   overflow-y: auto;
 }
 .meridian-app .mhr-modal__ft {
-  padding: 14px 24px;
+  padding: 16px 24px;
   border-top: 1px solid var(--mhr-line-2);
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 12px;
   background: var(--mhr-surface-2);
 }
 
@@ -729,6 +729,11 @@
 }
 @keyframes mhrToastIn { from { opacity: 0; transform: translate(-50%, -8px); } }
 .meridian-app .mhr-toast svg { width: 16px; height: 16px; color: var(--green-300); }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 /* ─── Event Selector (lmsx style) ───────────────────────────────── */
 .meridian-app .event-selector { 

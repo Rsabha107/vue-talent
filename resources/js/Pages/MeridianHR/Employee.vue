@@ -84,6 +84,7 @@ const openMenuId = ref(null)
 const menuPosition = ref({ top: 0, right: 0 })
 const isRefreshing = ref(false)
 const isImporting = ref(false)
+const isAdding = ref(false)
 const isUpdating = ref(false)
 const showColumnMenu = ref(false)
 const selectedEmployees = ref(new Set())
@@ -725,6 +726,7 @@ function addEmployee() {
     return
   }
 
+  isAdding.value = true
   router.post(route('hr.employee.store'), {
     // Personal Information
     first_name: form.value.firstName,
@@ -761,7 +763,7 @@ function addEmployee() {
     civil_id_expiry: toMySQLDate(form.value.civilIdExpiry),
     
     // Sponsorship
-    sponsorship_id: form.value.sponsorshipId || '',
+    sponsorship_id: form.value.sponsorshipId ? String(form.value.sponsorshipId) : '',
     sponsorship_name: form.value.sponsorshipName || '',
     
     // Flags
@@ -818,6 +820,9 @@ function addEmployee() {
       const firstError = Object.values(errors)[0]
       toast.value = firstError || 'Failed to add employee'
       setTimeout(() => { toast.value = null }, 5000)
+    },
+    onFinish: () => {
+      isAdding.value = false
     }
   })
 }
@@ -841,8 +846,12 @@ function toggleMenu(id, event) {
 function editEmployee(emp) {
   editingEmployee.value = emp
   
-  // Helper to validate ID exists in list
-  const validId = (id, list) => id && list.some(item => item.id === id) ? id : null
+  // Helper to validate ID exists in list (with type conversion)
+  const validId = (id, list) => {
+    if (!id) return null
+    const numId = Number(id)
+    return list.some(item => item.id === numId) ? numId : null
+  }
   
   // Check if employee has event assignment
   const hasEventAssignment = emp.department_id || emp.designation_id || emp.agreementNumber || emp.contractStart
@@ -886,7 +895,7 @@ function editEmployee(emp) {
     civilIdExpiry: parseDate(emp.civilIdExpiry),
     
     // Sponsorship
-    sponsorshipId: emp.sponsorship_id || '',
+    sponsorshipId: emp.sponsorship_id ? String(emp.sponsorship_id) : '',
     sponsorshipName: emp.sponsorshipName || '',
     
     // Flags
@@ -1107,7 +1116,7 @@ function updateEmployee() {
     civil_id_expiry: toMySQLDate(editForm.value.civilIdExpiry),
     
     // Sponsorship
-    sponsorship_id: editForm.value.sponsorshipId || '',
+    sponsorship_id: editForm.value.sponsorshipId ? String(editForm.value.sponsorshipId) : '',
     sponsorship_name: editForm.value.sponsorshipName || '',
     
     // Flags
@@ -1749,12 +1758,12 @@ function updateEmployee() {
 
     <!-- Add Employee Modal -->
     <div v-if="showAddModal" class="mhr-modal__scrim" @click.self="showAddModal = false">
-      <div class="mhr-modal mhr-modal--lg" style="max-height:90vh;">
+      <div class="mhr-modal mhr-modal--lg">
         <div class="mhr-modal__hd">
           <h2 class="mhr-modal__title">Add Employee</h2>
           <p class="mhr-modal__sub">Fill in comprehensive employee information</p>
         </div>
-        <div class="mhr-modal__body" style="max-height:calc(90vh - 140px);overflow-y:auto;padding-right:8px;">
+        <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           
           <!-- Basic Information Section -->
           <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--mhr-line-2);">
@@ -2108,19 +2117,33 @@ function updateEmployee() {
         </div>
         <div class="mhr-modal__ft">
           <button class="mhr-btn mhr-btn--ghost" @click="showAddModal = false">Cancel</button>
-          <button class="mhr-btn mhr-btn--primary" @click="addEmployee">Add Employee</button>
+          <button 
+            class="mhr-btn mhr-btn--primary" 
+            @click="addEmployee"
+            :disabled="isAdding"
+            :style="isAdding ? 'opacity:0.6;cursor:not-allowed;' : ''"
+          >
+            <span v-if="isAdding" style="display:flex;align-items:center;gap:8px;">
+              <svg style="animation:spin 1s linear infinite;width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" opacity="0.25"/>
+                <path d="M12 2a10 10 0 0 1 10 10" opacity="0.75"/>
+              </svg>
+              Adding...
+            </span>
+            <span v-else>Add Employee</span>
+          </button>
         </div>
       </div>
     </div>
 
     <!-- Edit Employee Modal -->
     <div v-if="showEditModal" class="mhr-modal__scrim" @click.self="showEditModal = false">
-      <div class="mhr-modal mhr-modal--lg" style="max-height:90vh;">
+      <div class="mhr-modal mhr-modal--lg">
         <div class="mhr-modal__hd">
           <h2 class="mhr-modal__title">Edit Employee</h2>
           <p class="mhr-modal__sub">Update comprehensive employee information</p>
         </div>
-        <div class="mhr-modal__body" style="max-height:calc(90vh - 140px);overflow-y:auto;padding-right:8px;">
+        <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           
           <!-- All Events Info Banner -->
           <div v-if="isAllEvents && editingEmployee && editingEmployee.eventIds && editingEmployee.eventIds.length > 0" style="margin-bottom:24px;padding:16px 18px;background:linear-gradient(135deg, var(--green-600), var(--green-800));border-radius:10px;display:flex;align-items:start;gap:14px;box-shadow:0 4px 12px rgba(59, 111, 67, 0.25);">
@@ -2484,13 +2507,22 @@ function updateEmployee() {
 
         </div>
         <div class="mhr-modal__ft">
-          <button class="mhr-btn mhr-btn--ghost" @click="showEditModal = false" :disabled="isUpdating">Cancel</button>
-          <SubmitButton
+          <button class="mhr-btn mhr-btn--ghost" @click="showEditModal = false">Cancel</button>
+          <button 
+            class="mhr-btn mhr-btn--primary" 
             @click="updateEmployee"
-            :processing="isUpdating"
-            text="Save changes"
-            processing-text="Saving..."
-          />
+            :disabled="isUpdating"
+            :style="isUpdating ? 'opacity:0.6;cursor:not-allowed;' : ''"
+          >
+            <span v-if="isUpdating" style="display:flex;align-items:center;gap:8px;">
+              <svg style="animation:spin 1s linear infinite;width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" opacity="0.25"/>
+                <path d="M12 2a10 10 0 0 1 10 10" opacity="0.75"/>
+              </svg>
+              Saving...
+            </span>
+            <span v-else>Save changes</span>
+          </button>
         </div>
       </div>
     </div>
@@ -2665,7 +2697,12 @@ function updateEmployee() {
         </div>
         <div class="mhr-modal__ft">
           <button class="mhr-btn mhr-btn--ghost" @click="showImportModal = false" :disabled="isImporting">Cancel</button>
-          <button class="mhr-btn mhr-btn--primary" @click="importEmployees" :disabled="!importFile || isImporting">
+          <button 
+            class="mhr-btn mhr-btn--primary" 
+            @click="importEmployees" 
+            :disabled="!importFile || !importType || isImporting"
+            :style="(!importFile || !importType || isImporting) ? 'opacity: 0.5; cursor: not-allowed;' : ''"
+          >
             <AppIcon v-if="!isImporting" name="upload" :size="14" />
             <span v-if="isImporting">Importing...</span>
             <span v-else>Import Employees</span>

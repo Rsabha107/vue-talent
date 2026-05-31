@@ -406,7 +406,7 @@ function deleteLeaveRequest() {
   router.delete(route('hr.leave-requests.destroy', requestToDelete.value.id), {
     onSuccess: () => {
       showDeleteModal.value = false
-      showToast('Leave request archived successfully')
+      showToast('Leave request deleted successfully')
     }
   })
 }
@@ -535,7 +535,7 @@ function refreshLeaveRequests() {
                     <div v-if="request.statusTitle?.toLowerCase() !== 'approved'" style="border-top:1px solid var(--mhr-line-2);margin:4px 0;"></div>
                     <button v-if="request.statusTitle?.toLowerCase() !== 'approved'" @click="confirmDelete(request)" class="mhr-dropdown-item" style="width:100%;display:flex;align-items:center;gap:8px;padding:10px 14px;border:none;background:transparent;cursor:pointer;text-align:left;font-size:13px;color:var(--mhr-danger);" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
                       <AppIcon name="trash" :size="14" />
-                      <span>Archive</span>
+                      <span>Delete</span>
                     </button>
                   </div>
                 </div>
@@ -996,18 +996,18 @@ function refreshLeaveRequests() {
     <div v-if="showDeleteModal" class="mhr-modal__scrim" @click.self="showDeleteModal = false">
       <div class="mhr-modal mhr-modal--sm">
         <div class="mhr-modal__hd">
-          <h2 class="mhr-modal__title">Archive Leave Request</h2>
-          <p class="mhr-modal__sub">This action will archive the leave request.</p>
+          <h2 class="mhr-modal__title">Delete Leave Request</h2>
+          <p class="mhr-modal__sub">This action will permanently delete the leave request.</p>
         </div>
         <div class="mhr-modal__body">
           <p style="color:var(--mhr-ink-2);font-size:14px;line-height:1.5;">
-            Are you sure you want to archive this leave request for <strong>{{ requestToDelete?.employeeName }}</strong>?
-            This will mark it as archived.
+            Are you sure you want to delete this leave request for <strong>{{ requestToDelete?.employeeName }}</strong>?
+            This action cannot be undone.
           </p>
         </div>
         <div class="mhr-modal__ft">
           <button class="mhr-btn mhr-btn--ghost" @click="showDeleteModal = false">Cancel</button>
-          <button class="mhr-btn mhr-btn--danger" @click="deleteLeaveRequest">Archive</button>
+          <button class="mhr-btn mhr-btn--danger" @click="deleteLeaveRequest">Delete</button>
         </div>
       </div>
     </div>

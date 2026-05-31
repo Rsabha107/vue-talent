@@ -62,6 +62,7 @@ class DocumentController extends BaseHRController
         
         $employees = null;
         $events = null;
+        $currentEmployee = null;
         
         if ($isAdmin) {
             // Use same employee list format as leave requests
@@ -72,6 +73,15 @@ class DocumentController extends BaseHRController
             $events = Event::where('active_flag', 1)
                 ->orderBy('name')
                 ->get(['id', 'name']);
+        } else {
+            // For non-admin users, get their employee record
+            $currentEmployee = Employee::where('user_id', $user->id)->first();
+            if ($currentEmployee) {
+                $currentEmployee = [
+                    'id' => $currentEmployee->id,
+                    'name' => $currentEmployee->full_name,
+                ];
+            }
         }
         
         return Inertia::render('MeridianHR/Documents', array_merge(
@@ -81,6 +91,7 @@ class DocumentController extends BaseHRController
                 'categories' => $categories,
                 'employees' => $employees,
                 'events' => $events,
+                'currentEmployee' => $currentEmployee,
             ]
         ));
     }

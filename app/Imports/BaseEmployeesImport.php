@@ -3,6 +3,7 @@
 namespace App\Imports;
 
 use App\Models\Employee;
+use App\Models\User;
 use App\Models\Salutation;
 use App\Models\Gender;
 use App\Models\MaritalStatus;
@@ -15,6 +16,7 @@ use Maatwebsite\Excel\Concerns\WithValidation;
 use Maatwebsite\Excel\Concerns\SkipsOnFailure;
 use Maatwebsite\Excel\Concerns\SkipsFailures;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * Mode 1: Base Employee Import (No Event Assignment)
@@ -90,7 +92,7 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
 
         $this->processedCount++;
 
-        return new Employee([
+        $employee = new Employee([
             // Personal Information
             'first_name' => $row['first_name'] ?? null,
             'middle_name' => $row['middle_name'] ?? null,
@@ -134,6 +136,15 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
             'administrator_flag' => strtoupper($row['admin_flag'] ?? 'N') === 'Y' ? 'Y' : 'N',
             'archived' => 'N',
         ]);
+
+        // Save employee
+        $employee->save();
+
+        // Create user account if one doesn't exist
+        $this->createUserForEmployee($employee);
+
+        // Return null because we already saved the employee
+        return null;
     }
 
     public function rules(): array
@@ -195,6 +206,46 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
     public function getSkipCount(): int
     {
         return $this->skipCount;
+    }
+
+    /**
+     * Create a user account for an employee if one doesn't exist
+     */
+    protected function createUserForEmployee(Employee $employee): void
+    {
+        // Check if employee already has a user account
+        if ($employee->user_id) {
+            return;
+        }
+
+        // Check if a user with this email already exists
+        $existingUser = User::where('email', $employee->work_email_address)->first();
+        
+        if ($existingUser) {
+            // Link existing user to employee
+            $employee->user_id = $existingUser->id;
+            $employee->save();
+            
+            // Ensure user has employee-basic role if they don't have any roles
+            if ($existingUser->roles->isEmpty()) {
+                $existingUser->assignRole('employee-basic');
+            }
+        } else {
+            // Create new user with default password
+            $user = User::create([
+                'name' => $employee->full_name,
+                'email' => $employee->work_email_address,
+                'password' => Hash::make('Welcome@' . date('Y')), // Default password
+                'email_verified_at' => now(), // Auto-verify
+            ]);
+            
+            // Assign default employee-basic role
+            $user->assignRole('employee-basic');
+            
+            // Link user to employee
+            $employee->user_id = $user->id;
+            $employee->save();
+        }
     }
 
     public function getStats(): array
