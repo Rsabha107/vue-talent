@@ -20,6 +20,7 @@ const isRefreshing = ref(false)
 
 // Filters
 const searchQuery = ref('')
+const filterEvent = ref('')
 const filterMonth = ref('')
 const filterYear = ref('')
 const filterStatus = ref('all')
@@ -34,6 +35,11 @@ const filteredTimesheets = computed(() => {
       ts.employeeName.toLowerCase().includes(query) ||
       ts.employeeNumber.toLowerCase().includes(query)
     )
+  }
+
+  // Filter by event
+  if (filterEvent.value) {
+    result = result.filter(ts => ts.eventName === filterEvent.value)
   }
 
   // Filter by month
@@ -52,6 +58,11 @@ const filteredTimesheets = computed(() => {
   }
 
   return result
+})
+
+const uniqueEvents = computed(() => {
+  const events = new Set(props.timesheets.map(ts => ts.eventName).filter(e => e && e !== 'N/A'))
+  return Array.from(events).sort()
 })
 
 function viewDetails(ts) {
@@ -149,6 +160,11 @@ function getDayTitle(entry) {
           placeholder="Search by employee name or number..."
         />
       </div>
+      <div class="filter-group">        <select v-model="filterEvent" class="mhr-select filter-select">
+          <option value="">All Events</option>
+          <option v-for="event in uniqueEvents" :key="event" :value="event">{{ event }}</option>
+        </select>
+      </div>
       <div class="filter-group">
         <select v-model="filterMonth" class="mhr-select filter-select">
           <option value="">All Months</option>
@@ -180,8 +196,8 @@ function getDayTitle(entry) {
           <option v-for="status in statuses" :key="status.id" :value="status.title.toLowerCase()">{{ status.title }}</option>
         </select>
       </div>
-      <div v-if="searchQuery || filterMonth || filterYear || filterStatus !== 'all'" class="filter-clear">
-        <button class="mhr-btn mhr-btn--ghost mhr-btn--sm" @click="searchQuery = ''; filterMonth = ''; filterYear = ''; filterStatus = 'all'">
+      <div v-if="searchQuery || filterEvent || filterMonth || filterYear || filterStatus !== 'all'" class="filter-clear">
+        <button class="mhr-btn mhr-btn--ghost mhr-btn--sm" @click="searchQuery = ''; filterEvent = ''; filterMonth = ''; filterYear = ''; filterStatus = 'all'">
           <AppIcon name="x" :size="14" /> Clear Filters
         </button>
       </div>
@@ -194,6 +210,7 @@ function getDayTitle(entry) {
           <thead>
             <tr>
               <th>EMPLOYEE</th>
+              <th>EVENT</th>
               <th>PERIOD</th>
               <th>STATUS</th>
               <th style="text-align:right;">WORKED</th>
@@ -205,8 +222,8 @@ function getDayTitle(entry) {
           </thead>
           <tbody>
             <tr v-if="filteredTimesheets.length === 0">
-              <td colspan="8" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
-                <span v-if="searchQuery || filterMonth || filterYear || filterStatus !== 'all'">No timesheets match your filters.</span>
+              <td colspan="9" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
+                <span v-if="searchQuery || filterEvent || filterMonth || filterYear || filterStatus !== 'all'">No timesheets match your filters.</span>
                 <span v-else>No timesheets found.</span>
               </td>
             </tr>
@@ -215,6 +232,7 @@ function getDayTitle(entry) {
                 <div style="font-weight:500;">{{ ts.employeeName }}</div>
                 <div style="font-size:12px;color:var(--mhr-ink-3);">{{ ts.employeeNumber }}</div>
               </td>
+              <td style="color:var(--mhr-ink-2);font-size:13px;">{{ ts.eventName }}</td>
               <td style="color:var(--mhr-ink-2);">{{ ts.period }}</td>
               <td>
                 <span :class="['mhr-badge', getStatusClass(ts.statusTitle)]">{{ ts.statusTitle }}</span>

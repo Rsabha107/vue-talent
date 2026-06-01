@@ -434,6 +434,7 @@ abstract class BaseHRController extends Controller
             'viewOwnTimesheets' => true,
             'createOwnTimesheets' => true,
             'editOwnTimesheets' => true,
+            'viewPayslips' => $user->can('view-payslips'),
             
             // Manager permissions
             'viewTeamLeaves' => $user->can('view.team.leaves'),

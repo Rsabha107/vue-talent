@@ -249,8 +249,8 @@ export function useHRNavigation() {
         route: 'hr.documents'
       })
       
-      // Employees (both basic and full) see payslips (managers and admins don't)
-      if (hrRole.value === 'employee-full' || hrRole.value === 'employee-basic') {
+      // Show payslips if user has permission
+      if (can.value.viewPayslips) {
         records.items.push({
           id: 'payslips',
           label: 'My payslip',
@@ -268,7 +268,7 @@ export function useHRNavigation() {
       
       nav.push(records)
     } else {
-      // Basic employees get documents, payslips, and profile in Personal section
+      // Basic employees get documents, payslips (if permission), and profile in Personal section
       const personalSection = nav.find(section => section.group === 'Personal')
       if (personalSection) {
         personalSection.items.push({
@@ -278,12 +278,15 @@ export function useHRNavigation() {
           route: 'hr.documents'
         })
         
-        personalSection.items.push({
-          id: 'payslips',
-          label: 'My payslip',
-          icon: 'wallet',
-          route: 'hr.payslips'
-        })
+        // Show payslips if user has permission
+        if (can.value.viewPayslips) {
+          personalSection.items.push({
+            id: 'payslips',
+            label: 'My payslip',
+            icon: 'wallet',
+            route: 'hr.payslips'
+          })
+        }
         
         personalSection.items.push({
           id: 'profile',

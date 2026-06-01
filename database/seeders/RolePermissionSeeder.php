@@ -157,6 +157,7 @@ class RolePermissionSeeder extends Seeder
             // Personal data access (managers need access to their own data)
             'view-documents',
             'view-addresses',
+            'view-payslips',
             // Legacy
             'approve-leave',
             'approve-timesheet',

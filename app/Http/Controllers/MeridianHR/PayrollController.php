@@ -254,23 +254,34 @@ class PayrollController extends BaseHRController
     /**
      * Show missing timesheets report
      */
-    public function missingTimesheets()
+    public function missingTimesheets(Request $request)
     {
-        $currentMonth = now()->month;
-        $currentYear = now()->year;
+        // Get month/year from request or default to current
+        $selectedMonth = $request->input('month', now()->month);
+        $selectedYear = $request->input('year', now()->year);
         
-        // Get all active employees
+        // Get all active employees with their events
         $activeEmployees = Employee::active()
-            ->with(['department', 'designation', 'user'])
+            ->with([
+                'user',
+                'events' => function($q) {
+                    $q->where('employee_events.is_active', 1);
+                }
+            ])
             ->get();
         
         $missingData = [];
         
         foreach ($activeEmployees as $employee) {
-            // Check if employee has submitted timesheet for current month
+            // Skip employees without any active event assignments
+            if ($employee->events->isEmpty()) {
+                continue;
+            }
+            
+            // Check if employee has submitted timesheet for selected month
             $hasTimesheet = EmployeeTimesheet::where('employee_id', $employee->id)
-                ->where('month_id', $currentMonth)
-                ->where('year', $currentYear)
+                ->where('month_id', $selectedMonth)
+                ->where('year', $selectedYear)
                 ->where('archived', 'N')
                 ->exists();
             
@@ -282,18 +293,31 @@ class PayrollController extends BaseHRController
                     ->first();
                 
                 // Calculate days overdue (assuming deadline is 5th of next month)
-                $deadline = now()->startOfMonth()->addDays(5);
+                $selectedDate = \Carbon\Carbon::create($selectedYear, $selectedMonth, 1);
+                $deadline = $selectedDate->copy()->addMonth()->startOfMonth()->addDays(5);
                 $daysOverdue = now()->diffInDays($deadline, false);
                 $daysOverdue = $daysOverdue < 0 ? abs($daysOverdue) : 0;
+                
+                // Get all event names for this employee
+                $eventNames = $employee->events->pluck('name')->toArray();
+                
+                // Get department and designation from employee_events pivot
+                $departmentIds = $employee->events->pluck('pivot.department_id')->filter()->unique();
+                $designationIds = $employee->events->pluck('pivot.designation_id')->filter()->unique();
+                
+                // Fetch department and designation names
+                $departments = \App\Models\Department::whereIn('id', $departmentIds)->pluck('name')->toArray();
+                $designations = \App\Models\Designation::whereIn('id', $designationIds)->pluck('name')->toArray();
                 
                 $missingData[] = [
                     'id' => $employee->id,
                     'fullName' => $employee->full_name,
                     'email' => $employee->user->email ?? 'N/A',
                     'employeeNumber' => $employee->employee_number,
-                    'department' => $employee->department->name ?? 'N/A',
-                    'designation' => $employee->designation->title ?? 'N/A',
-                    'period' => now()->format('F Y'),
+                    'department' => !empty($departments) ? implode(', ', $departments) : 'N/A',
+                    'designation' => !empty($designations) ? implode(', ', $designations) : 'N/A',
+                    'events' => $eventNames,
+                    'period' => $selectedDate->format('F Y'),
                     'lastSubmittedDate' => $lastTimesheet?->created_at?->toDateString(),
                     'daysOverdue' => $daysOverdue,
                 ];
@@ -303,6 +327,8 @@ class PayrollController extends BaseHRController
         return Inertia::render('Payroll/MissingTimesheets', [
             'payrollPage' => 'missing-timesheets',
             'missingTimesheets' => $missingData,
+            'selectedMonth' => (int) $selectedMonth,
+            'selectedYear' => (int) $selectedYear,
             'can' => $this->getPayrollPermissions(),
             'pendingCounts' => $this->getPendingCounts(),
             'modules' => $this->getAccessibleModules(),
@@ -391,6 +417,7 @@ class PayrollController extends BaseHRController
                 'employeeName' => $ts->employee?->full_name,
                 'employeeNumber' => $ts->employee?->employee_number,
                 'employeeColor' => $ts->employee?->avatar_color ?? 0,
+                'eventName' => $ts->event?->name ?? 'N/A',
                 'period' => $period,
                 'monthNumber' => $month,
                 'year' => $year,
