@@ -45,7 +45,22 @@ class Event extends Model
     public function employees()
     {
         return $this->belongsToMany(\App\Models\Employee::class, 'employee_events', 'event_id', 'employee_id')
-            ->withPivot(['assigned_at', 'released_at', 'event_role', 'event_department_id', 'is_active'])
+            ->withPivot([
+                'assigned_at',
+                'released_at',
+                'is_active',
+                'agreement_number',
+                'entity_id',
+                'contract_type_id',
+                'department_id',
+                'designation_id',
+                'directorate_id',
+                'functional_area_id',
+                'job_level_id',
+                'reporting_to_id',
+                'employee_type',
+                'salary_basis_id',
+            ])
             ->withTimestamps();
     }
 

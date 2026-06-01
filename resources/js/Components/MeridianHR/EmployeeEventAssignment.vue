@@ -19,14 +19,12 @@ const showDropdown     = ref(false)
 const removingEmployee = ref(null)
 const selectedIds      = ref([])
 const assignmentDate   = ref(new Date().toISOString().split('T')[0])
-const eventRole        = ref('')
 const loading          = ref(false)
 const empSearch        = ref('')
 
 // Copy from event state
 const sourceEvents     = ref([])
 const selectedSourceEvent = ref(null)
-const includeRoles     = ref(true)
 const loadingEvents    = ref(false)
 
 // Template state
@@ -82,14 +80,12 @@ function assignEmployees() {
     {
       employee_ids: selectedIds.value,
       assigned_at: assignmentDate.value,
-      event_role: eventRole.value || null,
     },
     {
       preserveScroll: true,
       onSuccess: () => {
         showAssignModal.value = false
         selectedIds.value = []
-        eventRole.value = ''
         emit('refresh')
       },
       onFinish: () => { loading.value = false },
@@ -99,7 +95,6 @@ function assignEmployees() {
 
 function openAssignModal() {
   selectedIds.value = []
-  eventRole.value = ''
   empSearch.value = ''
   assignmentDate.value = new Date().toISOString().split('T')[0]
   showAssignModal.value = true
@@ -158,7 +153,6 @@ function copyTeam() {
     route('hr.events.copy-team', props.event.id),
     {
       source_event_id: selectedSourceEvent.value,
-      include_roles: includeRoles.value,
       assigned_at: assignmentDate.value,
     },
     {
@@ -363,7 +357,6 @@ function fmtDate(s) {
           <tr>
             <th>Employee</th>
             <th>Department</th>
-            <th>Event Role</th>
             <th>Assigned</th>
             <th style="width:52px;"></th>
           </tr>
@@ -388,12 +381,6 @@ function fmtDate(s) {
             </td>
             <td>
               <span v-if="emp.department" style="font-size:13px;color:var(--mhr-ink-2);">{{ emp.department }}</span>
-              <span v-else style="color:var(--mhr-ink-4);">—</span>
-            </td>
-            <td>
-              <span v-if="emp.eventRole" class="mhr-badge mhr-badge--neutral" style="font-size:11px;">
-                {{ emp.eventRole }}
-              </span>
               <span v-else style="color:var(--mhr-ink-4);">—</span>
             </td>
             <td style="font-size:13px;color:var(--mhr-ink-3);white-space:nowrap;">
@@ -519,21 +506,10 @@ function fmtDate(s) {
             </p>
           </div>
 
-          <!-- Date + Role row -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-            <div class="mhr-field">
-              <label class="mhr-field__label">ASSIGNMENT DATE *</label>
-              <input v-model="assignmentDate" type="date" class="mhr-input" />
-            </div>
-            <div class="mhr-field">
-              <label class="mhr-field__label">EVENT ROLE <span style="font-weight:400;color:var(--mhr-ink-3);">(optional)</span></label>
-              <input
-                v-model="eventRole"
-                type="text"
-                class="mhr-input"
-                placeholder="e.g. Coordinator, Volunteer"
-              />
-            </div>
+          <!-- Date row -->
+          <div class="mhr-field">
+            <label class="mhr-field__label">ASSIGNMENT DATE *</label>
+            <input v-model="assignmentDate" type="date" class="mhr-input" />
           </div>
         </div>
       </div>
@@ -620,13 +596,6 @@ function fmtDate(s) {
           <div class="mhr-field">
             <label class="mhr-field__label">ASSIGNMENT DATE *</label>
             <input v-model="assignmentDate" type="date" class="mhr-input" />
-          </div>
-
-          <div class="mhr-field">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--mhr-ink-2);">
-              <input type="checkbox" v-model="includeRoles" style="cursor:pointer;" />
-              <span>Include event roles from source</span>
-            </label>
           </div>
         </div>
       </div>

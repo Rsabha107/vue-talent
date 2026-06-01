@@ -171,7 +171,6 @@ class EventTeamTemplateController extends BaseHRController
 
                 $pivotData = [
                     'assigned_at' => $validated['assigned_at'],
-                    'event_role' => $assignment['role_name'],
                     'is_active' => 1,
                     'created_by' => auth()->id() ?? 1,
                     'updated_by' => auth()->id() ?? 1,

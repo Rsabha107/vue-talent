@@ -75,7 +75,6 @@ class EventController extends BaseHRController
                     'empNumber' => $emp->employee_number,
                     'department' => $emp->department?->name,
                     'designation' => $emp->designation?->name,
-                    'eventRole' => $emp->pivot->event_role,
                     'assignedAt' => $emp->pivot->assigned_at,
                 ];
             });
@@ -210,7 +209,6 @@ class EventController extends BaseHRController
                     'empNumber' => $emp->employee_number,
                     'department' => $emp->department?->name,
                     'designation' => $emp->designation?->name,
-                    'eventRole' => $emp->pivot->event_role,
                     'assignedAt' => $emp->pivot->assigned_at,
                     'releasedAt' => $emp->pivot->released_at,
                 ];
@@ -231,7 +229,6 @@ class EventController extends BaseHRController
             'employee_ids' => 'required|array',
             'employee_ids.*' => 'exists:employees_all,id',
             'assigned_at' => 'required|date',
-            'event_role' => 'nullable|string|max:255',
         ]);
 
         $assignedCount = 0;
@@ -248,7 +245,6 @@ class EventController extends BaseHRController
                         'is_active' => 1,
                         'assigned_at' => $validated['assigned_at'],
                         'released_at' => null,
-                        'event_role' => $validated['event_role'] ?? null,
                     ]);
                     $assignedCount++;
                 } else {
@@ -258,7 +254,6 @@ class EventController extends BaseHRController
                 // New assignment
                 $event->employees()->attach($empId, [
                     'assigned_at' => $validated['assigned_at'],
-                    'event_role' => $validated['event_role'] ?? null,
                     'is_active' => 1,
                     'created_by' => auth()->id() ?? 1,
                     'updated_by' => auth()->id() ?? 1,
@@ -371,7 +366,6 @@ class EventController extends BaseHRController
     {
         $validated = $request->validate([
             'source_event_id' => 'required|exists:events,id',
-            'include_roles' => 'boolean',
             'assigned_at' => 'required|date',
         ]);
 
@@ -404,11 +398,6 @@ class EventController extends BaseHRController
                 'created_by' => auth()->id() ?? 1,
                 'updated_by' => auth()->id() ?? 1,
             ];
-
-            // Optionally include the event role from source
-            if ($validated['include_roles'] ?? true) {
-                $pivotData['event_role'] = $emp->pivot->event_role;
-            }
 
             if ($existing) {
                 // Reactivate previously released employee
@@ -486,7 +475,6 @@ class EventController extends BaseHRController
                     'event_id' => $event->id,
                     'employee_id' => $employee->id,
                     'assigned_at' => $assignedAt,
-                    'event_role' => $eventRole,
                     'is_active' => 1,
                     'created_at' => now(),
                     'updated_at' => now(),
