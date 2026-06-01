@@ -71,7 +71,7 @@ const maxHeadcount = computed(() => {
           {{ greet() }}, <em>{{ (me.name || '').split(' ')[0] }}</em>
         </h1>
         <p class="mhr-page-head__sub">
-          {{ todayPretty() }} · {{ me.systemRole }}<template v-if="me.systemRoles && me.systemRoles.length > 1"> +{{ me.systemRoles.length - 1 }}</template>
+          {{ todayPretty() }}
         </p>
       </div>
     </div>
@@ -278,9 +278,9 @@ const maxHeadcount = computed(() => {
           <div class="mhr-stat__delta">across all teams <AppIcon name="chevron" :size="11" style="margin-left:4px;" /></div>
         </div>
         <div class="mhr-stat">
-          <div class="mhr-stat__label">Payroll · May 2026</div>
-          <div class="mhr-stat__value">$1.84m</div>
-          <div class="mhr-stat__delta">Runs in 26 days</div>
+          <div class="mhr-stat__label">Payroll<template v-if="stats.lastPayrollMonth"> · {{ stats.lastPayrollMonth }}</template></div>
+          <div class="mhr-stat__value">{{ stats.lastPayrollTotal || 'N/A' }}</div>
+          <div class="mhr-stat__delta">Last month's total</div>
         </div>
       </div>
 

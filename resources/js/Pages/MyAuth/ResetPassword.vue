@@ -124,7 +124,7 @@ const submit = () => form.post("/reset-password");
           <div class="mt-5 text-center">
             <p>
               Remember It ?
-              <Link class="fw-medium text-primary" :href="route('mylogin')">
+              <Link class="fw-medium text-primary" :href="route('login')">
                 Sign In here
               </Link>
             </p>

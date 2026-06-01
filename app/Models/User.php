@@ -3,12 +3,14 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Mail\SendOtpMail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Mail;
 use Spatie\OneTimePasswords\Models\Concerns\HasOneTimePasswords;
 use Spatie\Permission\Traits\HasRoles;
 
@@ -45,5 +47,23 @@ class User extends Authenticatable
     public function performedLeaveActions()
     {
         return $this->hasMany(EmployeeLeaveRequest::class, 'performer_id');
+    }
+
+    /**
+     * Send a one-time password to the user via email.
+     * Overrides the default implementation from HasOneTimePasswords trait.
+     */
+    public function sendOneTimePassword(): void
+    {
+        $otpModel = $this->createOneTimePassword();
+        $expiresInMinutes = config('one-time-passwords.default_expires_in_minutes', 2);
+
+        Mail::to($this->email)->send(
+            new SendOtpMail(
+                otpCode: $otpModel->password,
+                userName: $this->name,
+                expiresInMinutes: $expiresInMinutes
+            )
+        );
     }
 }

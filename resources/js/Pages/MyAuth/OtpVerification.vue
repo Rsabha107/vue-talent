@@ -96,7 +96,7 @@ function resend() {
               </button>
             </p>
             <p>
-              <Link class="text-muted" :href="route('mylogin')">
+              <Link class="text-muted" :href="route('login')">
                 <i class="mdi mdi-arrow-left me-1"></i> Back to Login
               </Link>
             </p>

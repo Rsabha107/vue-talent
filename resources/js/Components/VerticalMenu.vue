@@ -171,7 +171,7 @@ import { Head, Link } from "@inertiajs/vue3";
               </Link>
             </li>
             <li>
-              <Link :href="route('mylogin')" key="t-login"> Login </Link>
+              <Link :href="route('login')" key="t-login"> Login </Link>
             </li>
             <li>
               <Link :href="route('users.index')" key="t-users"> Users </Link>

@@ -268,7 +268,7 @@ const currentYear = new Date().getFullYear();
                     <Link
                       v-if="canReset"
                       class="text-muted"
-                      :href="route('myforgotpassword')"
+                      :href="route('password.request')"
                     >
                       <i class="mdi mdi-lock me-1"> </i>
                       Forgot your password?
@@ -278,7 +278,7 @@ const currentYear = new Date().getFullYear();
                     Don't have an account ?
                 <Link
                   class="fw-medium text-primary"
-                  :href="route('myregister')"
+                  :href="route('register')"
                 >
                   Signup now
                 </Link>
@@ -293,7 +293,7 @@ const currentYear = new Date().getFullYear();
                 Don't have an account ?
                 <Link
                   class="fw-medium text-primary"
-                  :href="route('myregister')"
+                  :href="route('register')"
                 >
                   Signup now
                 </Link>

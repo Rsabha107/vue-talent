@@ -11,7 +11,7 @@ class EnsureOtpPending
     public function handle(Request $request, Closure $next): Response
     {
         if (! $request->session()->has('otp_user_id')) {
-            return redirect()->route('mylogin');
+            return redirect()->route('login');
         }
 
         return $next($request);

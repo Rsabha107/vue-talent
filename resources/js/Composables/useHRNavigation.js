@@ -203,7 +203,7 @@ export function useHRNavigation() {
       if (hasExtendedAccess) {
         personal.items.push({
           id: 'addresses',
-          label: 'My address',
+          label: 'Addresses',
           icon: 'pin',
           route: 'hr.addresses'
         })
@@ -225,7 +225,7 @@ export function useHRNavigation() {
       
       personal.items.push({
         id: 'emergency',
-        label: 'Emergency contact',
+        label: 'Emergency contacts',
         icon: 'user',
         route: 'hr.emergency'
       })
@@ -249,11 +249,11 @@ export function useHRNavigation() {
         route: 'hr.documents'
       })
       
-      // Only employee-full sees payslips (managers and admins don't)
-      if (hrRole.value === 'employee-full') {
+      // Employees (both basic and full) see payslips (managers and admins don't)
+      if (hrRole.value === 'employee-full' || hrRole.value === 'employee-basic') {
         records.items.push({
           id: 'payslips',
-          label: 'Payslips',
+          label: 'My payslip',
           icon: 'wallet',
           route: 'hr.payslips'
         })
@@ -268,7 +268,7 @@ export function useHRNavigation() {
       
       nav.push(records)
     } else {
-      // Basic employees only get documents and profile in Personal section
+      // Basic employees get documents, payslips, and profile in Personal section
       const personalSection = nav.find(section => section.group === 'Personal')
       if (personalSection) {
         personalSection.items.push({
@@ -276,6 +276,13 @@ export function useHRNavigation() {
           label: 'My documents',
           icon: 'doc',
           route: 'hr.documents'
+        })
+        
+        personalSection.items.push({
+          id: 'payslips',
+          label: 'My payslip',
+          icon: 'wallet',
+          route: 'hr.payslips'
         })
         
         personalSection.items.push({
@@ -370,7 +377,7 @@ export function useHRNavigation() {
     'approve-leave': 'Leave approvals',
     'approve-time': 'Timesheet approvals',
     documents: 'Documents',
-    payslips: 'Payslips',
+    payslips: 'My Payslip',
     employee: 'Employees',
     profile: 'My profile',
     settings: 'Application Settings',

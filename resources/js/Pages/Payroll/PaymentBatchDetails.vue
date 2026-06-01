@@ -203,38 +203,38 @@ function exportBatch() {
       <div style="padding:20px;border-bottom:1px solid var(--mhr-line);">
         <h3 style="font-size:14px;font-weight:600;color:var(--mhr-ink);margin:0;">Payment Details ({{ batch.items.length }})</h3>
       </div>
-      <div class="mhr-table-wrap">
-        <table class="mhr-table">
+      <div class="mhr-table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+        <table class="mhr-table" style="min-width:1800px;">
           <thead>
             <tr>
-              <th>TIMESHEET PERIOD</th>
-              <th>AGREEMENT #</th>
-              <th>NAME</th>
-              <th>ROLE</th>
-              <th>START DATE</th>
-              <th>END DATE</th>
-              <th style="text-align:right;">SALARY/MONTH</th>
-              <th>SALARY BASIS</th>
-              <th style="text-align:right;">DAYS WORKED</th>
-              <th style="text-align:right;">TOTAL</th>
-              <th>IBAN</th>
-              <th>ACCOUNT HOLDER NAME</th>
+              <th style="min-width:140px;">TIMESHEET PERIOD</th>
+              <th style="min-width:120px;">AGREEMENT #</th>
+              <th style="min-width:180px;">NAME</th>
+              <th style="min-width:150px;">ROLE</th>
+              <th style="min-width:100px;">START DATE</th>
+              <th style="min-width:100px;">END DATE</th>
+              <th style="text-align:right;min-width:130px;">SALARY/MONTH</th>
+              <th style="min-width:120px;">SALARY BASIS</th>
+              <th style="text-align:right;min-width:100px;">DAYS WORKED</th>
+              <th style="text-align:right;min-width:120px;">TOTAL</th>
+              <th style="min-width:180px;">IBAN</th>
+              <th style="min-width:180px;">ACCOUNT HOLDER NAME</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in batch.items" :key="item.id">
-              <td style="color:var(--mhr-ink-2);font-size:13px;">{{ item.timesheetPeriod }}</td>
-              <td style="font-family:monospace;font-weight:500;">{{ item.agreementNumber }}</td>
-              <td style="font-weight:500;color:var(--mhr-ink);">{{ item.employeeName }}</td>
-              <td style="color:var(--mhr-ink-2);font-size:13px;">{{ item.role }}</td>
-              <td style="color:var(--mhr-ink-2);font-size:13px;">{{ item.startDate }}</td>
-              <td style="color:var(--mhr-ink-2);font-size:13px;">{{ item.endDate }}</td>
-              <td style="text-align:right;font-family:monospace;color:var(--mhr-ink-2);">{{ fmtMoney(item.monthlySalary) }}</td>
-              <td style="color:var(--mhr-ink-2);font-size:13px;">{{ item.salaryBasis }}</td>
-              <td style="text-align:right;color:var(--mhr-ink);">{{ item.daysWorked }}</td>
-              <td style="text-align:right;font-weight:600;color:var(--green-700);font-family:monospace;">{{ fmtMoney(item.paymentAmount) }}</td>
-              <td style="font-family:monospace;font-size:13px;color:var(--mhr-ink-2);">{{ item.iban }}</td>
-              <td style="color:var(--mhr-ink-2);font-size:13px;">{{ item.accountHolderName }}</td>
+              <td style="color:var(--mhr-ink-2);font-size:13px;white-space:nowrap;">{{ item.timesheetPeriod }}</td>
+              <td style="font-family:monospace;font-weight:500;white-space:nowrap;">{{ item.agreementNumber }}</td>
+              <td style="font-weight:500;color:var(--mhr-ink);white-space:nowrap;">{{ item.employeeName }}</td>
+              <td style="color:var(--mhr-ink-2);font-size:13px;white-space:nowrap;">{{ item.role }}</td>
+              <td style="color:var(--mhr-ink-2);font-size:13px;white-space:nowrap;">{{ item.startDate }}</td>
+              <td style="color:var(--mhr-ink-2);font-size:13px;white-space:nowrap;">{{ item.endDate }}</td>
+              <td style="text-align:right;font-family:monospace;color:var(--mhr-ink-2);white-space:nowrap;">{{ fmtMoney(item.monthlySalary) }}</td>
+              <td style="color:var(--mhr-ink-2);font-size:13px;white-space:nowrap;">{{ item.salaryBasis }}</td>
+              <td style="text-align:right;color:var(--mhr-ink);white-space:nowrap;">{{ item.daysWorked }}</td>
+              <td style="text-align:right;font-weight:600;color:var(--green-700);font-family:monospace;white-space:nowrap;">{{ fmtMoney(item.paymentAmount) }}</td>
+              <td style="font-family:monospace;font-size:13px;color:var(--mhr-ink-2);white-space:nowrap;">{{ item.iban }}</td>
+              <td style="color:var(--mhr-ink-2);font-size:13px;white-space:nowrap;">{{ item.accountHolderName }}</td>
             </tr>
           </tbody>
         </table>

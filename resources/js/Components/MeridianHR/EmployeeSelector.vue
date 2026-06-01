@@ -16,10 +16,12 @@ const showDropdown = ref(false)
 const searchQuery = ref('')
 
 const selectedEmployee = computed(() => {
+  if (!props.employees || !Array.isArray(props.employees)) return null
   return props.employees.find(emp => emp.id === props.modelValue)
 })
 
 const filteredEmployees = computed(() => {
+  if (!props.employees || !Array.isArray(props.employees)) return []
   if (!searchQuery.value) return props.employees
   
   const query = searchQuery.value.toLowerCase()

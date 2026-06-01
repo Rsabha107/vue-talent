@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import PayrollLayout from '@/Layouts/PayrollLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
@@ -19,6 +19,11 @@ const showProcessModal = ref(false)
 const selectedBatch = ref(null)
 const isProcessing = ref(false)
 const isRefreshing = ref(false)
+
+// Checkbox selection for bulk actions
+const selectedBatchIds = ref(new Set())
+const showBulkProcessModal = ref(false)
+const selectAllCheckbox = ref(null)
 
 // Create batch form
 const batchForm = ref({
@@ -66,6 +71,36 @@ const years = computed(() => {
   const currentYear = new Date().getFullYear()
   return [currentYear - 2, currentYear - 1, currentYear].map(y => y.toString())
 })
+
+// Checkbox selection computed properties
+const allSelected = computed(() => {
+  const processableBatches = props.batches.filter(b => b.canProcess)
+  return processableBatches.length > 0 && processableBatches.every(b => selectedBatchIds.value.has(b.id))
+})
+
+const someSelected = computed(() => {
+  return selectedBatchIds.value.size > 0 && !allSelected.value
+})
+
+const selectedCount = computed(() => selectedBatchIds.value.size)
+
+// Watch for indeterminate state
+watch([someSelected, allSelected], () => {
+  nextTick(() => {
+    if (selectAllCheckbox.value) {
+      selectAllCheckbox.value.indeterminate = someSelected.value
+    }
+  })
+})
+
+// Auto-update batch name when month or year changes
+watch(
+  () => [batchForm.value.month_id, batchForm.value.year],
+  ([monthId, year]) => {
+    const monthName = months.find(m => m.id === monthId)?.name || ''
+    batchForm.value.batch_name = `Payroll - ${monthName} ${year}`
+  }
+)
 
 function openCreateModal() {
   showCreateModal.value = true
@@ -219,6 +254,53 @@ function refreshData() {
     }
   })
 }
+
+// Checkbox selection functions
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedBatchIds.value.clear()
+  } else {
+    props.batches.filter(b => b.canProcess).forEach(b => selectedBatchIds.value.add(b.id))
+  }
+}
+
+function toggleBatchSelection(batchId) {
+  if (selectedBatchIds.value.has(batchId)) {
+    selectedBatchIds.value.delete(batchId)
+  } else {
+    selectedBatchIds.value.add(batchId)
+  }
+}
+
+// Bulk process functions
+function openBulkProcessModal() {
+  if (selectedBatchIds.value.size === 0) return
+  showBulkProcessModal.value = true
+}
+
+function closeBulkProcessModal() {
+  showBulkProcessModal.value = false
+}
+
+function confirmBulkProcess() {
+  const batchIds = Array.from(selectedBatchIds.value)
+  
+  isProcessing.value = true
+  router.post(route('payroll.payment-batches.bulk-process'), { batch_ids: batchIds }, {
+    preserveScroll: true,
+    onSuccess: () => {
+      showToast(`${batchIds.length} batch(es) marked as processed`)
+      selectedBatchIds.value.clear()
+      closeBulkProcessModal()
+    },
+    onError: (errors) => {
+      showToast(Object.values(errors)[0] || 'Failed to process batches', true)
+    },
+    onFinish: () => {
+      isProcessing.value = false
+    }
+  })
+}
 </script>
 
 <template>
@@ -230,6 +312,13 @@ function refreshData() {
         <p class="mhr-page-head__sub">Create and manage payment batches for approved timesheets</p>
       </div>
       <div class="mhr-page-head__actions">
+        <button 
+          v-if="selectedCount > 0" 
+          class="mhr-btn mhr-btn--outline" 
+          @click="openBulkProcessModal"
+        >
+          <AppIcon name="dollar" :size="14" /> Mark as Processed ({{ selectedCount }})
+        </button>
         <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshData" />
         <button class="mhr-btn mhr-btn--primary" @click="openCreateModal">
           <AppIcon name="plus" /> Create Payment Batch
@@ -243,6 +332,15 @@ function refreshData() {
         <table class="mhr-table">
           <thead>
             <tr>
+              <th style="width:40px;">
+                <input 
+                  ref="selectAllCheckbox"
+                  type="checkbox" 
+                  :checked="allSelected" 
+                  @change="toggleSelectAll"
+                  style="cursor:pointer;"
+                />
+              </th>
               <th>BATCH NUMBER</th>
               <th>NAME</th>
               <th>PERIOD</th>
@@ -256,13 +354,22 @@ function refreshData() {
           </thead>
           <tbody>
             <tr v-if="batches.length === 0">
-              <td colspan="9" style="text-align:center;padding:40px;">
+              <td colspan="10" style="text-align:center;padding:40px;">
                 <AppIcon name="box" :size="32" style="color:var(--mhr-ink-3);margin-bottom:12px;" />
                 <div style="color:var(--mhr-ink-3);font-size:14px;">No payment batches yet</div>
                 <div style="color:var(--mhr-ink-4);font-size:12px;margin-top:4px;">Create your first batch to get started</div>
               </td>
             </tr>
             <tr v-for="batch in batches" :key="batch.id">
+              <td>
+                <input 
+                  v-if="batch.canProcess"
+                  type="checkbox" 
+                  :checked="selectedBatchIds.has(batch.id)"
+                  @change="toggleBatchSelection(batch.id)"
+                  style="cursor:pointer;"
+                />
+              </td>
               <td style="font-family:monospace;font-weight:600;color:var(--mhr-ink);">{{ batch.batchNumber }}</td>
               <td style="font-weight:500;color:var(--mhr-ink);">{{ batch.batchName }}</td>
               <td style="color:var(--mhr-ink-2);">{{ batch.period }}</td>
@@ -327,16 +434,6 @@ function refreshData() {
           <p class="mhr-modal__sub">Generate a new payment batch from approved timesheets</p>
         </div>
         <div class="mhr-modal__body">
-          <div class="mhr-field">
-            <label class="mhr-field__label">Batch Name</label>
-            <input 
-              v-model="batchForm.batch_name" 
-              type="text" 
-              class="mhr-input" 
-              placeholder="e.g., Payroll - May 2026"
-            />
-          </div>
-
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div class="mhr-field">
               <label class="mhr-field__label">Month</label>
@@ -350,6 +447,16 @@ function refreshData() {
                 <option v-for="year in years" :key="year" :value="year">{{ year }}</option>
               </select>
             </div>
+          </div>
+
+          <div class="mhr-field">
+            <label class="mhr-field__label">Batch Name</label>
+            <input 
+              v-model="batchForm.batch_name" 
+              type="text" 
+              class="mhr-input" 
+              placeholder="e.g., Payroll - May 2026"
+            />
           </div>
 
           <div class="mhr-field">
@@ -476,6 +583,47 @@ function refreshData() {
           <button class="mhr-btn mhr-btn--danger" @click="confirmDelete">
             <AppIcon name="trash" :size="14" style="vertical-align:middle;margin-right:4px;" />
             Delete Batch
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bulk Process Confirmation Modal -->
+    <div v-if="showBulkProcessModal" class="mhr-modal__scrim" @click.self="closeBulkProcessModal">
+      <div class="mhr-modal">
+        <div class="mhr-modal__hd">
+          <h2 class="mhr-modal__title">Mark Batches as Processed</h2>
+          <p class="mhr-modal__sub">{{ selectedCount }} batch(es) selected</p>
+        </div>
+        <div class="mhr-modal__body">
+          <div style="background:var(--mhr-info-bg);border-radius:8px;padding:12px;display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;">
+            <AppIcon name="info" :size="16" style="color:var(--mhr-info);flex-shrink:0;" />
+            <div style="font-size:13px;color:var(--mhr-ink-2);line-height:1.5;">
+              This will mark all selected batches as <strong>Processed</strong>. This action indicates that payments have been completed and sent.
+            </div>
+          </div>
+          <p style="color:var(--mhr-ink-2);font-size:14px;">Are you sure you want to mark {{ selectedCount }} batch(es) as processed?</p>
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--outline" @click="closeBulkProcessModal" :disabled="isProcessing">
+            Cancel
+          </button>
+          <button 
+            class="mhr-btn mhr-btn--primary" 
+            @click="confirmBulkProcess"
+            :disabled="isProcessing"
+            :style="isProcessing ? 'opacity:0.6;cursor:not-allowed;' : ''"
+          >
+            <span v-if="isProcessing" style="display:flex;align-items:center;gap:8px;">
+              <svg style="animation:spin 1s linear infinite;width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" opacity="0.25"/>
+                <path d="M12 2a10 10 0 0 1 10 10" opacity="0.75"/>
+              </svg>
+              <span>Processing...</span>
+            </span>
+            <span v-else>
+              <AppIcon name="dollar" :size="14" /> Mark as Processed
+            </span>
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import StatusPill from '@/Components/MeridianHR/StatusPill.vue'
@@ -8,14 +8,10 @@ defineOptions({ layout: MeridianLayout })
 
 const props = defineProps({
   payslips: { type: Array, default: () => [] },
+  ytdGross: { type: Number, default: 0 },
 })
 
 const active = ref(props.payslips[0] || null)
-
-const ytd = computed(() => props.payslips
-  .filter(p => p.period.includes('2026'))
-  .reduce((a, p) => ({ gross: a.gross + p.gross, net: a.net + p.net, tax: a.tax + p.tax }), { gross: 0, net: 0, tax: 0 })
-)
 
 function fmtMoney(n) {
   return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -34,30 +30,20 @@ function fmtShortDate(s) {
   <div>
     <div class="mhr-page-head">
       <div>
-        <h1 class="mhr-page-head__title">Payslips</h1>
-        <p class="mhr-page-head__sub">Issued payslips and year-to-date summary</p>
+        <h1 class="mhr-page-head__title">My Payslip</h1>
+        <p class="mhr-page-head__sub">View your issued payslips and year-to-date summary</p>
       </div>
       <div class="mhr-page-head__actions">
         <button class="mhr-btn mhr-btn--outline"><AppIcon name="download" /> Download year</button>
       </div>
     </div>
 
-    <!-- YTD stats -->
-    <div class="mhr-grid-3" style="margin-bottom:20px;">
-      <div class="mhr-stat">
-        <div class="mhr-stat__label">YTD Gross</div>
-        <div class="mhr-stat__value">{{ fmtMoney(ytd.gross) }}</div>
-        <div class="mhr-stat__delta">Jan–Apr 2026</div>
-      </div>
-      <div class="mhr-stat">
-        <div class="mhr-stat__label">YTD Net</div>
-        <div class="mhr-stat__value">{{ fmtMoney(ytd.net) }}</div>
-        <div class="mhr-stat__delta">After tax &amp; deductions</div>
-      </div>
-      <div class="mhr-stat">
-        <div class="mhr-stat__label">YTD Tax</div>
-        <div class="mhr-stat__value">{{ fmtMoney(ytd.tax) }}</div>
-        <div class="mhr-stat__delta">Federal + state + FICA</div>
+    <!-- YTD Gross from Processed Payments -->
+    <div style="margin-bottom:20px;">
+      <div class="mhr-stat" style="background:linear-gradient(135deg, var(--green-700) 0%, var(--green-800) 100%);border:none;color:#fff;box-shadow:0 2px 8px rgba(59,111,67,0.15);">
+        <div class="mhr-stat__label" style="color:rgba(255,255,255,0.85);">YTD Processed Payments</div>
+        <div class="mhr-stat__value" style="color:#fff;">{{ fmtMoney(ytdGross) }}</div>
+        <div class="mhr-stat__delta" style="color:rgba(255,255,255,0.75);">Year to date {{ new Date().getFullYear() }}</div>
       </div>
     </div>
 
@@ -65,7 +51,7 @@ function fmtShortDate(s) {
       <!-- Table -->
       <div class="mhr-card">
         <div class="mhr-card__hd">
-          <h3 class="mhr-card__title">All payslips</h3>
+          <h3 class="mhr-card__title">My Payslips</h3>
           <p class="mhr-card__sub">{{ payslips.length }} issued</p>
         </div>
         <table class="mhr-table">

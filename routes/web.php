@@ -25,12 +25,10 @@ use Inertia\Inertia;
 // GUEST ROUTES - Public pages (login, register, password reset)
 // ============================================================================
 
-Route::inertia('MyAuth/Login', 'MyAuth/Login')->name('mylogin');
-// Alternative Meridian-styled login page:
-// Route::inertia('login', 'MeridianHR/Login')->name('mylogin');
-
-Route::inertia('MyAuth/Register', 'MyAuth/Register')->name('myregister');
-Route::inertia('MyAuth/ForgotPassword', 'MyAuth/ForgotPassword')->name('myforgotpassword');
+// Legacy custom auth routes (use routes/auth.php instead for standard login)
+// Route::inertia('MyAuth/Login', 'MyAuth/Login')->name('mylogin');
+// Route::inertia('MyAuth/Register', 'MyAuth/Register')->name('myregister');
+// Route::inertia('MyAuth/ForgotPassword', 'MyAuth/ForgotPassword')->name('myforgotpassword');
 
 Route::get('password/confirmed', function () {
     return Inertia::render('MyAuth/Confirmation', [
@@ -39,7 +37,7 @@ Route::get('password/confirmed', function () {
         'title'         => 'Password Changed!',
         'message'       => session('status'),
         'buttonText'    => 'Sign In',
-        'buttonHref'    => route('mylogin'),
+        'buttonHref'    => route('login'),
         'buttonVariant' => 'primary',
     ]);
 })->name('password.confirmed');

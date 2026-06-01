@@ -553,6 +553,21 @@ class PayrollController extends BaseHRController
 
             // Create batch items
             foreach ($timesheets as $timesheet) {
+                // Get agreement number and designation from employee_events pivot table
+                $eventAssignment = DB::table('employee_events')
+                    ->where('employee_id', $timesheet->employee_id)
+                    ->where('event_id', $timesheet->event_id)
+                    ->first();
+                
+                $agreementNumber = $eventAssignment->agreement_number ?? null;
+                
+                // Get designation name
+                $designationName = null;
+                if ($eventAssignment && $eventAssignment->designation_id) {
+                    $designation = \App\Models\Designation::find($eventAssignment->designation_id);
+                    $designationName = $designation?->name;
+                }
+                
                 // Get primary bank (last created bank with no end date - still active)
                 $primaryBank = $timesheet->employee->banks
                     ->filter(function ($bank) {
@@ -565,7 +580,11 @@ class PayrollController extends BaseHRController
                 Log::info('Processing timesheet', [
                     'timesheet_id' => $timesheet->id,
                     'employee_id' => $timesheet->employee_id,
+                    'event_id' => $timesheet->event_id,
                     'employee_name' => $timesheet->employee->full_name ?? 'N/A',
+                    'employee_number' => $timesheet->employee->employee_number,
+                    'agreement_number' => $agreementNumber,
+                    'role' => $designationName,
                     'primary_bank_id' => $primaryBank?->id,
                     'iban' => $primaryBank?->iban,
                 ]);
@@ -575,7 +594,9 @@ class PayrollController extends BaseHRController
                     'timesheet_id' => $timesheet->id,
                     'employee_id' => $timesheet->employee_id,
                     'employee_number' => $timesheet->employee->employee_number,
+                    'agreement_number' => $agreementNumber,
                     'employee_name' => $timesheet->employee->first_name . ' ' . $timesheet->employee->last_name,
+                    'role' => $designationName,
                     'bank_id' => $primaryBank?->id,
                     'account_number' => $primaryBank?->iban, // IBAN from employee_banks table
                     'days_worked' => $timesheet->days_worked,
@@ -607,8 +628,7 @@ class PayrollController extends BaseHRController
             'creator', 
             'finalizer', 
             'processor', 
-            'items.employee.designation',
-            'items.employee.contractType',
+            'items.employee',
             'items.bank',
             'items.timesheet'
         ])->findOrFail($id);
@@ -660,9 +680,9 @@ class PayrollController extends BaseHRController
                 return [
                     'id' => $item->id,
                     'timesheetPeriod' => $timesheet?->timesheet_period,
-                    'agreementNumber' => $employee?->agreement_number ?: 'N/A',
+                    'agreementNumber' => $item->agreement_number ?: 'N/A',
                     'employeeName' => $item->employee_name,
-                    'role' => $employee?->designation?->name ?? 'N/A',
+                    'role' => $item->role ?: 'N/A',
                     'startDate' => $assignment?->assigned_at ? \Carbon\Carbon::parse($assignment->assigned_at)->format('d M Y') : 'N/A',
                     'endDate' => $assignment?->released_at ? \Carbon\Carbon::parse($assignment->released_at)->format('d M Y') : 'Ongoing',
                     'monthlySalary' => $latestSalary?->net_salary ?? 0,
@@ -746,6 +766,53 @@ class PayrollController extends BaseHRController
         ]);
 
         return back()->with('success', 'Payment batch marked as processed.');
+    }
+
+    /**
+     * Bulk process multiple payment batches
+     */
+    public function bulkProcessPaymentBatches(Request $request)
+    {
+        $request->validate([
+            'batch_ids' => 'required|array',
+            'batch_ids.*' => 'integer|exists:payment_batches,id',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $processedCount = 0;
+            $failedCount = 0;
+
+            foreach ($request->batch_ids as $batchId) {
+                $batch = PaymentBatch::find($batchId);
+                
+                if ($batch && $batch->canProcess()) {
+                    $batch->update([
+                        'status' => 'processed',
+                        'processed_at' => now(),
+                        'processed_by' => Auth::id(),
+                    ]);
+                    $processedCount++;
+                } else {
+                    $failedCount++;
+                }
+            }
+
+            DB::commit();
+
+            if ($processedCount > 0 && $failedCount === 0) {
+                return back()->with('success', "{$processedCount} batch(es) marked as processed.");
+            } elseif ($processedCount > 0 && $failedCount > 0) {
+                return back()->with('success', "{$processedCount} batch(es) marked as processed. {$failedCount} batch(es) could not be processed.");
+            } else {
+                return back()->withErrors(['error' => 'No batches could be processed. Make sure they are in Finalized status.']);
+            }
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors(['error' => 'Failed to process batches: ' . $e->getMessage()]);
+        }
     }
 
     /**

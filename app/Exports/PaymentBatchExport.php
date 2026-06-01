@@ -23,8 +23,7 @@ class PaymentBatchExport implements FromCollection, WithHeadings, WithMapping, W
     public function collection()
     {
         return PaymentBatch::with([
-            'items.employee.designation',
-            'items.employee.contractType',
+            'items.employee',
             'items.bank',
             'items.timesheet'
         ])->findOrFail($this->batchId)
@@ -76,9 +75,9 @@ class PaymentBatchExport implements FromCollection, WithHeadings, WithMapping, W
 
         return [
             $timesheet?->timesheet_period ?? 'N/A',
-            $employee?->agreement_number ?: 'N/A',
+            $item->agreement_number ?: 'N/A',
             $item->employee_name,
-            $employee?->designation?->name ?? 'N/A',
+            $item->role ?: 'N/A',
             $assignment?->assigned_at ? \Carbon\Carbon::parse($assignment->assigned_at)->format('d M Y') : 'N/A',
             $assignment?->released_at ? \Carbon\Carbon::parse($assignment->released_at)->format('d M Y') : 'Ongoing',
             $latestSalary?->net_salary ?? 0,

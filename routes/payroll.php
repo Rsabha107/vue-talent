@@ -46,6 +46,7 @@ Route::prefix('payroll')->name('payroll.')->middleware(['auth'])->group(function
     Route::get('/payment-batches/{id}/export', [PayrollController::class, 'exportPaymentBatch'])->name('payment-batches.export');
     Route::post('/payment-batches/{id}/finalize', [PayrollController::class, 'finalizePaymentBatch'])->name('payment-batches.finalize');
     Route::post('/payment-batches/{id}/process', [PayrollController::class, 'processPaymentBatch'])->name('payment-batches.process');
+    Route::post('/payment-batches/bulk-process', [PayrollController::class, 'bulkProcessPaymentBatches'])->name('payment-batches.bulk-process');
     Route::delete('/payment-batches/{id}', [PayrollController::class, 'deletePaymentBatch'])->name('payment-batches.destroy');
     
     // Bank Files

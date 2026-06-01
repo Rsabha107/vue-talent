@@ -3,7 +3,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>VMS</title>
+    <title>{{ config('app.name') }}</title>
 </head>
 <body>
 Hello,
@@ -13,10 +13,10 @@ Hello,
 <p>Click the link below to set a new password:</p>
 <a href="{{ route('password.reset', $token) }}">Reset Password</a><br>
 
-<p>If you didn’t request a password reset, you can safely ignore this email.</p>
+<p>If you didn't request a password reset, you can safely ignore this email.</p>
 
 
 <p>Thanks,  <br>
-The VMS Team</p>
+The {{ config('app.name') }} Team</p>
 </body>
 </html>

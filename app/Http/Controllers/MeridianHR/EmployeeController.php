@@ -20,6 +20,7 @@ use App\Models\FunctionalArea;
 use App\Models\Gender;
 use App\Models\MaritalStatus;
 use App\Models\Nationality;
+use App\Models\PaymentBatch;
 use App\Models\SalaryBasis;
 use App\Models\Salutation;
 use App\Services\LeaveBalanceService;
@@ -569,6 +570,21 @@ class EmployeeController extends BaseHRController
                 $nextPayDate = $payDate->format('l, F j'); // e.g., "Friday, May 31"
             }
         }
+        
+        // Get last month's payroll total for admin dashboard
+        $lastPayrollTotal = null;
+        $lastPayrollMonth = null;
+        if (!$isEmployee) {
+            $lastPaymentBatch = PaymentBatch::whereNotNull('processed_at')
+                ->orderBy('year', 'DESC')
+                ->orderBy('month_id', 'DESC')
+                ->first();
+            
+            if ($lastPaymentBatch) {
+                $lastPayrollTotal = '$' . number_format($lastPaymentBatch->total_amount, 2, '.', ',');
+                $lastPayrollMonth = Carbon::create($lastPaymentBatch->year, $lastPaymentBatch->month_id, 1)->format('F Y');
+            }
+        }
 
         return Inertia::render('MeridianHR/Dashboard', array_merge($this->getCommonProps('dashboard'), [
             'stats'               => [
@@ -578,6 +594,8 @@ class EmployeeController extends BaseHRController
                 'pendingRequests'  => $totalPendingRequests,
                 'nextPayDate'      => $nextPayDate,
                 'nextPayFormatted' => $nextPayFormatted,
+                'lastPayrollTotal' => $lastPayrollTotal,
+                'lastPayrollMonth' => $lastPayrollMonth,
             ],
             'activity'            => $isEmployee ? $this->employeeActivity() : $this->activity(),
             'upcomingLeaves'      => $isEmployee ? $this->upcomingLeaves() : [],
@@ -620,8 +638,62 @@ class EmployeeController extends BaseHRController
 
     public function payslips()
     {
+        // Get current employee
+        $employee = Employee::where('user_id', auth()->id())->first();
+        
+        $ytdGross = 0;
+        $payslips = [];
+        
+        if ($employee) {
+            $currentYear = (string) now()->year;
+            
+            // Calculate YTD gross from processed payment batches
+            $ytdGross = \App\Models\PaymentBatchItem::whereHas('batch', function ($query) use ($currentYear) {
+                $query->where('status', 'processed')
+                      ->where('year', $currentYear);
+            })
+            ->where('employee_id', $employee->id)
+            ->sum('payment_amount');
+            
+            // Fetch actual payslips from processed payment batches
+            $batchItems = \App\Models\PaymentBatchItem::with(['batch', 'timesheet', 'bank'])
+                ->whereHas('batch', function ($query) {
+                    $query->where('status', 'processed');
+                })
+                ->where('employee_id', $employee->id)
+                ->get()
+                ->sortByDesc(function ($item) {
+                    return $item->batch->processed_at;
+                });
+            
+            // Transform to payslip format
+            $payslips = $batchItems->map(function ($item) {
+                $batch = $item->batch;
+                $bank = $item->bank;
+                
+                // Get last 4 digits of account number
+                $accountMask = $bank && $item->account_number 
+                    ? '••' . substr($item->account_number, -4) 
+                    : '••••';
+                
+                return [
+                    'id' => 'ps-' . $batch->id . '-' . $item->id,
+                    'period' => $batch->period, // e.g., "May 2026"
+                    'issued' => $batch->processed_at->format('Y-m-d'),
+                    'gross' => (float) $item->payment_amount,
+                    'net' => (float) $item->payment_amount, // No tax/deductions tracked yet
+                    'tax' => 0,
+                    'deductions' => 0,
+                    'status' => 'Paid',
+                    'method' => 'ACH ' . $accountMask,
+                    'note' => null,
+                ];
+            })->values()->toArray();
+        }
+        
         return Inertia::render('MeridianHR/Payslips', array_merge($this->getCommonProps('payslips'), [
-            'payslips' => $this->payslipData(),
+            'payslips' => $payslips,
+            'ytdGross' => $ytdGross,
         ]));
     }
 

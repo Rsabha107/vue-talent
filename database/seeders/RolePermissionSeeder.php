@@ -113,9 +113,10 @@ class RolePermissionSeeder extends Seeder
             ['guard_name' => 'web']
         );
         
-        // Basic employees have no extra permissions beyond self-service
-        // (Self-service permissions are granted at controller level)
-        $employeeBasic->syncPermissions([]);
+        // Basic employees get payslips access (self-service only)
+        $employeeBasic->syncPermissions([
+            'view-payslips',
+        ]);
         
         // =====================================================================
         // Full Employee Role - Extended Access

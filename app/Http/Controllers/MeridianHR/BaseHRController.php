@@ -334,13 +334,29 @@ abstract class BaseHRController extends Controller
             ];
         }
         
+        // Fallback for users without employee records
+        $hrRole = $this->getHRRole();
+        $fallbackRole = match($hrRole) {
+            'admin' => 'HR Administrator',
+            'manager' => 'Manager',
+            'employee-full', 'employee-basic' => 'Employee',
+            default => 'Employee'
+        };
+        
+        $fallbackRoles = [$fallbackRole];
+        
+        // Add payroll role if applicable
+        if ($user->can('payroll.access')) {
+            $fallbackRoles[] = 'Payroll Admin';
+        }
+        
         return [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
             'role' => null,
-            'systemRole' => 'Employee',
-            'systemRoles' => ['Employee'],
+            'systemRole' => $fallbackRole,
+            'systemRoles' => $fallbackRoles,
             'department' => null,
             'empNumber' => null,
             'avatarColor' => $user->id % 7,

@@ -7,20 +7,24 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
-use Illuminate\Mail\Mailables\Address;
 use Illuminate\Queue\SerializesModels;
 
-class SendForgotPasswordMail extends Mailable implements ShouldQueue
+class SendOtpMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-    public array $content;
+    public string $otpCode;
+    public string $userName;
+    public int $expiresInMinutes;
+
     /**
      * Create a new message instance.
      */
-    public function __construct($content)
+    public function __construct(string $otpCode, string $userName, int $expiresInMinutes = 2)
     {
-        $this->content = $content;
+        $this->otpCode = $otpCode;
+        $this->userName = $userName;
+        $this->expiresInMinutes = $expiresInMinutes;
     }
 
     /**
@@ -29,9 +33,7 @@ class SendForgotPasswordMail extends Mailable implements ShouldQueue
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: $this->content['subject'],
-            // from: new Address('pd@mgail.com', 'pd support'),
-            //  subject: 'Send Forgot Password',
+            subject: 'Your Login Verification Code',
         );
     }
 
@@ -41,10 +43,11 @@ class SendForgotPasswordMail extends Mailable implements ShouldQueue
     public function content(): Content
     {
         return new Content(
-            view: 'emails.forgetPassword',
+            view: 'emails.otp',
             with: [
-                'token' => $this->content['token'],
-                // 'url'   => $this->content['url'],
+                'otpCode' => $this->otpCode,
+                'userName' => $this->userName,
+                'expiresInMinutes' => $this->expiresInMinutes,
             ],
         );
     }

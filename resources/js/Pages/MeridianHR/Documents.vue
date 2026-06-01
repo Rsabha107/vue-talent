@@ -10,13 +10,14 @@ defineOptions({ layout: MeridianLayout })
 const props = defineProps({
   documents: { type: Array, default: () => [] },
   categories: { type: Array, default: () => [] },
-  employees: { type: Array, default: () => null },
+  employees: { type: Array, default: () => [] },
   events: { type: Array, default: () => null },
   hrRole: { type: String, default: 'employee' },
   currentEmployee: { type: Object, default: () => null },
 })
 
-const isAdmin = computed(() => ['admin', 'manager'].includes(props.hrRole))
+const isAdmin = computed(() => props.hrRole === 'admin')
+const isManager = computed(() => props.hrRole === 'manager')
 
 const activeCat = ref(null)
 const activeDoc = ref(null)
@@ -157,9 +158,9 @@ function shortDate(s) {
 function openUploadModal() {
   uploadForm.value = {
     file: null,
-    employee_id: isAdmin.value ? null : (props.currentEmployee?.id || null),
+    employee_id: props.hrRole === 'admin' ? null : (props.currentEmployee?.id || null),
     category_id: activeCat.value || props.categories[0]?.id || null,
-    event_id: null,
+    event_id: filterEventId.value || usePage().props.selectedEvent || null,
     description: '',
   }
   showUploadModal.value = true
@@ -294,7 +295,7 @@ function formatFileSize(bytes) {
           >
             <AppIcon :name="cat.icon || 'doc'" :size="15" class="docs-cat-icon" />
             <span class="docs-cat-label">{{ cat.title }}</span>
-            <span class="docs-cat-badge">{{ documentsByCategory[cat.id]?.docs.length || 0 }}</span>
+            <span class="docs-cat-badge" :class="{ 'has-docs': (documentsByCategory[cat.id]?.docs.length || 0) > 0 }">{{ documentsByCategory[cat.id]?.docs.length || 0 }}</span>
           </button>
         </nav>
 
@@ -314,9 +315,14 @@ function formatFileSize(bytes) {
             <h3 class="docs-list-title">{{ currentCategoryName }}</h3>
             <p class="docs-list-sub">{{ sortedDocs.length }}{{ sortedDocs.length !== currentCategoryDocs.length ? ` of ${currentCategoryDocs.length}` : '' }} document{{ currentCategoryDocs.length !== 1 ? 's' : '' }}</p>
           </div>
-          <button class="docs-sort-btn" @click="sortAsc = !sortAsc">
-            <AppIcon name="filter" :size="13" /> Sort
-          </button>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button class="mhr-btn mhr-btn--sm mhr-btn--primary" @click="openUploadModal" title="Upload document">
+              <AppIcon name="upload" :size="14" />
+            </button>
+            <button class="docs-sort-btn" @click="sortAsc = !sortAsc">
+              <AppIcon name="filter" :size="13" /> Sort
+            </button>
+          </div>
         </div>
 
         <div v-if="isAdmin && (employees || events)" class="docs-filter-bar">
@@ -723,6 +729,11 @@ function formatFileSize(bytes) {
   min-width: 22px;
   text-align: center;
   flex-shrink: 0;
+}
+
+.docs-cat-badge.has-docs {
+  background: var(--mhr-accent);
+  color: #fff;
 }
 
 .docs-cat-item.active .docs-cat-badge {

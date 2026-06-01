@@ -181,7 +181,7 @@ function submit(e) {
             <div>
               <p>
                 Already have an account?
-                <Link class="fw-medium text-primary" :href="route('mylogin')">
+                <Link class="fw-medium text-primary" :href="route('login')">
                   Login
                 </Link>
               </p>

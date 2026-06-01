@@ -19,6 +19,7 @@ class DocumentController extends BaseHRController
         $user = Auth::user();
         $hrRole = $this->getHRRole();
         $isAdmin = $hrRole === 'admin';
+        $isManager = $hrRole === 'manager';
         $selectedEventId = $this->getSelectedEventId();
         
         $query = EmployeeDocument::with(['employee', 'category', 'uploadedBy', 'event'])
@@ -27,8 +28,8 @@ class DocumentController extends BaseHRController
         // Note: Event filtering is now handled on frontend via dropdown
         // Backend returns all documents, frontend filters by selected event
         
-        // Employees and managers see only their own documents
         // Only admins see all documents
+        // Employees and managers see only their own documents
         if (!$isAdmin) {
             $currentEmployee = Employee::where('user_id', $user->id)->first();
             if ($currentEmployee) {
@@ -65,6 +66,7 @@ class DocumentController extends BaseHRController
         $currentEmployee = null;
         
         if ($isAdmin) {
+            // Only admins get employee list and events for filtering
             // Use same employee list format as leave requests
             $employees = $selectedEventId 
                 ? $this->getEventEmployees()->where('archived', 'N')->orderBy('full_name')->get(['id', 'full_name', 'employee_number'])
