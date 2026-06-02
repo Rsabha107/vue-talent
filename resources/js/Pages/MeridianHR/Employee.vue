@@ -153,7 +153,7 @@ const form = ref({
   middleName: '',
   lastName: '',
   salutationId: null,
-  employeeNumber: '',
+  employeeNumber: 'Auto-generated',
   
   // Contact Information
   workEmail: '',
@@ -690,10 +690,7 @@ function validateForm() {
     formErrors.value.lastName = 'Last name is required'
     isValid = false
   }
-  if (!form.value.employeeNumber || form.value.employeeNumber.trim() === '') {
-    formErrors.value.employeeNumber = 'Employee number is required'
-    isValid = false
-  }
+  // Employee number is auto-generated, no need to validate
   if (!form.value.workEmail || form.value.workEmail.trim() === '') {
     formErrors.value.workEmail = 'Work email is required'
     isValid = false
@@ -732,7 +729,7 @@ function addEmployee() {
     first_name: form.value.firstName,
     middle_name: form.value.middleName || '',
     last_name: form.value.lastName,
-    employee_number: form.value.employeeNumber,
+    employee_number: form.value.employeeNumber === 'Auto-generated' ? '' : form.value.employeeNumber,
     salutation_id: form.value.salutationId || null,
     
     // Contact Information
@@ -801,7 +798,7 @@ function addEmployee() {
       })
       // Reset form
       form.value = {
-        firstName: '', middleName: '', lastName: '', salutationId: null, employeeNumber: '',
+        firstName: '', middleName: '', lastName: '', salutationId: null, employeeNumber: 'Auto-generated',
         workEmail: '', personalEmail: '', phoneNumber: '', altPhoneNumber: '', phoneAreaCode: '', altAreaCode: '',
         dateOfHire: null, joinDate: null,
         genderId: null, maritalStatusId: null, dateOfBirth: null, townOfBirth: '', countryOfBirth: '',
@@ -1794,8 +1791,8 @@ function updateEmployee() {
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Employee Number *</label>
-                <input class="mhr-input" :class="{ 'mhr-input--error': formErrors.employeeNumber }" v-model="form.employeeNumber" @input="formErrors.employeeNumber = ''" placeholder="EMP-00001" />
-                <div v-if="formErrors.employeeNumber" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">{{ formErrors.employeeNumber }}</div>
+                <input class="mhr-input" v-model="form.employeeNumber" readonly style="background:#f8f8f8;cursor:not-allowed;" placeholder="Auto-generated" />
+                <div style="font-size:11px;color:var(--mhr-ink-3);margin-top:4px;">Auto-generated on save</div>
               </div>
             </div>
           </div>
@@ -2189,7 +2186,8 @@ function updateEmployee() {
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Employee Number *</label>
-                <input class="mhr-input" v-model="editForm.employeeNumber" placeholder="EMP-00001" />
+                <input class="mhr-input" v-model="editForm.employeeNumber" readonly style="background:#f8f8f8;cursor:not-allowed;" />
+                <div style="font-size:11px;color:var(--mhr-ink-3);margin-top:4px;">Cannot be changed</div>
               </div>
             </div>
           </div>

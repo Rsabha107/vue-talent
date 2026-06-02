@@ -1,8 +1,11 @@
 <script setup>
-import { ref } from 'vue'
-import { Head, Link, useForm } from '@inertiajs/vue3'
+import { ref, computed } from 'vue'
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import '@/../css/meridian.css'
+
+const page = usePage()
+const appName = computed(() => page.props.appName || 'Meridian HR')
 
 const props = defineProps({
   canResetPassword: {
@@ -34,16 +37,16 @@ const submit = () => {
 
 <template>
   <div class="meridian-app mhr-auth-page">
-    <Head title="Sign In - Meridian HR" />
+    <Head :title="`Sign In - ${appName}`" />
 
     <div class="mhr-auth-container">
       <!-- Left Panel - Branding -->
       <div class="mhr-auth-brand">
         <div class="mhr-auth-brand__content">
           <div class="mhr-auth-brand__logo">
-            <div class="mhr-auth-brand__mark">m</div>
+            <div class="mhr-auth-brand__mark">{{ appName.charAt(0).toLowerCase() }}</div>
             <div class="mhr-auth-brand__name">
-              Meridian<span class="mhr-auth-brand__dot">·</span>HR
+              <span>{{ appName }}<em>·</em>HR</span>
             </div>
           </div>
           <h1 class="mhr-auth-brand__title">Welcome back</h1>
@@ -182,7 +185,7 @@ const submit = () => {
           <!-- Footer -->
           <div class="mhr-auth-footer">
             <p>
-              New to Meridian HR? 
+              New to {{ appName }}? 
               <a href="#" class="mhr-link">Contact your administrator</a>
             </p>
           </div>

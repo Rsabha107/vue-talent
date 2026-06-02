@@ -10,6 +10,7 @@ class SettingsSeeder extends Seeder
     public function run(): void
     {
         $defaults = [
+            'app_name' => 'Meridian HR',
             'date_format' => 'DD/MM/YYYY',
         ];
 

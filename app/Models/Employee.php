@@ -299,4 +299,36 @@ class Employee extends Model
               ->where('employee_events.is_active', 1);
         });
     }
+
+    /**
+     * Generate the next employee number in the format EMP-XXXXX
+     *
+     * @return string
+     */
+    public static function generateEmployeeNumber(): string
+    {
+        // Get all employees with employee numbers matching EMP-XXXXX pattern
+        $employees = self::whereNotNull('employee_number')
+            ->where('employee_number', 'LIKE', 'EMP-%')
+            ->get();
+        
+        if ($employees->isEmpty()) {
+            return 'EMP-00001';
+        }
+        
+        // Extract all numeric parts and find the maximum
+        $maxNumber = 0;
+        foreach ($employees as $employee) {
+            if (preg_match('/^EMP-(\d+)$/', $employee->employee_number, $matches)) {
+                $number = (int)$matches[1];
+                if ($number > $maxNumber) {
+                    $maxNumber = $number;
+                }
+            }
+        }
+        
+        // Increment and format
+        $nextNumber = $maxNumber + 1;
+        return 'EMP-' . str_pad($nextNumber, 5, '0', STR_PAD_LEFT);
+    }
 }

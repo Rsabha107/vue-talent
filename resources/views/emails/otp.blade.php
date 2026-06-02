@@ -3,109 +3,114 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ config('app.name') }}</title>
+    <title>Verification Code</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            line-height: 1.5;
-            color: #333;
-            max-width: 500px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f4f4f5;
         }
-        .container {
+        .email-wrapper {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        .email-container {
             background: #ffffff;
             border-radius: 8px;
-            padding: 30px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #3b6f43 0%, #4a8454 100%);
+            padding: 24px;
+            text-align: center;
         }
         .logo {
-            font-size: 20px;
-            font-weight: bold;
-            color: #3b6f43;
-            margin-bottom: 20px;
-            text-align: center;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #3b6f43;
+            font-size: 18px;
+            font-weight: 600;
+            color: #ffffff;
+            letter-spacing: 0.5px;
+        }
+        .content {
+            padding: 32px 24px;
+        }
+        .greeting {
+            font-size: 15px;
+            color: #18181b;
+            margin: 0 0 16px 0;
+            font-weight: 500;
+        }
+        .message {
+            font-size: 14px;
+            color: #52525b;
+            line-height: 1.5;
+            margin: 0 0 24px 0;
         }
         .otp-box {
-            background: linear-gradient(135deg, #3b6f43, #4a8454);
+            background: #f4f4f5;
+            border: 2px solid #e4e4e7;
             border-radius: 8px;
             padding: 20px;
             text-align: center;
-            margin: 20px 0;
+            margin: 24px 0;
         }
         .otp-code {
-            font-size: 36px;
-            font-weight: bold;
-            letter-spacing: 6px;
-            color: #ffffff;
-            font-family: 'Courier New', monospace;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: 8px;
+            color: #18181b;
+            font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
         }
         .otp-expiry {
-            color: rgba(255, 255, 255, 0.9);
             font-size: 12px;
-            margin-top: 10px;
+            color: #71717a;
+            margin-top: 8px;
         }
-        p {
-            font-size: 14px;
-            margin: 15px 0;
-            color: #555;
+        .notice {
+            font-size: 13px;
+            color: #71717a;
+            line-height: 1.4;
+            margin: 16px 0 0 0;
         }
-        .note {
-            font-size: 12px;
-            color: #888;
-            margin-top: 20px;
-            padding-top: 15px;
-            border-top: 1px solid #e0e0e0;
+        .footer {
+            padding: 16px 24px;
+            background: #fafafa;
+            border-top: 1px solid #e4e4e7;
             text-align: center;
+            font-size: 12px;
+            color: #a1a1aa;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="logo">{{ config('app.name') }}</div>
-        
-        <p>Hello{{ $userName ? ' ' . $userName : '' }},</p>
-        
-        <p>Your verification code for login is:</p>
+    <div class="email-wrapper">
+        <div class="email-container">
+            <div class="header">
+                <div class="logo">{{ config('app.name') }}</div>
+            </div>
+            
+            <div class="content">
+                <div class="greeting">Hello{{ $userName ? ' ' . $userName : '' }},</div>
+                
+                <div class="message">
+                    Use the following code to complete your sign in:
+                </div>
 
-        <div class="otp-box">
-            <div class="otp-code">{{ $otpCode }}</div>
-            <div class="otp-expiry">Expires in {{ $expiresInMinutes }} minutes</div>
-        </div>
+                <div class="otp-box">
+                    <div class="otp-code">{{ $otpCode }}</div>
+                    <div class="otp-expiry">Valid for {{ $expiresInMinutes }} minutes</div>
+                </div>
 
-        <p>Enter this code to complete your sign in. If you didn't request this, please ignore this email.</p>
+                <div class="notice">
+                    If you didn't request this code, please ignore this email.
+                </div>
+            </div>
 
-        <div class="note">
-            This is an automated message. Please do not reply.
-        </div>
-    </div>
-</body>
-</html>
-
-        <div class="otp-container">
-            <div class="otp-label">Your Verification Code</div>
-            <div class="otp-code">{{ $otpCode }}</div>
-            <div class="otp-expiry">This code will expire in {{ $expiresInMinutes }} minutes</div>
-        </div>
-
-        <p class="message">
-            Enter this code on the verification page to access your account. For your security, do not share this code with anyone.
-        </p>
-
-        <div class="warning">
-            <div class="warning-title">⚠️ Security Notice</div>
-            <p class="warning-text">
-                If you didn't attempt to sign in, please ignore this email and ensure your account password is secure. 
-                Someone may have entered your email address by mistake.
-            </p>
-        </div>
-
-        <div class="footer">
-            <p>This is an automated message from <span class="footer-brand">{{ config('app.name') }}</span>.</p>
-            <p>Please do not reply to this email.</p>
+            <div class="footer">
+                Automated message — Please do not reply
+            </div>
         </div>
     </div>
 </body>

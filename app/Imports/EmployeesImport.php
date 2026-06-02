@@ -204,6 +204,11 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
             'archived' => 'N',
         ]);
 
+        // Generate employee number if not provided
+        if (empty($employee->employee_number)) {
+            $employee->employee_number = Employee::generateEmployeeNumber();
+        }
+
         // Save employee first
         $employee->save();
 

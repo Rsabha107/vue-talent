@@ -980,7 +980,7 @@ class EmployeeController extends BaseHRController
             'first_name'                => 'required|string|max:50',
             'middle_name'               => 'nullable|string|max:100',
             'last_name'                 => 'required|string|max:50',
-            'employee_number'           => 'required|string|max:15|unique:employees_all,employee_number',
+            'employee_number'           => 'nullable|string|max:15|unique:employees_all,employee_number',
             'salutation_id'             => 'nullable|integer',
             
             // Contact Information
@@ -1051,6 +1051,11 @@ class EmployeeController extends BaseHRController
         // Set default archived flag
         $personalFields['archived'] = 'N';
         
+        // Generate employee number if not provided
+        if (empty($personalFields['employee_number'])) {
+            $personalFields['employee_number'] = Employee::generateEmployeeNumber();
+        }
+        
         // Remove non-personal fields
         unset($personalFields['assign_to_event']);
 
@@ -1114,7 +1119,6 @@ class EmployeeController extends BaseHRController
             'middle_name'                   => 'nullable|string|max:100',
             'last_name'                     => 'required|string|max:50',
             'salutation_id'                 => 'nullable|integer',
-            'employee_number'               => ['required', 'string', 'max:15', Rule::unique('employees_all', 'employee_number')->ignore($employee->id)],
             
             // Contact Information
             'work_email_address'            => ['required', 'email', 'max:250', Rule::unique('employees_all', 'work_email_address')->ignore($employee->id)],
@@ -1181,8 +1185,9 @@ class EmployeeController extends BaseHRController
             ($personalFields['last_name'] ?? '')
         );
 
-        // Remove non-personal fields
+        // Remove non-personal fields and protect employee_number from changes
         unset($personalFields['assign_to_event']);
+        unset($personalFields['employee_number']); // Employee number cannot be changed
 
         // Update employee (personal data only)
         $employee->update($personalFields);

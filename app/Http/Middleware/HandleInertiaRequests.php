@@ -38,6 +38,7 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn() => $request->session()->get('success'),
                 'error'   => fn() => $request->session()->get('error'),
             ],
+            'appName' => fn() => $this->getAppName(),
             'dateFormat' => config('settings.date_format', 'DD/MM/YYYY'),
             'availableEvents' => fn() => $this->getAvailableEventsForUser($request->user()),
             'selectedEvent' => fn() => $request->session()->get('selected_event_id'),
@@ -87,5 +88,14 @@ class HandleInertiaRequests extends Middleware
                 'name' => $e->name,
                 'logo' => $e->event_logo ? asset('storage/event-logos/' . $e->event_logo) : null,
             ]);
+    }
+
+    /**
+     * Get application name from settings
+     */
+    protected function getAppName()
+    {
+        return \App\Models\GeneralSettings\Setting::where('key', 'app_name')
+            ->value('value') ?? 'Meridian HR';
     }
 }

@@ -8,6 +8,7 @@ import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 
 const page = usePage()
 const { navigation, pageTitle, breadcrumbGroup, hrPage } = useHRNavigation()
+const appName = computed(() => page.props.appName || 'Meridian HR')
 
 // Event management
 const availableEvents = computed(() => page.props.availableEvents || [])
@@ -43,7 +44,7 @@ const activeEventLabel = computed(() => {
 // Browser title
 const browserTitle = computed(() => {
   const base = pageTitle.value
-  return base === 'Home' ? 'Meridian HR' : `${base} · Meridian HR`
+  return base === 'Home' ? appName.value : `${base} · ${appName.value}`
 })
 
 // Event selector management

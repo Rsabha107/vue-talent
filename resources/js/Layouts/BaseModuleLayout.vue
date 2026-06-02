@@ -53,6 +53,7 @@ const toast = ref(null)
 let toastTimer = null
 
 const auth = computed(() => page.props.auth || {})
+const appName = computed(() => page.props.appName || 'Meridian HR')
 const me = computed(() => page.props.me || { 
   name: auth.value.user?.name || 'User', 
   initials: 'U', 
@@ -129,8 +130,8 @@ defineExpose({ showToast })
     <!-- Sidebar -->
     <aside class="mhr-sidebar">
       <div class="mhr-sidebar__brand">
-        <div class="mhr-sidebar__brand-mark">m</div>
-        <span class="mhr-sidebar__brand-name">Meridian<em>·</em>{{ moduleName }}</span>
+        <div class="mhr-sidebar__brand-mark">{{ appName.charAt(0).toLowerCase() }}</div>
+        <span class="mhr-sidebar__brand-name">{{ appName }}<em>·</em>{{ moduleName }}</span>
       </div>
 
       <div class="mhr-sidebar__content">
