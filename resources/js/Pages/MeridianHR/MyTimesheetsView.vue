@@ -451,7 +451,7 @@ function saveDay() {
 // ── Summary computed ────────────────────────────────────────────────
 // Exclude weekends from all counts since employees don't work Fri/Sat
 const summary = computed(() => {
-  const leave  = entryRows.value.filter(r => (r.action === 'L' || r.isLeave) && !r.isWeekend).length
+  const leave  = entryRows.value.filter(r => r.action === 'L' && !r.isWeekend).length
   const unpaid = entryRows.value.filter(r => r.action === 'U' && !r.isWeekend).length
   const weekend = entryRows.value.filter(r => r.isWeekend).length
   
@@ -513,7 +513,7 @@ const calculatedPayment = computed(() => {
 // ── Cell helpers ────────────────────────────────────────────────────
 function cellClass(day) {
   if (day.isWeekend) return 'ts-cell--weekend'
-  if (day.isLeave || day.action === 'L') return 'ts-cell--leave'
+  if (day.action === 'L') return 'ts-cell--leave'
   if (day.action === 'U') return 'ts-cell--unpaid'
   if (day.action === 'W') return 'ts-cell--worked'
   return 'ts-cell--blank'
@@ -521,9 +521,9 @@ function cellClass(day) {
 
 function cellLabel(day) {
   if (day.isWeekend) return 'Weekend'
-  if (day.isLeave) return 'Leave'
-  if (day.action === 'W') return 'Worked'
+  if (day.action === 'L') return 'Leave'
   if (day.action === 'U') return 'Unpaid'
+  if (day.action === 'W') return 'Worked'
   return '—'
 }
 
@@ -610,9 +610,9 @@ function confirmSubmit() {
     },
     onError: (errors) => {
       const first = Object.values(errors)[0]
-      showToast(first || 'Failed to submit timesheet. Please try again.', 'error')
+      showToast(first || 'Failed to save timesheet entries.', 'error')
+      isSubmitting.value = false
     },
-    onFinish: () => { isSubmitting.value = false },
   })
 }
 
@@ -634,11 +634,10 @@ function deleteTimesheet() {
   if (!ts) return
   
   deletingId.value = ts.id
-  const routeName = isEmployee.value ? 'hr.my-timesheets.destroy' : 'hr.timesheet-talent.destroy'
   
-  router.delete(route(routeName, ts.id), {
+  router.delete(route('hr.my-timesheets-view.destroy', ts.id), {
+    preserveState: false,
     onSuccess: () => {
-      localTimesheets.value = localTimesheets.value.filter(t => t.id !== ts.id)
       showToast('Timesheet deleted.')
       showDeleteModal.value = false
       timesheetToDelete.value = null
@@ -650,7 +649,7 @@ function deleteTimesheet() {
 
 // ── Status badge helpers ─────────────────────────────────────────────
 const STATUS_STYLE = {
-  'Pending':         { bg: 'var(--mhr-warn-bg)',     color: 'var(--mhr-warn)'        },
+  'Saved':           { bg: 'var(--mhr-warn-bg)',     color: 'var(--mhr-warn)'        },
   'Submitted':       { bg: 'var(--mhr-info-bg)',     color: 'var(--mhr-info)'        },
   'Pending Payroll': { bg: 'var(--mhr-accent-soft)', color: 'var(--mhr-accent-ink)' },
   'Approved':        { bg: 'var(--green-700)',       color: '#fff'                   },
@@ -747,7 +746,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <input class="mhr-input" style="padding-left:30px;" placeholder="Filter by period…" v-model="filterPeriod" />
         </div>
         <div style="display:flex;gap:4px;padding:3px;background:var(--mhr-surface-2);border:1px solid var(--mhr-line);border-radius:9px;">
-          <button v-for="f in ['all','pending','submitted','approved','rejected']" :key="f"
+          <button v-for="f in ['all','saved','submitted','approved','rejected']" :key="f"
             class="mhr-btn mhr-btn--sm"
             :style="filterStatus === f ? 'background:var(--green-700);color:#fff;' : 'background:transparent;color:var(--mhr-ink-2);'"
             @click="filterStatus = f">
@@ -805,7 +804,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
                 </td>
                 <td>
                   <span class="mhr-badge" :style="{ background: statusStyle(ts.statusTitle).bg, color: statusStyle(ts.statusTitle).color }">
-                    {{ ts.statusTitle || 'Pending' }}
+                    {{ ts.statusTitle || 'Saved' }}
                   </span>
                 </td>
                 <td style="text-align:right;color:var(--mhr-ink-2);font-size:13px;">{{ ts.daysWorked || 0 }}</td>
@@ -863,7 +862,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <span class="mhr-mono" style="font-size:13px;color:var(--mhr-ink-2);font-weight:500;">{{ ts.period }}</span>
               <span class="mhr-badge" :style="{ background: statusStyle(ts.statusTitle).bg, color: statusStyle(ts.statusTitle).color }">
-                {{ ts.statusTitle || 'Pending' }}
+                {{ ts.statusTitle || 'Saved' }}
               </span>
             </div>
           </div>
@@ -970,14 +969,12 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
             <AppIcon name="check" :size="14" />
             {{ isSavingEntries ? 'Saving…' : 'Save' }}
           </button>
-          <button 
+          <SubmitButton 
             v-if="activeTimesheet?.statusId === 1 && !isApprovedReadOnly && !(isEmployee && disableSubmission)" 
-            class="mhr-btn mhr-btn--primary" 
-            @click="submitForApproval" 
-            :disabled="isSavingEntries || isSubmitting">
-            <AppIcon name="arrowup" :size="14" />
-            {{ isSubmitting ? 'Submitting…' : 'Submit for Approval' }}
-          </button>
+            text="Submit for Approval" 
+            processing-text="Submitting…" 
+            :processing="isSubmitting"
+            @click="submitForApproval" />
         </div>
       </div>
 
@@ -1044,8 +1041,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
             <div v-for="i in firstDayOffset()" :key="'b'+i" class="ts-cell ts-cell--blank" style="opacity:0;" />
             <div v-for="day in entryRows" :key="day.day"
               class="ts-cell"
-              :class="[cellClass(day), canEdit(day) ? 'ts-cell--clickable' : '']"
-              @click="openDay(day)">
+              :class="cellClass(day)">
               <span class="ts-cell__date">{{ day.day }}</span>
               <span class="ts-cell__label">{{ cellLabel(day) }}</span>
             </div>
@@ -1059,7 +1055,6 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
               <strong style="color:var(--mhr-ink);">{{ summary.leaveDays }}</strong> leave days ·
               <strong style="color:var(--mhr-ink);">{{ summary.unpaidDays }}</strong> unpaid days
             </span>
-            <span style="margin-left:auto;color:var(--mhr-ink-3);font-style:italic;">Click any day to edit</span>
           </div>
         </div>
       </div>

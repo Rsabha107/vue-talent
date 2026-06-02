@@ -99,7 +99,8 @@ class PaymentBatch extends Model
 
     public function canEdit(): bool
     {
-        return $this->status === 'draft';
+        // Allow editing in draft and finalized status (before processing/payment)
+        return $this->status !== 'processed';
     }
 
     public function canFinalize(): bool

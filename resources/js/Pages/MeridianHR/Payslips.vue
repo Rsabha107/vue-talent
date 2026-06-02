@@ -14,7 +14,7 @@ const props = defineProps({
 const active = ref(props.payslips[0] || null)
 
 function fmtMoney(n) {
-  return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 function fmtDate(s) {
   if (!s) return ''

@@ -631,7 +631,7 @@ function deleteTimesheet() {
 
 // ── Status badge helpers ─────────────────────────────────────────────
 const STATUS_STYLE = {
-  'Pending':         { bg: 'var(--mhr-warn-bg)',     color: 'var(--mhr-warn)'        },
+  'Saved':         { bg: 'var(--mhr-warn-bg)',     color: 'var(--mhr-warn)'        },
   'Submitted':       { bg: 'var(--mhr-info-bg)',     color: 'var(--mhr-info)'        },
   'Pending Payroll': { bg: 'var(--mhr-accent-soft)', color: 'var(--mhr-accent-ink)' },
   'Approved':        { bg: 'var(--green-700)',       color: '#fff'                   },
@@ -710,7 +710,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <input class="mhr-input" style="padding-left:30px;" placeholder="Filter by period…" v-model="filterPeriod" />
         </div>
         <div style="display:flex;gap:4px;padding:3px;background:var(--mhr-surface-2);border:1px solid var(--mhr-line);border-radius:9px;">
-          <button v-for="f in ['all','pending','submitted','approved','rejected']" :key="f"
+          <button v-for="f in ['all','saved','submitted','approved','rejected']" :key="f"
             class="mhr-btn mhr-btn--sm"
             :style="filterStatus === f ? 'background:var(--green-700);color:#fff;' : 'background:transparent;color:var(--mhr-ink-2);'"
             @click="filterStatus = f">
@@ -768,7 +768,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
                 </td>
                 <td>
                   <span class="mhr-badge" :style="{ background: statusStyle(ts.statusTitle).bg, color: statusStyle(ts.statusTitle).color }">
-                    {{ ts.statusTitle || 'Pending' }}
+                    {{ ts.statusTitle || 'Saved' }}
                   </span>
                 </td>
                 <td style="text-align:right;color:var(--mhr-ink-2);font-size:13px;">{{ ts.daysWorked || 0 }}</td>
@@ -826,7 +826,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <span class="mhr-mono" style="font-size:13px;color:var(--mhr-ink-2);font-weight:500;">{{ ts.period }}</span>
               <span class="mhr-badge" :style="{ background: statusStyle(ts.statusTitle).bg, color: statusStyle(ts.statusTitle).color }">
-                {{ ts.statusTitle || 'Pending' }}
+                {{ ts.statusTitle || 'Saved' }}
               </span>
             </div>
           </div>

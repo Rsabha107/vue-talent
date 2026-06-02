@@ -196,7 +196,46 @@ class TimesheetController extends BaseHRController
             $endDay = $lastDay->calendar_day;
         }
 
-        // Count actions
+        // Auto-correct leave entry actions based on current leave types
+        $approvedStatusId = EmployeeLeaveStatus::approvedId();
+        $correctLeaveActions = [];
+        if ($approvedStatusId) {
+            EmployeeLeaveRequest::active()
+                ->with('leaveType')
+                ->where('status_id', $approvedStatusId)
+                ->where('employee_id', $timesheet->employee_id)
+                ->forEvent($timesheet->event_id)
+                ->get(['employee_id', 'date_from', 'date_to', 'leave_type_id'])
+                ->each(function ($lr) use (&$correctLeaveActions, $timesheet) {
+                    // Determine correct action based on leave type
+                    $action = ($lr->leaveType && $lr->leaveType->isPaid()) ? 'L' : 'U';
+                    
+                    $cur = $lr->date_from->copy();
+                    while ($cur->lte($lr->date_to)) {
+                        // Only include dates in this timesheet's month
+                        if ($cur->year == $timesheet->year && $cur->month == $timesheet->month_id) {
+                            $correctLeaveActions[$cur->day] = $action;
+                        }
+                        $cur->addDay();
+                    }
+                });
+        }
+
+        // Fix any mismatched leave entry actions
+        if (!empty($correctLeaveActions)) {
+            EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)
+                ->whereIn('day_action', ['L', 'U'])
+                ->get()
+                ->each(function ($entry) use ($correctLeaveActions) {
+                    $correctAction = $correctLeaveActions[$entry->calendar_day] ?? null;
+                    // If this day should have a leave action and it's different from saved, fix it
+                    if ($correctAction && $entry->day_action !== $correctAction) {
+                        $entry->update(['day_action' => $correctAction]);
+                    }
+                });
+        }
+
+        // Count actions (after auto-correction)
         $countWorked = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'W')->count();
         $countLeaves = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'L')->count();
         $countUnpaid = EmployeeTimesheetEntry::where('employee_timesheet_id', $tsId)->where('day_action', 'U')->count();
@@ -370,19 +409,24 @@ class TimesheetController extends BaseHRController
         $monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June',
                        'July', 'August', 'September', 'October', 'November', 'December'];
 
-        // Approved leave dates keyed by employee_id → [Y-m-d => true]
+        // Approved leave dates keyed by employee_id → [Y-m-d => 'L' or 'U']
+        // 'L' = Paid leave, 'U' = Unpaid leave
         $approvedStatusId = EmployeeLeaveStatus::approvedId();
         $leaveDays = [];
         if ($approvedStatusId) {
             EmployeeLeaveRequest::active()
+                ->with('leaveType') // Load leave type to check if paid/unpaid
                 ->where('status_id', $approvedStatusId)
                 ->where('employee_id', $employee->id)  // Only for current employee
                 ->forEvent($eventId)
-                ->get(['employee_id', 'date_from', 'date_to'])
+                ->get(['employee_id', 'date_from', 'date_to', 'leave_type_id'])
                 ->each(function ($lr) use (&$leaveDays) {
+                    // Determine if this leave is paid or unpaid
+                    $action = ($lr->leaveType && $lr->leaveType->isPaid()) ? 'L' : 'U';
+                    
                     $cur = $lr->date_from->copy();
                     while ($cur->lte($lr->date_to)) {
-                        $leaveDays[$lr->employee_id][$cur->format('Y-m-d')] = true;
+                        $leaveDays[$lr->employee_id][$cur->format('Y-m-d')] = $action;
                         $cur->addDay();
                     }
                 });
@@ -435,18 +479,29 @@ class TimesheetController extends BaseHRController
                 $date = new \DateTime("{$ts->year}-{$ts->month_id}-{$d}");
                 $dow = (int) $date->format('w'); // 0=Sun, 5=Fri, 6=Sat
                 $isWeekend = $dow === 5 || $dow === 6; // Friday or Saturday
-                $isLeave = isset($empLeave[$date->format('Y-m-d')]);
+                $dateKey = $date->format('Y-m-d');
+                $leaveAction = $empLeave[$dateKey] ?? null; // 'L' for paid, 'U' for unpaid, null if no leave
                 
                 // If there's a saved entry for this day, use its action; otherwise default
                 $savedEntry = $savedEntries[$d] ?? null;
-                $action = $savedEntry ? $savedEntry->day_action : ($isWeekend ? '0' : 'W');
+                if ($savedEntry) {
+                    $action = $savedEntry->day_action;
+                } elseif ($leaveAction) {
+                    // Auto-set leave action based on leave type (L or U)
+                    $action = $leaveAction;
+                } elseif ($isWeekend) {
+                    $action = '0';
+                } else {
+                    $action = 'W';
+                }
                 
                 $entries[] = [
                     'day'       => $d,
                     'dayName'   => $DAYS[$dow],
                     'isWeekend' => $isWeekend,
                     'action'    => $action,
-                    'isLeave'   => $isLeave,
+                    'isLeave'   => ($leaveAction !== null), // True if either paid or unpaid leave
+                    'leaveType' => $leaveAction, // 'L' = paid, 'U' = unpaid, null = no leave
                 ];
             }
 
@@ -614,11 +669,13 @@ class TimesheetController extends BaseHRController
         $monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June',
                        'July', 'August', 'September', 'October', 'November', 'December'];
 
-        // Approved leave dates keyed by employee_id → [Y-m-d => true]
+        // Approved leave dates keyed by employee_id → [Y-m-d => 'L' or 'U']
+        // 'L' = Paid leave, 'U' = Unpaid leave
         $approvedStatusId = EmployeeLeaveStatus::approvedId();
         $leaveDays = [];
         if ($approvedStatusId) {
             EmployeeLeaveRequest::active()
+                ->with('leaveType') // Load leave type to check if paid/unpaid
                 ->where('status_id', $approvedStatusId)
                 ->forEvent($eventId)
                 ->when($showPersonalOnly, function ($query) use ($currentEmployee) {
@@ -629,11 +686,14 @@ class TimesheetController extends BaseHRController
                         return $query->whereRaw('1 = 0');
                     }
                 })
-                ->get(['employee_id', 'date_from', 'date_to'])
+                ->get(['employee_id', 'date_from', 'date_to', 'leave_type_id'])
                 ->each(function ($lr) use (&$leaveDays) {
+                    // Determine if this leave is paid or unpaid
+                    $action = ($lr->leaveType && $lr->leaveType->isPaid()) ? 'L' : 'U';
+                    
                     $cur = $lr->date_from->copy();
                     while ($cur->lte($lr->date_to)) {
-                        $leaveDays[$lr->employee_id][$cur->format('Y-m-d')] = true;
+                        $leaveDays[$lr->employee_id][$cur->format('Y-m-d')] = $action;
                         $cur->addDay();
                     }
                 });
@@ -700,18 +760,29 @@ class TimesheetController extends BaseHRController
                 $date = new \DateTime("{$ts->year}-{$ts->month_id}-{$d}");
                 $dow = (int) $date->format('w'); // 0=Sun, 5=Fri, 6=Sat
                 $isWeekend = $dow === 5 || $dow === 6; // Friday or Saturday
-                $isLeave = isset($empLeave[$date->format('Y-m-d')]);
+                $dateKey = $date->format('Y-m-d');
+                $leaveAction = $empLeave[$dateKey] ?? null; // 'L' for paid, 'U' for unpaid, null if no leave
                 
                 // If there's a saved entry for this day, use its action; otherwise default
                 $savedEntry = $savedEntries[$d] ?? null;
-                $action = $savedEntry ? $savedEntry->day_action : ($isWeekend ? '0' : 'W');
+                if ($savedEntry) {
+                    $action = $savedEntry->day_action;
+                } elseif ($leaveAction) {
+                    // Auto-set leave action based on leave type (L or U)
+                    $action = $leaveAction;
+                } elseif ($isWeekend) {
+                    $action = '0';
+                } else {
+                    $action = 'W';
+                }
                 
                 $entries[] = [
                     'day'       => $d,
                     'dayName'   => $DAYS[$dow],
                     'isWeekend' => $isWeekend,
                     'action'    => $action,
-                    'isLeave'   => $isLeave,
+                    'isLeave'   => ($leaveAction !== null), // True if either paid or unpaid leave
+                    'leaveType' => $leaveAction, // 'L' = paid, 'U' = unpaid, null = no leave
                 ];
             }
 
@@ -873,7 +944,8 @@ class TimesheetController extends BaseHRController
         }
 
         // Get timesheets with entries
-        $tsQuery = EmployeeTimesheet::with(['employee', 'event', 'entries'])
+        $tsQuery = EmployeeTimesheet::active()
+            ->with(['employee', 'event', 'entries'])
             ->orderBy('year', 'desc')
             ->orderBy('month_id', 'desc');
         
@@ -896,17 +968,21 @@ class TimesheetController extends BaseHRController
         $approvedLeaves = [];
         if (!empty($employeeIds)) {
             $approvedStatusId = EmployeeLeaveStatus::where('title', 'Approved')->value('id');
-            $leaves = EmployeeLeaveRequest::whereIn('employee_id', $employeeIds)
+            $leaves = EmployeeLeaveRequest::with('leaveType') // Load leave type to check if paid/unpaid
+                ->whereIn('employee_id', $employeeIds)
                 ->where('status_id', $approvedStatusId)
                 ->where('archived', 'N')
                 ->get();
             
             foreach ($leaves as $leave) {
+                // Determine if this leave is paid or unpaid
+                $action = ($leave->leaveType && $leave->leaveType->isPaid()) ? 'L' : 'U';
+                
                 $start = \Carbon\Carbon::parse($leave->date_from);
                 $end = \Carbon\Carbon::parse($leave->date_to);
                 for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
                     $key = $leave->employee_id . '_' . $date->format('Y-m-d');
-                    $approvedLeaves[$key] = true;
+                    $approvedLeaves[$key] = $action; // Store 'L' or 'U' instead of just true
                 }
             }
         }
@@ -926,17 +1002,27 @@ class TimesheetController extends BaseHRController
                 $isWeekend = in_array($dayOfWeek, [6, 7]);
                 $dayName = date('D', strtotime($date));
                 $key = $ts->employee_id . '_' . $date;
-                $isLeave = isset($approvedLeaves[$key]);
+                $leaveAction = $approvedLeaves[$key] ?? null; // 'L' for paid, 'U' for unpaid, null if no leave
                 
                 $entry = $ts->entries->firstWhere('calendar_day', $day);
-                $action = $entry ? $entry->day_action : ($isLeave ? 'L' : ($isWeekend ? '0' : 'W'));
+                if ($entry) {
+                    $action = $entry->day_action;
+                } elseif ($leaveAction) {
+                    // Auto-set leave action based on leave type (L or U)
+                    $action = $leaveAction;
+                } elseif ($isWeekend) {
+                    $action = '0';
+                } else {
+                    $action = 'W';
+                }
                 
                 $entries[] = [
                     'day' => $day,
                     'dayName' => $dayName,
                     'isWeekend' => $isWeekend,
                     'action' => $action,
-                    'isLeave' => $isLeave
+                    'isLeave' => ($leaveAction !== null), // True if either paid or unpaid leave
+                    'leaveType' => $leaveAction, // 'L' = paid, 'U' = unpaid, null = no leave
                 ];
             }
             
@@ -1330,6 +1416,13 @@ class TimesheetController extends BaseHRController
         }
         
         $ts->update(['archived' => 'Y']);
+        
+        // Determine which route to redirect to based on the referrer
+        $referrer = request()->headers->get('referer');
+        if ($referrer && str_contains($referrer, 'my-timesheets-view')) {
+            return redirect()->route('hr.my-timesheets-view')->with('success', 'Timesheet deleted.');
+        }
+        
         return back()->with('success', 'Timesheet deleted.');
     }
 
@@ -1339,6 +1432,10 @@ class TimesheetController extends BaseHRController
     {
         $eventId = $this->getEffectiveEventIds(); // Support manager "All My Events"
         $role = $this->getHRRole();
+        
+        // Get current employee (to exclude manager's own timesheets)
+        $currentEmployee = Employee::where('user_id', auth()->id())->first();
+        $currentEmployeeId = $currentEmployee?->id;
         
         // Get submitted timesheets (ready for manager/admin approval)
         $submittedStatusId = EmployeeTimesheetStatus::submittedId();
@@ -1352,6 +1449,10 @@ class TimesheetController extends BaseHRController
             ->with(['employee', 'event', 'performer:id,full_name', 'entries'])
             ->where('status_id', $submittedStatusId)
             ->forEvent($eventId)
+            ->when($currentEmployeeId, function ($query) use ($currentEmployeeId) {
+                // Exclude manager's own timesheets from approval list
+                return $query->where('employee_id', '!=', $currentEmployeeId);
+            })
             ->orderBy('created_at', 'DESC');
         
         $DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -1407,6 +1508,10 @@ class TimesheetController extends BaseHRController
                 ->with(['employee', 'event', 'performer:id,full_name', 'entries'])
                 ->where('status_id', $pendingPayrollStatusId)
                 ->forEvent($eventId)
+                ->when($currentEmployeeId, function ($query) use ($currentEmployeeId) {
+                    // Exclude admin's own timesheets from payroll approval list
+                    return $query->where('employee_id', '!=', $currentEmployeeId);
+                })
                 ->orderBy('updated_at', 'DESC');
             
             $payrollTimesheets = $payrollQuery->get()->map(function ($ts) use ($monthNames, $DAYS) {

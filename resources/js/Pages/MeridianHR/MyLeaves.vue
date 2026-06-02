@@ -62,6 +62,7 @@ const requestToDelete = ref(null)
 const toast = ref(null)
 const openMenuId = ref(null)
 const isRefreshing = ref(false)
+const isDeletingLeave = ref(false)
 const isCalculatingFromDates = ref(false)
 const isCalculatingFromDatesEdit = ref(false)
 
@@ -423,10 +424,15 @@ function deleteLeaveRequest() {
     showDeleteModal.value = false
     return
   }
+  isDeletingLeave.value = true
   router.delete(route('hr.leave-requests.destroy', requestToDelete.value.id), {
     onSuccess: () => {
+      isDeletingLeave.value = false
       showDeleteModal.value = false
       showToast('Leave request deleted successfully')
+    },
+    onError: () => {
+      isDeletingLeave.value = false
     }
   })
 }
@@ -1023,7 +1029,7 @@ function refreshLeaveRequests() {
     </div>
 
     <!-- Delete Confirmation Modal -->
-    <div v-if="showDeleteModal" class="mhr-modal__scrim" @click.self="showDeleteModal = false">
+    <div v-if="showDeleteModal" class="mhr-modal__scrim" @click.self="isDeletingLeave ? null : (showDeleteModal = false)">
       <div class="mhr-modal mhr-modal--sm">
         <div class="mhr-modal__hd">
           <h2 class="mhr-modal__title">Delete Leave Request</h2>
@@ -1036,8 +1042,17 @@ function refreshLeaveRequests() {
           </p>
         </div>
         <div class="mhr-modal__ft">
-          <button class="mhr-btn mhr-btn--ghost" @click="showDeleteModal = false">Cancel</button>
-          <button class="mhr-btn mhr-btn--danger" @click="deleteLeaveRequest">Delete</button>
+          <button class="mhr-btn mhr-btn--ghost" @click="showDeleteModal = false" :disabled="isDeletingLeave">Cancel</button>
+          <button 
+            class="mhr-btn mhr-btn--danger" 
+            @click="deleteLeaveRequest"
+            :disabled="isDeletingLeave"
+            :style="isDeletingLeave ? 'opacity:0.5;cursor:not-allowed;' : ''"
+          >
+            <span v-if="isDeletingLeave" style="display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;margin-right:6px;"></span>
+            <span v-if="isDeletingLeave">Deleting...</span>
+            <span v-else>Delete</span>
+          </button>
         </div>
       </div>
     </div>

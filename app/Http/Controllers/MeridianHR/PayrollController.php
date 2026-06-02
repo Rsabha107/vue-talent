@@ -528,6 +528,7 @@ class PayrollController extends BaseHRController
                 ->where('status_id', $approvedStatusId)
                 ->where('month_id', $request->month_id)
                 ->where('year', $request->year)
+                ->whereHas('employee') // Only include timesheets with valid employee
                 ->whereNotExists(function ($query) {
                     $query->select(DB::raw(1))
                         ->from('payment_batch_items')
@@ -580,6 +581,15 @@ class PayrollController extends BaseHRController
 
             // Create batch items
             foreach ($timesheets as $timesheet) {
+                // Skip timesheets without valid employee
+                if (!$timesheet->employee) {
+                    Log::warning('Skipping timesheet with missing employee', [
+                        'timesheet_id' => $timesheet->id,
+                        'employee_id' => $timesheet->employee_id,
+                    ]);
+                    continue;
+                }
+
                 // Get agreement number and designation from employee_events pivot table
                 $eventAssignment = DB::table('employee_events')
                     ->where('employee_id', $timesheet->employee_id)
@@ -596,20 +606,23 @@ class PayrollController extends BaseHRController
                 }
                 
                 // Get primary bank (last created bank with no end date - still active)
-                $primaryBank = $timesheet->employee->banks
-                    ->filter(function ($bank) {
-                        return !$bank->effective_end_date || 
-                               $bank->effective_end_date->format('Y-m-d') === '9999-12-31';
-                    })
-                    ->sortByDesc('created_at')
-                    ->first();
+                $primaryBank = null;
+                if ($timesheet->employee->banks && $timesheet->employee->banks->isNotEmpty()) {
+                    $primaryBank = $timesheet->employee->banks
+                        ->filter(function ($bank) {
+                            return !$bank->effective_end_date || 
+                                   $bank->effective_end_date->format('Y-m-d') === '9999-12-31';
+                        })
+                        ->sortByDesc('created_at')
+                        ->first();
+                }
                 
                 Log::info('Processing timesheet', [
                     'timesheet_id' => $timesheet->id,
                     'employee_id' => $timesheet->employee_id,
                     'event_id' => $timesheet->event_id,
                     'employee_name' => $timesheet->employee->full_name ?? 'N/A',
-                    'employee_number' => $timesheet->employee->employee_number,
+                    'employee_number' => $timesheet->employee->employee_number ?? 'N/A',
                     'agreement_number' => $agreementNumber,
                     'role' => $designationName,
                     'primary_bank_id' => $primaryBank?->id,
@@ -620,9 +633,9 @@ class PayrollController extends BaseHRController
                     'payment_batch_id' => $batch->id,
                     'timesheet_id' => $timesheet->id,
                     'employee_id' => $timesheet->employee_id,
-                    'employee_number' => $timesheet->employee->employee_number,
+                    'employee_number' => $timesheet->employee->employee_number ?? 'N/A',
                     'agreement_number' => $agreementNumber,
-                    'employee_name' => $timesheet->employee->first_name . ' ' . $timesheet->employee->last_name,
+                    'employee_name' => ($timesheet->employee->first_name ?? '') . ' ' . ($timesheet->employee->last_name ?? ''),
                     'role' => $designationName,
                     'bank_id' => $primaryBank?->id,
                     'account_number' => $primaryBank?->iban, // IBAN from employee_banks table
@@ -730,9 +743,41 @@ class PayrollController extends BaseHRController
             }),
         ];
 
+        // Get available timesheets that can be added to this batch
+        $availableTimesheets = [];
+        if ($batch->canEdit()) {
+            $approvedStatusId = EmployeeTimesheetStatus::approvedId();
+            
+            $availableTimesheets = EmployeeTimesheet::with(['employee'])
+                ->where('status_id', $approvedStatusId)
+                ->where('month_id', $batch->month_id)
+                ->where('year', $batch->year)
+                ->whereHas('employee') // Only timesheets with valid employee
+                ->whereNotExists(function ($query) {
+                    // Not in ANY payment batch
+                    $query->select(DB::raw(1))
+                        ->from('payment_batch_items')
+                        ->whereColumn('payment_batch_items.timesheet_id', 'employee_timesheets.id');
+                })
+                ->get()
+                ->map(function ($timesheet) {
+                    return [
+                        'id' => $timesheet->id,
+                        'timesheetId' => $timesheet->id,
+                        'employeeId' => $timesheet->employee_id,
+                        'employeeName' => $timesheet->employee->full_name ?? 'N/A',
+                        'employeeNumber' => $timesheet->employee->employee_no ?? 'N/A',
+                        'period' => $timesheet->timesheet_period,
+                        'daysWorked' => $timesheet->days_worked,
+                        'paymentAmount' => $timesheet->total_payment,
+                    ];
+                });
+        }
+
         return Inertia::render('Payroll/PaymentBatchDetails', [
             'payrollPage' => 'payment-batches',
             'batch' => $batchData,
+            'availableTimesheets' => $availableTimesheets,
             'can' => $this->getPayrollPermissions(),
             'pendingCounts' => $this->getPendingCounts(),
             'modules' => $this->getAccessibleModules(),
@@ -850,13 +895,220 @@ class PayrollController extends BaseHRController
         $batch = PaymentBatch::findOrFail($id);
 
         if (!$batch->canEdit()) {
-            return back()->withErrors(['error' => 'Only draft batches can be deleted.']);
+            return back()->withErrors(['error' => 'Processed batches cannot be deleted.']);
         }
 
         $batch->delete();
 
         return redirect()->route('payroll.payment-batches')
             ->with('success', 'Payment batch deleted successfully.');
+    }
+
+    /**
+     * Add a new item to a payment batch
+     */
+    public function addPaymentBatchItem($id, Request $request)
+    {
+        $batch = PaymentBatch::findOrFail($id);
+
+        if (!$batch->canEdit()) {
+            return back()->withErrors(['error' => 'This batch cannot be edited.']);
+        }
+
+        $request->validate([
+            'timesheet_id' => 'required|exists:employee_timesheets,id',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            // Check if timesheet is already in a batch
+            $existingItem = PaymentBatchItem::where('timesheet_id', $request->timesheet_id)->first();
+            if ($existingItem) {
+                DB::rollBack();
+                return back()->withErrors(['error' => 'This timesheet is already in a payment batch.']);
+            }
+
+            // Get timesheet and employee data
+            $timesheet = EmployeeTimesheet::with(['employee', 'employee.banks'])->findOrFail($request->timesheet_id);
+            
+            if (!$timesheet->employee) {
+                DB::rollBack();
+                return back()->withErrors(['error' => 'Timesheet has no associated employee.']);
+            }
+
+            $employee = $timesheet->employee;
+
+            // Verify timesheet matches batch period
+            if ($timesheet->month_id != $batch->month_id || $timesheet->year != $batch->year) {
+                DB::rollBack();
+                return back()->withErrors(['error' => 'Timesheet period does not match batch period.']);
+            }
+
+            // Get primary bank (last created bank with no end date - still active)
+            $primaryBank = null;
+            if ($employee->banks && $employee->banks->isNotEmpty()) {
+                $primaryBank = $employee->banks
+                    ->filter(function ($bank) {
+                        return !$bank->effective_end_date || 
+                               $bank->effective_end_date->format('Y-m-d') === '9999-12-31';
+                    })
+                    ->sortByDesc('created_at')
+                    ->first();
+            }
+
+            // Get agreement number from employee_events
+            $eventAssignment = DB::table('employee_events')
+                ->where('employee_id', $employee->id)
+                ->where('event_id', $timesheet->event_id)
+                ->first();
+
+            // Create payment batch item
+            PaymentBatchItem::create([
+                'payment_batch_id' => $batch->id,
+                'timesheet_id' => $timesheet->id,
+                'employee_id' => $employee->id,
+                'employee_number' => $employee->employee_no ?? 'N/A',
+                'agreement_number' => $eventAssignment->agreement_number ?? null,
+                'employee_name' => $employee->full_name,
+                'role' => $employee->designation?->title,
+                'bank_id' => $primaryBank?->id,
+                'account_number' => $primaryBank?->iban,
+                'days_worked' => $timesheet->days_worked,
+                'leave_taken' => $timesheet->leave_taken,
+                'unpaid_leave_taken' => $timesheet->unpaid_leave_taken,
+                'total_days_paid' => $timesheet->total_days_eligible_for_payment,
+                'daily_rate' => $timesheet->daily_rate,
+                'payment_amount' => $timesheet->total_payment,
+            ]);
+
+            // Recalculate batch totals
+            $this->recalculateBatchTotals($batch);
+
+            // If batch was finalized, revert to draft
+            if ($batch->isFinalized()) {
+                $batch->update([
+                    'status' => 'draft',
+                    'finalized_at' => null,
+                    'finalized_by' => null,
+                ]);
+            }
+
+            DB::commit();
+
+            return back()->with('success', 'Item added successfully. ' . ($batch->isFinalized() ? 'Batch reverted to draft - please re-finalize.' : ''));
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to add payment batch item: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to add item: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Update a payment batch item
+     */
+    public function updatePaymentBatchItem($batchId, $itemId, Request $request)
+    {
+        $batch = PaymentBatch::findOrFail($batchId);
+        $item = PaymentBatchItem::where('payment_batch_id', $batchId)->findOrFail($itemId);
+
+        if (!$batch->canEdit()) {
+            return back()->withErrors(['error' => 'This batch cannot be edited.']);
+        }
+
+        $request->validate([
+            'payment_amount' => 'required|numeric|min:0',
+            'days_worked' => 'nullable|integer|min:0',
+            'account_number' => 'nullable|string',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $item->update([
+                'payment_amount' => $request->payment_amount,
+                'days_worked' => $request->days_worked ?? $item->days_worked,
+                'account_number' => $request->account_number ?? $item->account_number,
+            ]);
+
+            // Recalculate batch totals
+            $this->recalculateBatchTotals($batch);
+
+            // If batch was finalized, revert to draft
+            $wasFinalized = $batch->isFinalized();
+            if ($wasFinalized) {
+                $batch->update([
+                    'status' => 'draft',
+                    'finalized_at' => null,
+                    'finalized_by' => null,
+                ]);
+            }
+
+            DB::commit();
+
+            return back()->with('success', 'Item updated successfully. ' . ($wasFinalized ? 'Batch reverted to draft - please re-finalize.' : ''));
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to update payment batch item: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to update item: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Delete a payment batch item
+     */
+    public function deletePaymentBatchItem($batchId, $itemId)
+    {
+        $batch = PaymentBatch::findOrFail($batchId);
+        $item = PaymentBatchItem::where('payment_batch_id', $batchId)->findOrFail($itemId);
+
+        if (!$batch->canEdit()) {
+            return back()->withErrors(['error' => 'This batch cannot be edited.']);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $item->delete();
+
+            // Recalculate batch totals
+            $this->recalculateBatchTotals($batch);
+
+            // If batch was finalized, revert to draft
+            $wasFinalized = $batch->isFinalized();
+            if ($wasFinalized) {
+                $batch->update([
+                    'status' => 'draft',
+                    'finalized_at' => null,
+                    'finalized_by' => null,
+                ]);
+            }
+
+            DB::commit();
+
+            return back()->with('success', 'Item deleted successfully. ' . ($wasFinalized ? 'Batch reverted to draft - please re-finalize.' : ''));
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to delete payment batch item: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to delete item: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Recalculate payment batch totals
+     */
+    private function recalculateBatchTotals(PaymentBatch $batch)
+    {
+        $items = PaymentBatchItem::where('payment_batch_id', $batch->id)->get();
+
+        $batch->update([
+            'timesheet_count' => $items->count(),
+            'employee_count' => $items->pluck('employee_id')->unique()->count(),
+            'total_amount' => $items->sum('payment_amount'),
+        ]);
     }
 
     /**

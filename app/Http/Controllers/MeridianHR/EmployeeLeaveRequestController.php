@@ -537,7 +537,7 @@ class EmployeeLeaveRequestController extends BaseHRController
         // Recalculate leave balances after creating new request
         LeaveBalanceService::recalculateAfterLeaveRequest($leaveRequest);
 
-        return redirect()->route('hr.leave-requests')->with('success', 'Leave request created successfully.');
+        return redirect()->route('hr.my-leaves')->with('success', 'Leave request created successfully.');
     }
 
     public function update(Request $request, $id)
@@ -624,7 +624,7 @@ class EmployeeLeaveRequestController extends BaseHRController
         // Recalculate leave balances after status change (approved/rejected)
         LeaveBalanceService::recalculateAfterLeaveRequest($leaveRequest);
 
-        return redirect()->route('hr.leave-requests')->with('success', 'Leave request updated successfully.');
+        return redirect()->route('hr.my-leaves')->with('success', 'Leave request updated successfully.');
     }
 
     public function destroy($id)
@@ -635,7 +635,7 @@ class EmployeeLeaveRequestController extends BaseHRController
         // Recalculate leave balances after archiving request
         LeaveBalanceService::recalculateAfterLeaveRequest($leaveRequest);
 
-        return redirect()->route('hr.leave-requests')->with('success', 'Leave request archived successfully.');
+        return redirect()->route('hr.my-leaves')->with('success', 'Leave request archived successfully.');
     }
 
     /**

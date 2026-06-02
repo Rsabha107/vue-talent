@@ -45,4 +45,25 @@ class LeaveType extends Model
     {
         return $query->where('eligible', 1);
     }
+
+    /**
+     * Check if this leave type is paid
+     * Unpaid leave types typically have "unpaid" in their title
+     * 
+     * @return bool
+     */
+    public function isPaid(): bool
+    {
+        return !str_contains(strtolower($this->title ?? ''), 'unpaid');
+    }
+
+    /**
+     * Check if this leave type is unpaid
+     * 
+     * @return bool
+     */
+    public function isUnpaid(): bool
+    {
+        return !$this->isPaid();
+    }
 }
