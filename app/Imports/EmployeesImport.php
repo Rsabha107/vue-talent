@@ -10,6 +10,7 @@ use App\Models\Designation;
 use App\Models\Salutation;
 use App\Models\Directorate;
 use App\Models\FunctionalArea;
+use App\Models\EmployeeJobLevel;
 use App\Models\Gender;
 use App\Models\MaritalStatus;
 use App\Models\Nationality;
@@ -93,6 +94,13 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
         $functionalArea = !empty($row['functional_area']) 
             ? FunctionalArea::firstOrCreate(
                 ['title' => $row['functional_area']],
+                ['active_flag' => 1, 'created_by' => 1, 'updated_by' => 1]
+            )
+            : null;
+
+        $jobLevel = !empty($row['job_level']) 
+            ? EmployeeJobLevel::firstOrCreate(
+                ['title' => $row['job_level']],
                 ['active_flag' => 1, 'created_by' => 1, 'updated_by' => 1]
             )
             : null;
@@ -224,6 +232,7 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
                 'designation_id' => $designation?->id,
                 'directorate_id' => $directorate?->id,
                 'functional_area_id' => $functionalArea?->id,
+                'job_level_id' => $jobLevel?->id,
                 'entity_id' => $entity?->id,
                 'contract_type_id' => $contractType?->id,
                 'employee_type' => $employeeType?->id,

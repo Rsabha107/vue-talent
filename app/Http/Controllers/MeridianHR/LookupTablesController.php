@@ -8,6 +8,7 @@ use App\Models\Designation;
 use App\Models\Directorate;
 use App\Models\EmployeeContractType;
 use App\Models\EmployeeEntity;
+use App\Models\EmployeeJobLevel;
 use App\Models\EmployeeSponsorship;
 use App\Models\Gender;
 use App\Models\MaritalStatus;
@@ -323,6 +324,25 @@ class LookupTablesController extends BaseHRController
                 'hasActiveFlag' => false,
                 'hasAudit' => true,
             ],
+            'job-levels' => [
+                'model' => EmployeeJobLevel::class,
+                'title' => 'Job Levels',
+                'singular' => 'Job Level',
+                'icon' => 'trending-up',
+                'color' => '#6366f1',
+                'description' => 'Employee job level categories (Junior, Senior, etc.)',
+                'fields' => [
+                    ['name' => 'title', 'label' => 'Job Level', 'type' => 'text', 'required' => true],
+                    ['name' => 'active_flag', 'label' => 'Status', 'type' => 'status', 'required' => true],
+                ],
+                'columns' => [
+                    ['key' => 'id', 'label' => 'ID', 'width' => '80px'],
+                    ['key' => 'title', 'label' => 'Level'],
+                    ['key' => 'status', 'label' => 'Status', 'width' => '120px'],
+                ],
+                'hasActiveFlag' => true,
+                'hasAudit' => true,
+            ],
         ];
     }
 
@@ -435,6 +455,9 @@ class LookupTablesController extends BaseHRController
                 }
             } elseif ($field['type'] === 'select') {
                 $fieldRules[] = 'integer';
+            } elseif ($field['type'] === 'status') {
+                $fieldRules[] = 'integer';
+                $fieldRules[] = 'in:0,1';
             }
             
             $rules[$field['name']] = implode('|', $fieldRules);
@@ -442,8 +465,8 @@ class LookupTablesController extends BaseHRController
         
         $validated = $request->validate($rules);
         
-        // Add active flag if applicable
-        if ($entity['hasActiveFlag']) {
+        // Add active flag if applicable and not already set
+        if ($entity['hasActiveFlag'] && !isset($validated['active_flag'])) {
             $validated['active_flag'] = 1;
         }
         
@@ -489,6 +512,9 @@ class LookupTablesController extends BaseHRController
                 }
             } elseif ($field['type'] === 'select') {
                 $fieldRules[] = 'integer';
+            } elseif ($field['type'] === 'status') {
+                $fieldRules[] = 'integer';
+                $fieldRules[] = 'in:0,1';
             }
             
             $rules[$field['name']] = implode('|', $fieldRules);

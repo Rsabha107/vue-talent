@@ -7,6 +7,7 @@ use App\Models\Department;
 use App\Models\Designation;
 use App\Models\Directorate;
 use App\Models\FunctionalArea;
+use App\Models\EmployeeJobLevel;
 use App\Models\EmployeeEntity;
 use App\Models\EmployeeContractType;
 use App\Models\EmployeeType;
@@ -103,6 +104,13 @@ class EventAssignmentImport implements ToModel, WithHeadingRow, WithValidation, 
                 )
                 : null;
 
+            $jobLevel = !empty($row['job_level']) 
+                ? EmployeeJobLevel::firstOrCreate(
+                    ['title' => $row['job_level']],
+                    ['active_flag' => 1, 'created_by' => 1, 'updated_by' => 1]
+                )
+                : null;
+
             $entity = !empty($row['entity']) 
                 ? EmployeeEntity::firstOrCreate(
                     ['title' => $row['entity']],
@@ -145,6 +153,7 @@ class EventAssignmentImport implements ToModel, WithHeadingRow, WithValidation, 
                 'designation_id' => $designation?->id,
                 'directorate_id' => $directorate?->id,
                 'functional_area_id' => $functionalArea?->id,
+                'job_level_id' => $jobLevel?->id,
                 'entity_id' => $entity?->id,
                 'contract_type_id' => $contractType?->id,
                 'salary_basis_id' => $salaryBasis?->id,

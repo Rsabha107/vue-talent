@@ -25,6 +25,7 @@ class EventAssignmentTemplateExport implements FromArray, WithHeadings, WithStyl
                 'Engineering',
                 'Technology',
                 'Innovation',
+                'Senior Level',
                 'Company A',
                 'Fixed',
                 'Permanent',
@@ -43,6 +44,7 @@ class EventAssignmentTemplateExport implements FromArray, WithHeadings, WithStyl
                 'Design',
                 'Product',
                 'User Experience',
+                'Mid Level',
                 'Company B',
                 'Contract',
                 'Contractor',
@@ -61,6 +63,7 @@ class EventAssignmentTemplateExport implements FromArray, WithHeadings, WithStyl
                 'Engineering',
                 'Technology',
                 'Development',
+                'Junior Level',
                 'Company A',
                 'Fixed',
                 'Permanent',
@@ -84,6 +87,7 @@ class EventAssignmentTemplateExport implements FromArray, WithHeadings, WithStyl
             'Department',
             'Directorate',
             'Functional Area',
+            'Job Level',
             'Entity',
             'Contract Type',
             'Employee Type',
@@ -119,14 +123,16 @@ class EventAssignmentTemplateExport implements FromArray, WithHeadings, WithStyl
             'E' => 20, // Department
             'F' => 20, // Directorate
             'G' => 20, // Functional Area
-            'H' => 18, // Entity
-            'I' => 15, // Contract Type
-            'J' => 15, // Salary Basis
-            'K' => 22, // Manager Employee Number
-            'L' => 30, // Manager Email
-            'M' => 20, // Agreement Number
-            'N' => 18, // Assigned At
-            'O' => 18, // Released At
+            'H' => 18, // Job Level
+            'I' => 18, // Entity
+            'J' => 15, // Contract Type
+            'K' => 15, // Employee Type
+            'L' => 15, // Salary Basis
+            'M' => 22, // Manager Employee Number
+            'N' => 30, // Manager Email
+            'O' => 20, // Agreement Number
+            'P' => 18, // Assigned At
+            'Q' => 18, // Released At
         ];
     }
 }

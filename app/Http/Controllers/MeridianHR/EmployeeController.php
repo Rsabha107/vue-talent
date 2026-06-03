@@ -10,6 +10,7 @@ use App\Models\Employee;
 use App\Models\User;
 use App\Models\EmployeeContractType;
 use App\Models\EmployeeEntity;
+use App\Models\EmployeeJobLevel;
 use App\Models\EmployeeLeaveRequest;
 use App\Models\EmployeeLeaveStatus;
 use App\Models\EmployeeSponsorship;
@@ -549,7 +550,7 @@ class EmployeeController extends BaseHRController
         // Get next pay information from approved timesheets
         $currentEmployee = Employee::where('user_id', auth()->id())->first();
         $nextPayDate = 'Not available';
-        $nextPayFormatted = '$0.00';
+        $nextPayFormatted = '0.00';
         
         if ($currentEmployee) {
             // Get the most recent approved timesheet
@@ -563,7 +564,7 @@ class EmployeeController extends BaseHRController
                 ->first();
             
             if ($latestTimesheet && $latestTimesheet->total_payment) {
-                $nextPayFormatted = '$' . number_format($latestTimesheet->total_payment, 2, '.', ',');
+                $nextPayFormatted = number_format($latestTimesheet->total_payment, 2, '.', ',');
                 
                 // Calculate pay date as last day of the timesheet month
                 $payDate = Carbon::create($latestTimesheet->year, $latestTimesheet->month_id, 1)->endOfMonth();
@@ -581,7 +582,7 @@ class EmployeeController extends BaseHRController
                 ->first();
             
             if ($lastPaymentBatch) {
-                $lastPayrollTotal = '$' . number_format($lastPaymentBatch->total_amount, 2, '.', ',');
+                $lastPayrollTotal = number_format($lastPaymentBatch->total_amount, 2, '.', ',');
                 $lastPayrollMonth = Carbon::create($lastPaymentBatch->year, $lastPaymentBatch->month_id, 1)->format('F Y');
             }
         }
@@ -757,6 +758,7 @@ class EmployeeController extends BaseHRController
                 $designationId = $pivotData?->designation_id ?? null;
                 $directorateId = $pivotData?->directorate_id ?? null;
                 $functionalAreaId = $pivotData?->functional_area_id ?? null;
+                $jobLevelId = $pivotData?->job_level_id ?? null;
                 $reportingToId = $pivotData?->reporting_to_id ?? null;
                 $entityId = $pivotData?->entity_id ?? null;
                 $contractTypeId = $pivotData?->contract_type_id ?? null;
@@ -769,6 +771,7 @@ class EmployeeController extends BaseHRController
                 $designation = $designationId ? Designation::find($designationId) : null;
                 $directorate = $directorateId ? Directorate::find($directorateId) : null;
                 $functionalArea = $functionalAreaId ? FunctionalArea::find($functionalAreaId) : null;
+                $jobLevel = $jobLevelId ? EmployeeJobLevel::find($jobLevelId) : null;
                 $reportingTo = $reportingToId ? Employee::find($reportingToId) : null;
                 $entity = $entityId ? EmployeeEntity::find($entityId) : null;
                 $contractType = $contractTypeId ? EmployeeContractType::find($contractTypeId) : null;
@@ -821,6 +824,8 @@ class EmployeeController extends BaseHRController
                     'directorate'       => $directorate?->title ?? null,
                     'functional_area_id'=> $functionalAreaId,
                     'functionalArea'    => $functionalArea?->title ?? null,
+                    'job_level_id'      => $jobLevelId,
+                    'jobLevel'          => $jobLevel?->title ?? null,
                     'entity'            => $entity?->title ?? null,
                     'entityId'          => $entityId,
                     'contractType'      => $contractType?->title ?? null,
@@ -908,6 +913,10 @@ class EmployeeController extends BaseHRController
             return ['id' => $s->id, 'title' => $s->title];
         });
 
+        $jobLevels = EmployeeJobLevel::where('active_flag', 1)->orderBy('title')->get()->map(function ($j) {
+            return ['id' => $j->id, 'title' => $j->title];
+        });
+
         $genders = Gender::orderBy('title')->get()->map(function ($g) {
             return ['id' => $g->id, 'title' => $g->title];
         });
@@ -951,6 +960,7 @@ class EmployeeController extends BaseHRController
             'employeeTypes'     => $employeeTypes,
             'contractTypes'     => $contractTypes,
             'salaryBases'       => $salaryBases,
+            'jobLevels'         => $jobLevels,
             'genders'           => $genders,
             'maritalStatuses'   => $maritalStatuses,
             'nationalities'     => $nationalities,

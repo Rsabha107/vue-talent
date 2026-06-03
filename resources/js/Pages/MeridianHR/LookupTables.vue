@@ -35,7 +35,13 @@ const fields = computed(() => props.entityConfig.fields)
 function initForm() {
   const formData = {}
   fields.value.forEach(field => {
-    formData[field.name] = field.type === 'select' ? null : ''
+    if (field.type === 'select') {
+      formData[field.name] = null
+    } else if (field.type === 'status') {
+      formData[field.name] = 1 // Default to Active
+    } else {
+      formData[field.name] = ''
+    }
   })
   return formData
 }
@@ -74,7 +80,10 @@ function openEditModal(item) {
   fields.value.forEach(field => {
     const fieldName = field.name
     // Check if item has this field
-    if (fieldName.includes('_id')) {
+    if (fieldName === 'active_flag') {
+      // Map status to active_flag for editing
+      form.value[fieldName] = item.status ?? 1
+    } else if (fieldName.includes('_id')) {
       // For foreign keys, need to extract the ID
       form.value[fieldName] = item[fieldName] || null
     } else {
@@ -294,6 +303,16 @@ function isFormValid() {
                 >
                   {{ option.label }}
                 </option>
+              </select>
+              
+              <!-- Status toggle (active/inactive) -->
+              <select 
+                v-else-if="field.type === 'status'" 
+                class="mhr-select" 
+                v-model.number="form[field.name]"
+              >
+                <option :value="1">Active</option>
+                <option :value="0">Inactive</option>
               </select>
             </div>
           </div>

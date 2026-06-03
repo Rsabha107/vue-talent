@@ -26,6 +26,7 @@ const props = defineProps({
   employeeTypes:       { type: Array,  default: () => [] },
   contractTypes:       { type: Array,  default: () => [] },
   salaryBases:         { type: Array,  default: () => [] },
+  jobLevels:           { type: Array,  default: () => [] },
   genders:             { type: Array,  default: () => [] },
   maritalStatuses:     { type: Array,  default: () => [] },
   nationalities:       { type: Array,  default: () => [] },
@@ -106,6 +107,7 @@ const assignEventForm = ref({
   designationId: null,
   directorateId: null,
   functionalAreaId: null,
+  jobLevelId: null,
   entityId: null,
   contractTypeId: null,
   reportingToId: null,
@@ -259,6 +261,7 @@ const editForm = ref({
   departmentId: null,
   directorateId: null,
   functionalAreaId: null,
+  jobLevelId: null,
   salaryBasisId: null,
   employeeType: null,
   entityId: null,
@@ -539,6 +542,7 @@ function confirmAssignToEvent() {
     designation_id: assignEventForm.value.designationId ? Number(assignEventForm.value.designationId) : null,
     directorate_id: assignEventForm.value.directorateId ? Number(assignEventForm.value.directorateId) : null,
     functional_area_id: assignEventForm.value.functionalAreaId ? Number(assignEventForm.value.functionalAreaId) : null,
+    job_level_id: assignEventForm.value.jobLevelId ? Number(assignEventForm.value.jobLevelId) : null,
     entity_id: assignEventForm.value.entityId ? Number(assignEventForm.value.entityId) : null,
     contract_type_id: assignEventForm.value.contractTypeId ? Number(assignEventForm.value.contractTypeId) : null,
     reporting_to_id: assignEventForm.value.reportingToId ? Number(assignEventForm.value.reportingToId) : null,
@@ -775,6 +779,7 @@ function addEmployee() {
     department_id: form.value.assignToEvent && form.value.departmentId ? Number(form.value.departmentId) : null,
     directorate_id: form.value.assignToEvent && form.value.directorateId ? Number(form.value.directorateId) : null,
     functional_area_id: form.value.assignToEvent && form.value.functionalAreaId ? Number(form.value.functionalAreaId) : null,
+    job_level_id: form.value.assignToEvent && form.value.jobLevelId ? Number(form.value.jobLevelId) : null,
     salary_basis_id: form.value.assignToEvent && form.value.salaryBasisId ? Number(form.value.salaryBasisId) : null,
     employee_type: form.value.assignToEvent && form.value.employeeType ? Number(form.value.employeeType) : null,
     entity_id: form.value.assignToEvent && form.value.entityId ? Number(form.value.entityId) : null,
@@ -907,6 +912,7 @@ function editEmployee(emp) {
     departmentId: validId(emp.department_id, props.departments),
     directorateId: validId(emp.directorate_id, props.directorates),
     functionalAreaId: validId(emp.functional_area_id, props.functionalAreas),
+    jobLevelId: validId(emp.job_level_id, props.jobLevels),
     salaryBasisId: validId(emp.salaryBasisId, props.salaryBases),
     employeeType: validId(emp.employeeType, props.employeeTypes),
     entityId: validId(emp.entityId, props.entities),
@@ -1128,6 +1134,7 @@ function updateEmployee() {
     department_id: editForm.value.assignToEvent && editForm.value.departmentId ? Number(editForm.value.departmentId) : null,
     directorate_id: editForm.value.assignToEvent && editForm.value.directorateId ? Number(editForm.value.directorateId) : null,
     functional_area_id: editForm.value.assignToEvent && editForm.value.functionalAreaId ? Number(editForm.value.functionalAreaId) : null,
+    job_level_id: editForm.value.assignToEvent && editForm.value.jobLevelId ? Number(editForm.value.jobLevelId) : null,
     salary_basis_id: editForm.value.assignToEvent && editForm.value.salaryBasisId ? Number(editForm.value.salaryBasisId) : null,
     employee_type: editForm.value.assignToEvent && editForm.value.employeeType ? Number(editForm.value.employeeType) : null,
     entity_id: editForm.value.assignToEvent && editForm.value.entityId ? Number(editForm.value.entityId) : null,
@@ -2049,7 +2056,7 @@ function updateEmployee() {
               </div>
               
               <!-- More Employment Details -->
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
                 <div class="mhr-field">
                   <label class="mhr-field__label">Directorate</label>
                   <select class="mhr-select" v-model="form.directorateId">
@@ -2062,6 +2069,13 @@ function updateEmployee() {
                   <select class="mhr-select" v-model="form.functionalAreaId">
                     <option :value="null">Select...</option>
                     <option v-for="f in functionalAreas" :key="f.id" :value="f.id">{{ f.title }}</option>
+                  </select>
+                </div>
+                <div class="mhr-field">
+                  <label class="mhr-field__label">Job Level</label>
+                  <select class="mhr-select" v-model="form.jobLevelId">
+                    <option :value="null">Select...</option>
+                    <option v-for="j in jobLevels" :key="j.id" :value="j.id">{{ j.title }}</option>
                   </select>
                 </div>
               </div>
@@ -2441,7 +2455,7 @@ function updateEmployee() {
               </div>
               
               <!-- More Employment Details -->
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
                 <div class="mhr-field">
                   <label class="mhr-field__label">Directorate</label>
                   <select class="mhr-select" v-model="editForm.directorateId">
@@ -2454,6 +2468,13 @@ function updateEmployee() {
                   <select class="mhr-select" v-model="editForm.functionalAreaId">
                     <option :value="null">Select...</option>
                     <option v-for="f in functionalAreas" :key="f.id" :value="f.id">{{ f.title }}</option>
+                  </select>
+                </div>
+                <div class="mhr-field">
+                  <label class="mhr-field__label">Job Level</label>
+                  <select class="mhr-select" v-model="editForm.jobLevelId">
+                    <option :value="null">Select...</option>
+                    <option v-for="j in jobLevels" :key="j.id" :value="j.id">{{ j.title }}</option>
                   </select>
                 </div>
               </div>
@@ -2896,7 +2917,7 @@ function updateEmployee() {
             </div>
             
             <!-- More Employment Details -->
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
               <div class="mhr-field">
                 <label class="mhr-field__label">Directorate</label>
                 <select class="mhr-select" v-model="assignEventForm.directorateId">
@@ -2909,6 +2930,13 @@ function updateEmployee() {
                 <select class="mhr-select" v-model="assignEventForm.functionalAreaId">
                   <option :value="null">Select...</option>
                   <option v-for="f in functionalAreas" :key="f.id" :value="f.id">{{ f.title }}</option>
+                </select>
+              </div>
+              <div class="mhr-field">
+                <label class="mhr-field__label">Job Level</label>
+                <select class="mhr-select" v-model="assignEventForm.jobLevelId">
+                  <option :value="null">Select...</option>
+                  <option v-for="j in jobLevels" :key="j.id" :value="j.id">{{ j.title }}</option>
                 </select>
               </div>
             </div>

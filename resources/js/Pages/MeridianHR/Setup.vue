@@ -202,6 +202,16 @@ const setupCards = [
     routeParams: { type: 'invoice-notes' },
   },
   {
+    key: 'job-levels',
+    title: 'Job Levels',
+    description: 'Employee job level categories (Junior, Senior, etc.)',
+    icon: 'trending-up',
+    iconColor: '#6366f1',
+    count: () => props.lookupCounts['job-levels'] || 0,
+    route: 'hr.lookup',
+    routeParams: { type: 'job-levels' },
+  },
+  {
     key: 'settings',
     title: 'Application Settings',
     description: 'Configure system preferences and application settings',

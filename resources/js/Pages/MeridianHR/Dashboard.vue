@@ -32,7 +32,7 @@ function todayPretty() {
 }
 
 function fmtMoney(n) {
-  return '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function fmtRange(a, b) {
@@ -99,7 +99,7 @@ const maxHeadcount = computed(() => {
         <div class="mhr-stat" style="background:linear-gradient(135deg,var(--green-700),var(--green-800));color:#fff;border:none;">
           <div class="mhr-stat__label" style="color:rgba(255,255,255,0.7);">Next pay</div>
           <div class="mhr-stat__value" style="color:#fff;">
-            {{ stats.nextPayFormatted || '$0.00' }}
+            {{ stats.nextPayFormatted || '0.00' }}
           </div>
           <div class="mhr-stat__delta" style="color:rgba(255,255,255,0.85);">
             <AppIcon name="calendar" :size="12" /> {{ stats.nextPayDate || 'Not available' }}
