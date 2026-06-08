@@ -48,7 +48,8 @@ class AppServiceProvider extends ServiceProvider
             $event->extendSocialite('microsoft', \SocialiteProviders\Microsoft\Provider::class);
         });
 
-        if ($this->app->environment('azure')) {
+        // Force HTTPS when behind Azure's reverse proxy or in azure environment
+        if (isset($_SERVER['HTTP_X_ARR_SSL']) || $this->app->environment('azure', 'production')) {
             URL::forceScheme('https');
         }
 
