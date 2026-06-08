@@ -29,6 +29,7 @@ const props = defineProps({
   jobLevels:           { type: Array,  default: () => [] },
   genders:             { type: Array,  default: () => [] },
   maritalStatuses:     { type: Array,  default: () => [] },
+  hiringStatuses:      { type: Array,  default: () => [] },
   nationalities:       { type: Array,  default: () => [] },
   countries:           { type: Array,  default: () => [] },
   sponsorships:        { type: Array,  default: () => [] },
@@ -168,10 +169,13 @@ const form = ref({
   // Personal Dates
   dateOfHire: null,
   joinDate: null,
+  contractStartDate: null,
+  contractEndDate: null,
   
   // Personal Information
   genderId: null,
   maritalStatusId: null,
+  hiringStatusId: null,
   dateOfBirth: null,
   townOfBirth: '',
   countryOfBirth: '',
@@ -229,10 +233,13 @@ const editForm = ref({
   // Personal Dates
   dateOfHire: null,
   joinDate: null,
+  contractStartDate: null,
+  contractEndDate: null,
   
   // Personal Information
   genderId: null,
   maritalStatusId: null,
+  hiringStatusId: null,
   dateOfBirth: null,
   townOfBirth: '',
   countryOfBirth: '',
@@ -747,10 +754,13 @@ function addEmployee() {
     // Personal Dates
     date_of_hire: toMySQLDate(form.value.dateOfHire),
     join_date: toMySQLDate(form.value.joinDate),
+    contract_start_date: toMySQLDate(form.value.contractStartDate),
+    contract_end_date: toMySQLDate(form.value.contractEndDate),
     
     // Personal Information
     gender_id: form.value.genderId ? Number(form.value.genderId) : null,
     marital_status_id: form.value.maritalStatusId ? Number(form.value.maritalStatusId) : null,
+    hiring_status_id: form.value.hiringStatusId ? Number(form.value.hiringStatusId) : null,
     date_of_birth: toMySQLDate(form.value.dateOfBirth),
     town_of_birth: form.value.townOfBirth || '',
     country_of_birth: form.value.countryOfBirth ? Number(form.value.countryOfBirth) : null,
@@ -805,12 +815,12 @@ function addEmployee() {
       form.value = {
         firstName: '', middleName: '', lastName: '', salutationId: null, employeeNumber: 'Auto-generated',
         workEmail: '', personalEmail: '', phoneNumber: '', altPhoneNumber: '', phoneAreaCode: '', altAreaCode: '',
-        dateOfHire: null, joinDate: null,
-        genderId: null, maritalStatusId: null, dateOfBirth: null, townOfBirth: '', countryOfBirth: '',
+        dateOfHire: null, joinDate: null, contractStartDate: null, contractEndDate: null,
+        genderId: null, maritalStatusId: null, hiringStatusId: null, dateOfBirth: null, townOfBirth: '', countryOfBirth: '',
         nationalityId: null, languageId: null, nationalIdNumber: '', passportNumber: null, passportExpiry: null,
         civilIdExpiry: null, sponsorshipId: '', sponsorshipName: '', managerFlag: 'N', administratorFlag: 'N',
         assignToEvent: false, eventId: null, agreementNumber: '', designationId: null, departmentId: null,
-        directorateId: null, functionalAreaId: null, salaryBasisId: null, employeeType: null,
+        directorateId: null, functionalAreaId: null, jobLevelId: null, salaryBasisId: null, employeeType: null,
         entityId: null, contractTypeId: null, reportingToId: null, assignedAt: null, releasedAt: null,
       }
     },
@@ -880,10 +890,13 @@ function editEmployee(emp) {
     // Personal Dates
     dateOfHire: parseDate(emp.dateOfHire),
     joinDate: parseDate(emp.joinDate),
+    contractStartDate: parseDate(emp.contractStartDate),
+    contractEndDate: parseDate(emp.contractEndDate),
     
     // Personal Information
     genderId: validId(emp.gender_id, props.genders),
     maritalStatusId: validId(emp.marital_status_id, props.maritalStatuses),
+    hiringStatusId: validId(emp.hiring_status_id, props.hiringStatuses),
     dateOfBirth: parseDate(emp.dateOfBirth),
     townOfBirth: emp.town_of_birth || '',
     countryOfBirth: validId(emp.country_of_birth, props.countries),
@@ -1102,10 +1115,13 @@ function updateEmployee() {
     // Personal Dates
     date_of_hire: toMySQLDate(editForm.value.dateOfHire),
     join_date: toMySQLDate(editForm.value.joinDate),
+    contract_start_date: toMySQLDate(editForm.value.contractStartDate),
+    contract_end_date: toMySQLDate(editForm.value.contractEndDate),
     
     // Personal Information
     gender_id: editForm.value.genderId ? Number(editForm.value.genderId) : null,
     marital_status_id: editForm.value.maritalStatusId ? Number(editForm.value.maritalStatusId) : null,
+    hiring_status_id: editForm.value.hiringStatusId ? Number(editForm.value.hiringStatusId) : null,
     date_of_birth: toMySQLDate(editForm.value.dateOfBirth),
     town_of_birth: editForm.value.townOfBirth || '',
     country_of_birth: editForm.value.countryOfBirth ? Number(editForm.value.countryOfBirth) : null,
@@ -1841,7 +1857,7 @@ function updateEmployee() {
           <!-- Personal Information Section -->
           <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--mhr-line-2);">
             <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--mhr-ink);">Personal Information</h3>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
               <div class="mhr-field">
                 <label class="mhr-field__label">Gender</label>
                 <select class="mhr-select" v-model="form.genderId">
@@ -1867,6 +1883,13 @@ function updateEmployee() {
                   </template>
                 </DatePicker>
               </div>
+              <div class="mhr-field">
+                <label class="mhr-field__label">Hiring Status</label>
+                <select class="mhr-select" v-model="form.hiringStatusId">
+                  <option :value="null">Select...</option>
+                  <option v-for="h in hiringStatuses" :key="h.id" :value="h.id">{{ h.title }}</option>
+                </select>
+              </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
               <div class="mhr-field">
@@ -1886,6 +1909,57 @@ function updateEmployee() {
                   <option :value="null">Select...</option>
                   <option v-for="n in nationalities" :key="n.id" :value="n.id">{{ n.nationality }}</option>
                 </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Contract Dates Section -->
+          <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--mhr-line-2);">
+            <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--mhr-ink);">Contract Dates</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
+              <div class="mhr-field">
+                <label class="mhr-field__label">Date of Hire</label>
+                <DatePicker v-model="form.dateOfHire" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
+              </div>
+              <div class="mhr-field">
+                <label class="mhr-field__label">Join Date</label>
+                <DatePicker v-model="form.joinDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
+              </div>
+              <div class="mhr-field">
+                <label class="mhr-field__label">Contract Start Date</label>
+                <DatePicker v-model="form.contractStartDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
+              </div>
+              <div class="mhr-field">
+                <label class="mhr-field__label">Contract End Date</label>
+                <DatePicker v-model="form.contractEndDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
             </div>
           </div>
@@ -2242,7 +2316,7 @@ function updateEmployee() {
           <!-- Personal Information Section -->
           <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--mhr-line-2);">
             <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--mhr-ink);">Personal Information</h3>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
               <div class="mhr-field">
                 <label class="mhr-field__label">Gender</label>
                 <select class="mhr-select" v-model="editForm.genderId">
@@ -2268,6 +2342,13 @@ function updateEmployee() {
                   </template>
                 </DatePicker>
               </div>
+              <div class="mhr-field">
+                <label class="mhr-field__label">Hiring Status</label>
+                <select class="mhr-select" v-model="editForm.hiringStatusId">
+                  <option :value="null">Select...</option>
+                  <option v-for="h in hiringStatuses" :key="h.id" :value="h.id">{{ h.title }}</option>
+                </select>
+              </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;">
               <div class="mhr-field">
@@ -2287,6 +2368,57 @@ function updateEmployee() {
                   <option :value="null">Select...</option>
                   <option v-for="n in nationalities" :key="n.id" :value="n.id">{{ n.nationality }}</option>
                 </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Contract Dates Section -->
+          <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--mhr-line-2);">
+            <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--mhr-ink);">Contract Dates</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;">
+              <div class="mhr-field">
+                <label class="mhr-field__label">Date of Hire</label>
+                <DatePicker v-model="editForm.dateOfHire" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
+              </div>
+              <div class="mhr-field">
+                <label class="mhr-field__label">Join Date</label>
+                <DatePicker v-model="editForm.joinDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
+              </div>
+              <div class="mhr-field">
+                <label class="mhr-field__label">Contract Start Date</label>
+                <DatePicker v-model="editForm.contractStartDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
+              </div>
+              <div class="mhr-field">
+                <label class="mhr-field__label">Contract End Date</label>
+                <DatePicker v-model="editForm.contractEndDate" :masks="{ input: dateFormat }" :popover="{ placement: 'bottom-start' }">
+                  <template #default="{ inputValue, inputEvents }">
+                    <div style="position:relative;">
+                      <input class="mhr-input" :value="inputValue" v-on="inputEvents" readonly placeholder="Select date…" style="padding-right:35px;" />
+                      <AppIcon name="calendar" :size="14" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--mhr-ink-3);" />
+                    </div>
+                  </template>
+                </DatePicker>
               </div>
             </div>
           </div>

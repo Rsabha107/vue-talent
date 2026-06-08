@@ -298,11 +298,11 @@ export function useHRNavigation() {
     }
     
     // ═════════════════════════════════════════════════════════════════
-    // Settings Section (Admin Only)
+    // Setup Section (Admin Only)
     // ═════════════════════════════════════════════════════════════════
     if (can.value.manageLeaveTypes || isAdmin.value) {
       const settings = {
-        group: 'Settings',
+        group: 'Setup',
         items: []
       }
       

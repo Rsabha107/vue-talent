@@ -8,6 +8,7 @@ use App\Models\Designation;
 use App\Models\Directorate;
 use App\Models\EmployeeContractType;
 use App\Models\EmployeeEntity;
+use App\Models\EmployeeHiringStatus;
 use App\Models\EmployeeJobLevel;
 use App\Models\EmployeeSponsorship;
 use App\Models\Gender;
@@ -42,6 +43,7 @@ class LookupTablesController extends BaseHRController
                 'fields' => [
                     ['name' => 'name', 'label' => 'Department Name', 'type' => 'text', 'required' => true],
                     ['name' => 'parent_id', 'label' => 'Parent Department', 'type' => 'select', 'options' => 'departments'],
+                    ['name' => 'active_flag', 'label' => 'Status', 'type' => 'status', 'required' => false],
                 ],
                 'columns' => [
                     ['key' => 'id', 'label' => 'ID', 'width' => '80px'],
@@ -62,6 +64,7 @@ class LookupTablesController extends BaseHRController
                 'fields' => [
                     ['name' => 'name', 'label' => 'Title Name', 'type' => 'text', 'required' => true],
                     ['name' => 'department_id', 'label' => 'Department', 'type' => 'select', 'options' => 'departments'],
+                    ['name' => 'active_flag', 'label' => 'Status', 'type' => 'status', 'required' => false],
                 ],
                 'columns' => [
                     ['key' => 'id', 'label' => 'ID', 'width' => '80px'],
@@ -81,6 +84,7 @@ class LookupTablesController extends BaseHRController
                 'description' => 'Employment contract categories',
                 'fields' => [
                     ['name' => 'title', 'label' => 'Contract Type', 'type' => 'text', 'required' => true],
+                    ['name' => 'active_flag', 'label' => 'Status', 'type' => 'status', 'required' => false],
                 ],
                 'columns' => [
                     ['key' => 'id', 'label' => 'ID', 'width' => '80px'],
@@ -122,6 +126,25 @@ class LookupTablesController extends BaseHRController
                     ['key' => 'title', 'label' => 'Status'],
                 ],
                 'hasActiveFlag' => false,
+                'hasAudit' => true,
+            ],
+            'hiring-statuses' => [
+                'model' => EmployeeHiringStatus::class,
+                'title' => 'Hiring Statuses',
+                'singular' => 'Hiring Status',
+                'icon' => 'user-check',
+                'color' => '#10b981',
+                'description' => 'Employee hiring status categories',
+                'fields' => [
+                    ['name' => 'title', 'label' => 'Hiring Status', 'type' => 'text', 'required' => true],
+                    ['name' => 'active_flag', 'label' => 'Status', 'type' => 'status', 'required' => false],
+                ],
+                'columns' => [
+                    ['key' => 'id', 'label' => 'ID', 'width' => '80px'],
+                    ['key' => 'title', 'label' => 'Status'],
+                    ['key' => 'status', 'label' => 'Active', 'width' => '120px'],
+                ],
+                'hasActiveFlag' => true,
                 'hasAudit' => true,
             ],
             'relationships' => [
@@ -167,6 +190,7 @@ class LookupTablesController extends BaseHRController
                 'description' => 'Salary calculation basis (hourly, monthly, etc.)',
                 'fields' => [
                     ['name' => 'title', 'label' => 'Basis Type', 'type' => 'text', 'required' => true],
+                    ['name' => 'active_flag', 'label' => 'Status', 'type' => 'status', 'required' => false],
                 ],
                 'columns' => [
                     ['key' => 'id', 'label' => 'ID', 'width' => '80px'],
@@ -228,6 +252,7 @@ class LookupTablesController extends BaseHRController
                 'description' => 'Employee sponsorship types',
                 'fields' => [
                     ['name' => 'title', 'label' => 'Sponsorship Type', 'type' => 'text', 'required' => true],
+                    ['name' => 'active_flag', 'label' => 'Status', 'type' => 'status', 'required' => false],
                 ],
                 'columns' => [
                     ['key' => 'id', 'label' => 'ID', 'width' => '80px'],
@@ -360,11 +385,6 @@ class LookupTablesController extends BaseHRController
         // Build query
         $query = $modelClass::query();
         
-        // Add active flag filter if applicable
-        if ($entity['hasActiveFlag']) {
-            $query->where('active_flag', 1);
-        }
-        
         // Load relationships
         if ($type === 'departments') {
             $query->with('parent');
@@ -383,8 +403,13 @@ class LookupTablesController extends BaseHRController
                 $key = $column['key'];
                 if ($key === 'id') continue;
                 
-                if ($key === 'status' && isset($item->active_flag)) {
-                    $data['status'] = $item->active_flag;
+                if ($key === 'status') {
+                    // Handle active_flag regardless of cast type (boolean or integer)
+                    if (property_exists($item, 'active_flag') || isset($item->active_flag)) {
+                        $data['status'] = $item->active_flag ? 1 : 0;
+                    } else {
+                        $data['status'] = 1; // Default to active if not set
+                    }
                 } elseif ($key === 'parent' && $type === 'departments') {
                     $data['parent'] = $item->parent ? $item->parent->name : null;
                 } elseif ($key === 'department' && $type === 'designations') {
@@ -398,6 +423,11 @@ class LookupTablesController extends BaseHRController
                         $data[$key] = $item->$key;
                     }
                 }
+            }
+            
+            // Also pass active_flag directly for edit modal
+            if ($entity['hasActiveFlag'] && (property_exists($item, 'active_flag') || isset($item->active_flag))) {
+                $data['active_flag'] = $item->active_flag ? 1 : 0;
             }
             
             return $data;

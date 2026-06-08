@@ -288,9 +288,9 @@ class TimesheetController extends BaseHRController
         
         $timesheet = EmployeeTimesheet::findOrFail($request->timesheet_id);
         
-        // Only allow submission if status is Pending
-        if ($timesheet->status_id !== EmployeeTimesheetStatus::pendingId()) {
-            return back()->withErrors(['error' => 'Only pending timesheets can be submitted.']);
+        // Only allow submission if status is Saved
+        if ($timesheet->status_id !== EmployeeTimesheetStatus::savedId()) {
+            return back()->withErrors(['error' => 'Only saved timesheets can be submitted.']);
         }
         
         // Recalculate payment before submission
@@ -1105,49 +1105,24 @@ class TimesheetController extends BaseHRController
             $timesheetPeriodStart = \Carbon\Carbon::create($request->year_selected, $request->month_selected_id, 1)->startOfMonth();
             $timesheetPeriodEnd = $timesheetPeriodStart->copy()->endOfMonth();
             
-            // Validation 1: Check contract date range
-            if ($eventId && $employee) {
-                // In event context: use pivot assigned_at/released_at
-                $pivot = $employee->events()->where('events.id', $eventId)->first()?->pivot;
-                
-                if ($pivot) {
-                    $contractStartDate = $pivot->assigned_at ? \Carbon\Carbon::parse($pivot->assigned_at) : null;
-                    $contractEndDate = $pivot->released_at ? \Carbon\Carbon::parse($pivot->released_at) : null;
-                    
-                    if ($contractStartDate && $timesheetPeriodEnd->lessThan($contractStartDate->startOfMonth())) {
-                        DB::rollBack();
-                        return back()->withErrors([
-                            'month_selected_id' => 'Cannot create timesheet before employee assignment date (' . $contractStartDate->format('F Y') . ').'
-                        ]);
-                    }
-                    
-                    if ($contractEndDate && $timesheetPeriodStart->greaterThan($contractEndDate->endOfMonth())) {
-                        DB::rollBack();
-                        return back()->withErrors([
-                            'month_selected_id' => 'Cannot create timesheet after employee release date (' . $contractEndDate->format('F Y') . ').'
-                        ]);
-                    }
+            // Validation 1: Check contract date range (always use employee master contract dates)
+            if ($employee->contract_start_date) {
+                $contractStartDate = \Carbon\Carbon::parse($employee->contract_start_date);
+                if ($timesheetPeriodEnd->lessThan($contractStartDate->startOfMonth())) {
+                    DB::rollBack();
+                    return back()->withErrors([
+                        'month_selected_id' => 'Cannot create timesheet before employee contract start date (' . $contractStartDate->format('F Y') . ').'
+                    ]);
                 }
-            } else {
-                // In master employee view: use contract_start_date/contract_end_date
-                if ($employee->contract_start_date) {
-                    $contractStartDate = \Carbon\Carbon::parse($employee->contract_start_date);
-                    if ($timesheetPeriodEnd->lessThan($contractStartDate->startOfMonth())) {
-                        DB::rollBack();
-                        return back()->withErrors([
-                            'month_selected_id' => 'Cannot create timesheet before employee contract start date (' . $contractStartDate->format('F Y') . ').'
-                        ]);
-                    }
-                }
-                
-                if ($employee->contract_end_date) {
-                    $contractEndDate = \Carbon\Carbon::parse($employee->contract_end_date);
-                    if ($timesheetPeriodStart->greaterThan($contractEndDate->endOfMonth())) {
-                        DB::rollBack();
-                        return back()->withErrors([
-                            'month_selected_id' => 'Cannot create timesheet after employee contract end date (' . $contractEndDate->format('F Y') . ').'
-                        ]);
-                    }
+            }
+            
+            if ($employee->contract_end_date) {
+                $contractEndDate = \Carbon\Carbon::parse($employee->contract_end_date);
+                if ($timesheetPeriodStart->greaterThan($contractEndDate->endOfMonth())) {
+                    DB::rollBack();
+                    return back()->withErrors([
+                        'month_selected_id' => 'Cannot create timesheet after employee contract end date (' . $contractEndDate->format('F Y') . ').'
+                    ]);
                 }
             }
             
@@ -1241,7 +1216,7 @@ class TimesheetController extends BaseHRController
                 'year'             => (string) $request->year_selected,
                 'timesheet_period' => $monthName . '-' . $request->year_selected,
                 'days_in_month'    => $daysInMonth,
-                'status_id'        => EmployeeTimesheetStatus::pendingId(),
+                'status_id'        => EmployeeTimesheetStatus::savedId(),
                 'creator_id'       => Auth::id(),
             ]);
 
@@ -1300,30 +1275,12 @@ class TimesheetController extends BaseHRController
             $employee = $timesheet->employee;
             $eventId = $timesheet->event_id;
             
-            // Determine valid day range based on contract dates
+            // Determine valid day range based on employee master contract dates (always check these)
             $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $timesheet->month_id, $timesheet->year);
             $validStartDay = 1;
             $validEndDay = $daysInMonth;
             
-            if ($eventId && $employee) {
-                // Event context: use event assignment dates
-                $pivot = $employee->events()->where('events.id', $eventId)->first()?->pivot;
-                if ($pivot) {
-                    if ($pivot->assigned_at) {
-                        $assignedAt = \Carbon\Carbon::parse($pivot->assigned_at);
-                        if ($assignedAt->year == $timesheet->year && $assignedAt->month == $timesheet->month_id) {
-                            $validStartDay = max($validStartDay, $assignedAt->day);
-                        }
-                    }
-                    if ($pivot->released_at) {
-                        $releasedAt = \Carbon\Carbon::parse($pivot->released_at);
-                        if ($releasedAt->year == $timesheet->year && $releasedAt->month == $timesheet->month_id) {
-                            $validEndDay = min($validEndDay, $releasedAt->day);
-                        }
-                    }
-                }
-            } elseif ($employee) {
-                // No event: use employee contract dates
+            if ($employee) {
                 if ($employee->contract_start_date) {
                     $contractStart = \Carbon\Carbon::parse($employee->contract_start_date);
                     if ($contractStart->year == $timesheet->year && $contractStart->month == $timesheet->month_id) {
@@ -1347,15 +1304,9 @@ class TimesheetController extends BaseHRController
             }
             
             if (!empty($invalidDays)) {
-                $contractInfo = '';
-                if ($eventId) {
-                    $contractInfo = 'Event assignment period';
-                } else {
-                    $contractInfo = 'Employee contract period';
-                }
                 throw new \Exception(
                     "Cannot save entries for day(s) " . implode(', ', $invalidDays) . ". " .
-                    "{$contractInfo} allows only days {$validStartDay} to {$validEndDay} for this month."
+                    "Employee contract period allows only days {$validStartDay} to {$validEndDay} for this month."
                 );
             }
             
@@ -1382,10 +1333,10 @@ class TimesheetController extends BaseHRController
             $timesheet = EmployeeTimesheet::findOrFail($tsId);
             $this->calculateTimesheetPayment($timesheet);
             
-            // Mark entries as existing and ensure status is Pending
+            // Mark entries as existing and ensure status is Saved
             $timesheet->update([
                 'entries_exists' => 'Y',
-                'status_id' => EmployeeTimesheetStatus::pendingId(),
+                'status_id' => EmployeeTimesheetStatus::savedId(),
             ]);
         });
 

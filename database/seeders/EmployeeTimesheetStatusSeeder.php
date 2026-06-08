@@ -14,6 +14,13 @@ class EmployeeTimesheetStatusSeeder extends Seeder
     {
         $statuses = [
             [
+                'title' => 'Saved',
+                'color' => 'secondary',
+                'active_flag' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
                 'title' => 'Pending',
                 'color' => 'warning',
                 'active_flag' => 1,

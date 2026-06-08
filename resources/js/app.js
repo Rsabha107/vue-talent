@@ -123,7 +123,7 @@ async function initLegacyScripts() {
             closeMobileSidebar();
         });
 
-    console.log("Legacy scripts initialized.");
+    // console.log("Legacy scripts initialized.");
 }
 
 function closeMobileSidebar() {
@@ -184,7 +184,7 @@ router.on("success", () => console.log("Inertia success"));
 router.on("error", (event) => console.log("Inertia error", event));
 
 router.on("finish", async () => {
-    console.log("Inertia finish");
+    // console.log("Inertia finish");
 
     closeMobileSidebar();
     await initLegacyScripts();

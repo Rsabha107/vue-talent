@@ -25,6 +25,7 @@ class Employee extends Model
         'full_name',
         'gender_id',
         'marital_status_id',
+        'hiring_status_id',
         'employee_type',
         'entity_id',
         'contract_type_id',
@@ -64,6 +65,7 @@ class Employee extends Model
         'date_of_birth' => 'date',
         'date_of_hire' => 'date',
         'join_date' => 'date',
+        'hiring_status_id' => 'integer',
         'contract_start_date' => 'date',
         'contract_end_date' => 'date',
         'civil_id_expiry' => 'date',
@@ -126,6 +128,11 @@ class Employee extends Model
     public function maritalStatus()
     {
         return $this->belongsTo(MaritalStatus::class, 'marital_status_id');
+    }
+
+    public function hiringStatus()
+    {
+        return $this->belongsTo(EmployeeHiringStatus::class, 'hiring_status_id');
     }
 
     public function nationality()

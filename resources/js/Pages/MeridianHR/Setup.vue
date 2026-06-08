@@ -92,6 +92,16 @@ const setupCards = [
     routeParams: { type: 'marital-statuses' },
   },
   {
+    key: 'hiring-statuses',
+    title: 'Hiring Statuses',
+    description: 'Employee hiring status categories',
+    icon: 'user-check',
+    iconColor: '#10b981',
+    count: () => props.lookupCounts['hiring-statuses'] || 0,
+    route: 'hr.lookup',
+    routeParams: { type: 'hiring-statuses' },
+  },
+  {
     key: 'relationships',
     title: 'Relationships',
     description: 'Family relationship types for emergency contacts',

@@ -10,6 +10,7 @@ use App\Models\Employee;
 use App\Models\User;
 use App\Models\EmployeeContractType;
 use App\Models\EmployeeEntity;
+use App\Models\EmployeeHiringStatus;
 use App\Models\EmployeeJobLevel;
 use App\Models\EmployeeLeaveRequest;
 use App\Models\EmployeeLeaveStatus;
@@ -705,7 +706,7 @@ class EmployeeController extends BaseHRController
         
         // Base query for active employees
         $query = Employee::active()
-            ->with(['salutation', 'maritalStatus', 'nationality', 'gender'])
+            ->with(['salutation', 'maritalStatus', 'hiringStatus', 'nationality', 'gender'])
             ->withCount(['documents as documents_count' => function ($query) use ($eventId) {
                 $query->where('active_flag', 1);
                 if ($eventId) {
@@ -840,12 +841,16 @@ class EmployeeController extends BaseHRController
                     'contractEnd'       => $pivotData?->released_at,
                     'dateOfHire'        => $emp->date_of_hire?->format('Y-m-d'),
                     'joinDate'          => $emp->join_date?->format('Y-m-d'),
+                    'contractStartDate' => $emp->contract_start_date?->format('Y-m-d'),
+                    'contractEndDate'   => $emp->contract_end_date?->format('Y-m-d'),
                     
                     // Personal Information (from employees table)
                     'gender_id'         => $emp->gender_id,
                     'gender'            => $emp->gender->title ?? null,
                     'marital_status_id' => $emp->marital_status_id,
                     'maritalStatus'     => $emp->maritalStatus->title ?? null,
+                    'hiring_status_id'  => $emp->hiring_status_id,
+                    'hiringStatus'      => $emp->hiringStatus->title ?? null,
                     'dateOfBirth'       => $emp->date_of_birth?->format('Y-m-d'),
                     'town_of_birth'     => $emp->town_of_birth,
                     'country_of_birth'  => $emp->country_of_birth,
@@ -925,6 +930,10 @@ class EmployeeController extends BaseHRController
             return ['id' => $m->id, 'title' => $m->title];
         });
 
+        $hiringStatuses = EmployeeHiringStatus::where('active_flag', 1)->orderBy('title')->get()->map(function ($h) {
+            return ['id' => $h->id, 'title' => $h->title];
+        });
+
         $nationalities = Nationality::orderBy('nationality')->get()->map(function ($n) {
             return ['id' => $n->id, 'nationality' => $n->nationality];
         });
@@ -963,6 +972,7 @@ class EmployeeController extends BaseHRController
             'jobLevels'         => $jobLevels,
             'genders'           => $genders,
             'maritalStatuses'   => $maritalStatuses,
+            'hiringStatuses'    => $hiringStatuses,
             'nationalities'     => $nationalities,
             'countries'         => $countries,
             'sponsorships'      => $sponsorships,
@@ -1004,6 +1014,7 @@ class EmployeeController extends BaseHRController
             // Personal Information
             'gender_id'                 => 'nullable|integer',
             'marital_status_id'         => 'nullable|integer',
+            'hiring_status_id'          => 'nullable|integer|exists:employee_hiring_statuses,id',
             'date_of_birth'             => 'nullable|date',
             'town_of_birth'             => 'nullable|string|max:100',
             'country_of_birth'          => 'nullable|integer',
@@ -1011,6 +1022,8 @@ class EmployeeController extends BaseHRController
             'language_id'               => 'nullable|string|max:50',
             'date_of_hire'              => 'nullable|date',
             'join_date'                 => 'nullable|date',
+            'contract_start_date'       => 'nullable|date',
+            'contract_end_date'         => 'nullable|date',
             
             // Identification
             'national_identifier_number'=> 'nullable|string|max:100',
@@ -1141,6 +1154,7 @@ class EmployeeController extends BaseHRController
             // Personal Information
             'gender_id'                     => 'nullable|integer',
             'marital_status_id'             => 'nullable|integer',
+            'hiring_status_id'              => 'nullable|integer|exists:employee_hiring_statuses,id',
             'date_of_birth'                 => 'nullable|date',
             'town_of_birth'                 => 'nullable|string|max:100',
             'country_of_birth'              => 'nullable|integer',
@@ -1148,6 +1162,8 @@ class EmployeeController extends BaseHRController
             'language_id'                   => 'nullable|string|max:50',
             'date_of_hire'                  => 'nullable|date',
             'join_date'                     => 'nullable|date',
+            'contract_start_date'           => 'nullable|date',
+            'contract_end_date'             => 'nullable|date',
             
             // Identification
             'national_identifier_number'    => 'nullable|string|max:50',

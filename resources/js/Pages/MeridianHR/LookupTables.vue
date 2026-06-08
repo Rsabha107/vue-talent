@@ -37,7 +37,7 @@ function initForm() {
   fields.value.forEach(field => {
     if (field.type === 'select') {
       formData[field.name] = null
-    } else if (field.type === 'status') {
+    } else if (field.type === 'status' || field.name === 'active_flag') {
       formData[field.name] = 1 // Default to Active
     } else {
       formData[field.name] = ''
@@ -81,8 +81,8 @@ function openEditModal(item) {
     const fieldName = field.name
     // Check if item has this field
     if (fieldName === 'active_flag') {
-      // Map status to active_flag for editing
-      form.value[fieldName] = item.status ?? 1
+      // Map active_flag for editing - check both active_flag and status
+      form.value[fieldName] = item.active_flag !== undefined ? item.active_flag : (item.status ?? 1)
     } else if (fieldName.includes('_id')) {
       // For foreign keys, need to extract the ID
       form.value[fieldName] = item[fieldName] || null

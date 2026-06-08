@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class EmployeeTimesheetStatus extends Model
 {
     // Status constants
+    const STATUS_SAVED = 'Saved';
     const STATUS_PENDING = 'Pending';
     const STATUS_SUBMITTED = 'Submitted';
     const STATUS_PENDING_PAYROLL = 'Pending Payroll';
@@ -42,6 +43,11 @@ class EmployeeTimesheetStatus extends Model
     /**
      * Convenience methods for common statuses
      */
+    public static function savedId(): ?int
+    {
+        return static::getIdByTitle(self::STATUS_SAVED);
+    }
+    
     public static function pendingId(): ?int
     {
         return static::getIdByTitle(self::STATUS_PENDING);
