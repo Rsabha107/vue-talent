@@ -28,32 +28,30 @@ use Maatwebsite\Excel\Concerns\SkipsFailures;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use App\Rules\EventExists;
+use App\Rules\NationalityExists;
+use App\Rules\CountryExists;
 
 class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsOnFailure
 {
     use SkipsFailures;
 
     protected int $processedCount = 0;
-    protected int $skipCount = 0;
-    protected array $errors = [];
+    protected int $skippedCount = 0;
 
     public function model(array $row)
     {
         // Skip empty rows
         if (empty($row['first_name']) && empty($row['last_name']) && empty($row['work_email'])) {
-            $this->skipCount++;
+            $this->skippedCount++;
             return null;
         }
 
         // Find event if event_name is provided (Mode 2: Employee + Event Assignment)
+        // Validation already confirmed it exists if provided
         $event = null;
         if (!empty($row['event_name'])) {
             $event = Event::where('name', $row['event_name'])->first();
-            if (!$event) {
-                $this->errors[] = "Row skipped: Event '{$row['event_name']}' not found";
-                $this->skipCount++;
-                return null;
-            }
         }
 
         // Find or create related models
@@ -255,17 +253,21 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
     public function rules(): array
     {
         return [
-            'event_name' => 'nullable|string',
+            'event_name' => ['nullable', 'string', new EventExists()],
+            'nationality' => ['nullable', 'string', new NationalityExists()],
+            'country_of_birth' => ['nullable', 'string', new CountryExists()],
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'work_email' => 'required|email|unique:employees_all,work_email_address',
         ];
     }
 
-    public function customValidationMessages()
+    public function customValidationMessages(): array
     {
         return [
             'event_name.string' => 'Event name must be text',
+            'nationality.string' => 'Nationality must be text',
+            'country_of_birth.string' => 'Country of birth must be text',
             'first_name.required' => 'First name is required',
             'last_name.required' => 'Last name is required',
             'work_email.required' => 'Work email is required',
@@ -293,11 +295,6 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
         }
     }
 
-    public function getErrors(): array
-    {
-        return $this->errors;
-    }
-
     public function getSuccessCount(): int
     {
         return $this->processedCount;
@@ -308,9 +305,21 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
         return collect($this->failures())->map(fn($f) => $f->row())->unique()->count();
     }
 
-    public function getSkipCount(): int
+    public function getStats(): array
     {
-        return $this->skipCount;
+        // Count unique failed rows (row() is a method, not a property)
+        $failures = $this->failures();
+        $uniqueFailedRows = collect($failures)->map(fn($f) => $f->row())->unique()->count();
+        
+        // Total includes successful imports, validation failures, and empty rows skipped
+        $total = $this->processedCount + $uniqueFailedRows + $this->skippedCount;
+        
+        return [
+            'success' => $this->processedCount,
+            'failed' => $uniqueFailedRows,
+            'skipped' => $this->skippedCount, // Empty rows (no name or email)
+            'total' => $total,
+        ];
     }
 
     /**
@@ -351,19 +360,5 @@ class EmployeesImport implements ToModel, WithHeadingRow, WithValidation, SkipsO
             $employee->user_id = $user->id;
             $employee->save();
         }
-    }
-
-    public function getStats(): array
-    {
-        // Count unique failed rows (row() is a method, not a property)
-        $failures = $this->failures();
-        $uniqueFailedRows = collect($failures)->map(fn($f) => $f->row())->unique()->count();
-        
-        return [
-            'success' => $this->processedCount,
-            'failed' => $uniqueFailedRows,
-            'skipped' => $this->skipCount,
-            'total' => $this->processedCount + $uniqueFailedRows + $this->skipCount,
-        ];
     }
 }

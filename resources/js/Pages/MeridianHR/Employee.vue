@@ -80,6 +80,7 @@ const fileInput = ref(null)
 const importStats = ref(null)
 const importErrors = ref([])
 const hasFailures = ref(false)
+const hasExportableFailures = ref(false)
 const added = ref([])
 const toast = ref(null)
 const openMenuId = ref(null)
@@ -1112,6 +1113,7 @@ async function importEmployees() {
       importStats.value = data.stats
       importErrors.value = data.errors || []
       hasFailures.value = data.hasFailures || false
+      hasExportableFailures.value = data.hasExportableFailures || false
       showImportModal.value = false
       showStatsModal.value = true
       importFile.value = null
@@ -2997,15 +2999,18 @@ function updateEmployee() {
                     • {{ error }}
                   </div>
                 </div>
-                <div style="padding:8px;background:rgba(255,255,255,0.6);border-radius:4px;font-size:12px;color:var(--red-700);border-left:3px solid var(--red-600);">
+                <div v-if="hasExportableFailures" style="padding:8px;background:rgba(255,255,255,0.6);border-radius:4px;font-size:12px;color:var(--red-700);border-left:3px solid var(--red-600);">
                   <strong>💡 Tip:</strong> Click "Export Failed Rows" below to download an Excel file with the errors. Fix the issues and re-import.
+                </div>
+                <div v-else style="padding:8px;background:rgba(255,255,255,0.6);border-radius:4px;font-size:12px;color:var(--red-700);border-left:3px solid var(--red-600);">
+                  <strong>💡 Note:</strong> These rows were skipped during import. Common reasons: missing event, duplicate email, or empty required fields.
                 </div>
               </div>
             </div>
           </div>
         </div>
         <div class="mhr-modal__ft">
-          <button v-if="hasFailures" class="mhr-btn mhr-btn--outline" @click="exportFailedRows" style="margin-right:auto;">
+          <button v-if="hasExportableFailures" class="mhr-btn mhr-btn--outline" @click="exportFailedRows" style="margin-right:auto;">
             <AppIcon name="download" :size="14" /> Export Failed Rows
           </button>
           <button class="mhr-btn mhr-btn--primary" @click="showStatsModal = false">Done</button>

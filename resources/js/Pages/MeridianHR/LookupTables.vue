@@ -24,12 +24,33 @@ const isSaving = ref(false)
 const openMenuId = ref(null)
 const menuPosition = ref({ top: 0, right: 0 })
 
+// Search state
+const searchQuery = ref('')
+
 // Form data (dynamic based on entity fields)
 const form = ref({})
 
 // Computed
 const columns = computed(() => props.entityConfig.columns)
 const fields = computed(() => props.entityConfig.fields)
+
+// Filtered items based on search
+const filteredItems = computed(() => {
+  if (!searchQuery.value.trim()) {
+    return props.items
+  }
+  
+  const query = searchQuery.value.toLowerCase().trim()
+  
+  return props.items.filter(item => {
+    // Search across all column values
+    return columns.value.some(column => {
+      const value = item[column.key]
+      if (value === null || value === undefined) return false
+      return String(value).toLowerCase().includes(query)
+    })
+  })
+})
 
 // Initialize form
 function initForm() {
@@ -190,6 +211,28 @@ function isFormValid() {
       </div>
     </div>
 
+    <!-- Search -->
+    <div style="display:flex;gap:10px;margin-bottom:14px;">
+      <div style="position:relative;flex:1;max-width:360px;">
+        <AppIcon name="search" :size="14" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--mhr-ink-3);" />
+        <input 
+          v-model="searchQuery"
+          type="text" 
+          class="mhr-input" 
+          :placeholder="'Search ' + entityConfig.title.toLowerCase() + '...'"
+          style="padding-left:32px;"
+        />
+        <button 
+          v-if="searchQuery" 
+          @click="searchQuery = ''" 
+          class="mhr-icon-btn" 
+          style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;"
+        >
+          <AppIcon name="x" :size="12" />
+        </button>
+      </div>
+    </div>
+
     <!-- Table Card -->
     <div class="lookup-content-card">
       <div class="lookup-content-hd">
@@ -198,13 +241,14 @@ function isFormValid() {
           <h2 style="font-size:16px;font-weight:600;color:var(--mhr-ink);margin:0;">{{ entityConfig.title }}</h2>
         </div>
         <div style="color:var(--mhr-ink-3);font-size:13px;">
-          {{ items.length }} {{ items.length === 1 ? 'item' : 'items' }}
+          <span v-if="searchQuery.trim()">{{ filteredItems.length }} of {{ items.length }} {{ items.length === 1 ? 'item' : 'items' }}</span>
+          <span v-else>{{ items.length }} {{ items.length === 1 ? 'item' : 'items' }}</span>
         </div>
       </div>
 
       <!-- Table -->
       <div class="lookup-table-wrapper">
-        <div v-if="items.length > 0" class="mhr-table-wrap">
+        <div v-if="filteredItems.length > 0" class="mhr-table-wrap">
           <table class="mhr-table">
             <thead>
               <tr>
@@ -215,7 +259,7 @@ function isFormValid() {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in items" :key="item.id">
+              <tr v-for="item in filteredItems" :key="item.id">
                 <td v-for="column in columns" :key="column.key" :style="column.key === 'id' ? 'color:var(--mhr-ink-3);font-size:13px;' : column.key !== 'status' && column.key === columns.find(c => c.key !== 'id' && c.key !== 'status')?.key ? 'font-weight:500;color:var(--mhr-ink);' : 'color:var(--mhr-ink-2);'">
                   <span v-if="column.key === 'status'">
                     <span v-if="item.status === 1" class="mhr-badge mhr-badge--success">Active</span>
@@ -235,11 +279,22 @@ function isFormValid() {
           </table>
         </div>
         
-        <div v-else class="lookup-empty">
+        <!-- Empty state: No items at all -->
+        <div v-else-if="items.length === 0" class="lookup-empty">
           <AppIcon :name="entityConfig.icon" :size="48" style="color:var(--mhr-ink-4);margin-bottom:12px;" />
           <p style="color:var(--mhr-ink-3);margin:0;">No {{ entityConfig.title.toLowerCase() }} yet</p>
           <button class="mhr-btn mhr-btn--outline" @click="openCreateModal" style="margin-top:16px;">
             <AppIcon name="plus" :size="14" /> Create {{ entityConfig.singular }}
+          </button>
+        </div>
+        
+        <!-- Empty state: No search results -->
+        <div v-else class="lookup-empty">
+          <AppIcon name="search" :size="48" style="color:var(--mhr-ink-4);margin-bottom:12px;" />
+          <p style="color:var(--mhr-ink-3);margin:0 0 8px 0;font-weight:500;">No results found</p>
+          <p style="color:var(--mhr-ink-3);font-size:13px;margin:0;">Try adjusting your search terms</p>
+          <button class="mhr-btn mhr-btn--outline" @click="searchQuery = ''" style="margin-top:16px;">
+            <AppIcon name="x" :size="14" /> Clear Search
           </button>
         </div>
       </div>

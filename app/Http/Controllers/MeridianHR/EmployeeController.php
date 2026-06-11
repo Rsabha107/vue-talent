@@ -1324,35 +1324,83 @@ class EmployeeController extends BaseHRController
             $stats = $import->getStats();
             $failures = $import->failures();
             
+            \Log::info('Import completed', [
+                'stats' => $stats,
+                'failure_count' => count($failures),
+            ]);
+            
             $errorMessages = [];
             $failedRows = [];
             
+            // Group validation failures by row number
             if (count($failures) > 0) {
+                $groupedFailures = [];
+                
                 foreach ($failures as $failure) {
-                    $errorMessages[] = "Row {$failure->row()}: " . implode(', ', $failure->errors());
-                    $failedRows[] = [
-                        'row' => $failure->row(),
-                        'errors' => $failure->errors(),
-                        'values' => $failure->values(),
-                    ];
+                    $rowNumber = $failure->row();
+                    
+                    if (!isset($groupedFailures[$rowNumber])) {
+                        $groupedFailures[$rowNumber] = [
+                            'row' => $rowNumber,
+                            'errors' => [],
+                            'values' => $failure->values(),
+                        ];
+                    }
+                    
+                    // Merge all errors for this row
+                    $groupedFailures[$rowNumber]['errors'] = array_merge(
+                        $groupedFailures[$rowNumber]['errors'],
+                        $failure->errors()
+                    );
+                }
+                
+                // Convert grouped failures to array and build error messages
+                $failedRows = array_values($groupedFailures);
+                
+                foreach ($failedRows as $failedRow) {
+                    $errorMsg = "Row {$failedRow['row']}: " . implode(', ', $failedRow['errors']);
+                    $errorMessages[] = $errorMsg;
+                    
+                    // Log first 5 failures for debugging
+                    if (count($errorMessages) <= 5) {
+                        \Log::info('Import failure', [
+                            'row' => $failedRow['row'],
+                            'errors' => $failedRow['errors'],
+                            'values' => $failedRow['values'],
+                        ]);
+                    }
                 }
                 
                 // Store failed rows in session for export
                 session(['failed_import_rows' => $failedRows]);
             }
 
+            \Log::info('Error messages collected', [
+                'count' => count($errorMessages),
+                'first_few' => array_slice($errorMessages, 0, 3),
+            ]);
+
+            $hasFailures = count($failures) > 0;
+            $hasExportableFailures = count($failures) > 0; // All failures are now exportable
+
             // Return stats as JSON
             return response()->json([
                 'success' => true,
                 'stats' => $stats,
                 'errors' => $errorMessages,
-                'hasFailures' => count($failures) > 0,
+                'hasFailures' => $hasFailures,
+                'hasExportableFailures' => $hasExportableFailures,
                 'message' => $stats['success'] > 0 
                     ? "{$stats['success']} employee(s) imported successfully" 
                     : "Import completed",
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Import exception', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Import failed: ' . $e->getMessage(),
@@ -1376,26 +1424,50 @@ class EmployeeController extends BaseHRController
             $errorMessages = [];
             $failedRows = [];
             
+            // Group validation failures by row number
             if (count($failures) > 0) {
+                $groupedFailures = [];
+                
                 foreach ($failures as $failure) {
-                    $errorMessages[] = "Row {$failure->row()}: " . implode(', ', $failure->errors());
-                    $failedRows[] = [
-                        'row' => $failure->row(),
-                        'errors' => $failure->errors(),
-                        'values' => $failure->values(),
-                    ];
+                    $rowNumber = $failure->row();
+                    
+                    if (!isset($groupedFailures[$rowNumber])) {
+                        $groupedFailures[$rowNumber] = [
+                            'row' => $rowNumber,
+                            'errors' => [],
+                            'values' => $failure->values(),
+                        ];
+                    }
+                    
+                    // Merge all errors for this row
+                    $groupedFailures[$rowNumber]['errors'] = array_merge(
+                        $groupedFailures[$rowNumber]['errors'],
+                        $failure->errors()
+                    );
+                }
+                
+                // Convert grouped failures to array and build error messages
+                $failedRows = array_values($groupedFailures);
+                
+                foreach ($failedRows as $failedRow) {
+                    $errorMsg = "Row {$failedRow['row']}: " . implode(', ', $failedRow['errors']);
+                    $errorMessages[] = $errorMsg;
                 }
                 
                 // Store failed rows in session for export
                 session(['failed_import_rows' => $failedRows]);
             }
 
+            $hasFailures = count($failures) > 0;
+            $hasExportableFailures = count($failures) > 0; // All failures are now exportable
+
             // Return stats as JSON
             return response()->json([
                 'success' => true,
                 'stats' => $stats,
                 'errors' => $errorMessages,
-                'hasFailures' => count($failures) > 0,
+                'hasFailures' => $hasFailures,
+                'hasExportableFailures' => $hasExportableFailures,
                 'message' => $stats['success'] > 0 
                     ? "{$stats['success']} employee(s) imported successfully (no event assignment)" 
                     : "Import completed",
@@ -1438,14 +1510,34 @@ class EmployeeController extends BaseHRController
                 $errorMessages[] = $error;
             }
             
+            // Group validation failures by row number
             if (count($failures) > 0) {
+                $groupedFailures = [];
+                
                 foreach ($failures as $failure) {
-                    $errorMessages[] = "Row {$failure->row()}: " . implode(', ', $failure->errors());
-                    $failedRows[] = [
-                        'row' => $failure->row(),
-                        'errors' => $failure->errors(),
-                        'values' => $failure->values(),
-                    ];
+                    $rowNumber = $failure->row();
+                    
+                    if (!isset($groupedFailures[$rowNumber])) {
+                        $groupedFailures[$rowNumber] = [
+                            'row' => $rowNumber,
+                            'errors' => [],
+                            'values' => $failure->values(),
+                        ];
+                    }
+                    
+                    // Merge all errors for this row
+                    $groupedFailures[$rowNumber]['errors'] = array_merge(
+                        $groupedFailures[$rowNumber]['errors'],
+                        $failure->errors()
+                    );
+                }
+                
+                // Convert grouped failures to array and build error messages
+                $failedRows = array_values($groupedFailures);
+                
+                foreach ($failedRows as $failedRow) {
+                    $errorMsg = "Row {$failedRow['row']}: " . implode(', ', $failedRow['errors']);
+                    $errorMessages[] = $errorMsg;
                 }
                 
                 // Store failed rows in session for export

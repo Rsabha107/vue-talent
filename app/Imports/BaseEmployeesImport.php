@@ -17,6 +17,8 @@ use Maatwebsite\Excel\Concerns\SkipsOnFailure;
 use Maatwebsite\Excel\Concerns\SkipsFailures;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Hash;
+use App\Rules\NationalityExists;
+use App\Rules\CountryExists;
 
 /**
  * Mode 1: Base Employee Import (No Event Assignment)
@@ -27,14 +29,13 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
     use SkipsFailures;
 
     protected int $processedCount = 0;
-    protected int $skipCount = 0;
-    protected array $errors = [];
+    protected int $skippedCount = 0;
 
     public function model(array $row)
     {
         // Skip empty rows
         if (empty($row['first_name']) && empty($row['last_name']) && empty($row['work_email'])) {
-            $this->skipCount++;
+            $this->skippedCount++;
             return null;
         }
 
@@ -155,6 +156,8 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
     public function rules(): array
     {
         return [
+            'nationality' => ['nullable', 'string', new NationalityExists()],
+            'country_of_birth' => ['nullable', 'string', new CountryExists()],
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'work_email' => 'required|email|unique:employees_all,work_email_address',
@@ -165,6 +168,8 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
     public function customValidationMessages()
     {
         return [
+            'nationality.string' => 'Nationality must be text',
+            'country_of_birth.string' => 'Country of birth must be text',
             'first_name.required' => 'First name is required',
             'last_name.required' => 'Last name is required',
             'work_email.required' => 'Work email is required',
@@ -193,11 +198,6 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
         }
     }
 
-    public function getErrors(): array
-    {
-        return $this->errors;
-    }
-
     public function getSuccessCount(): int
     {
         return max(0, $this->processedCount - count($this->failures()));
@@ -206,11 +206,6 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
     public function getFailureCount(): int
     {
         return collect($this->failures())->map(fn($f) => $f->row())->unique()->count();
-    }
-
-    public function getSkipCount(): int
-    {
-        return $this->skipCount;
     }
 
     /**
@@ -259,11 +254,14 @@ class BaseEmployeesImport implements ToModel, WithHeadingRow, WithValidation, Sk
         $failures = $this->failures();
         $uniqueFailedRows = collect($failures)->map(fn($f) => $f->row())->unique()->count();
         
+        // Total includes successful imports, validation failures, and empty rows skipped
+        $total = $this->processedCount + $uniqueFailedRows + $this->skippedCount;
+        
         return [
             'success' => $this->processedCount,
             'failed' => $uniqueFailedRows,
-            'skipped' => $this->skipCount,
-            'total' => $this->processedCount + $uniqueFailedRows + $this->skipCount,
+            'skipped' => $this->skippedCount, // Empty rows (no name or email)
+            'total' => $total,
         ];
     }
 }
