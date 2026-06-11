@@ -42,6 +42,7 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::post('/employee/import/base', [EmployeeController::class, 'importBase'])->name('employee.import.base');
     Route::post('/employee/import/event-assignment', [EmployeeController::class, 'importEventAssignment'])->name('employee.import.event-assignment');
     Route::get('/employee/export-failed', [EmployeeController::class, 'exportFailedRows'])->name('employee.export.failed');
+    Route::post('/employee/export-selected', [EmployeeController::class, 'exportSelected'])->name('employee.export.selected');
     
     // Event-Employee Assignment
     Route::post('/employee/assign-to-event', [EmployeeController::class, 'assignToEvent'])->name('employee.assign-to-event');

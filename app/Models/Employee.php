@@ -164,6 +164,7 @@ class Employee extends Model
     public function events()
     {
         return $this->belongsToMany(\App\Models\Ems\Event::class, 'employee_events', 'employee_id', 'event_id')
+            ->using(EmployeeEvent::class)
             ->withPivot([
                 'assigned_at',
                 'released_at',

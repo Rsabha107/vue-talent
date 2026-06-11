@@ -1496,6 +1496,21 @@ class EmployeeController extends BaseHRController
         );
     }
 
+    public function exportSelected(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'employee_ids' => 'required|array|min:1',
+            'employee_ids.*' => 'required|integer|exists:employees_all,id',
+        ]);
+
+        $employeeIds = $request->input('employee_ids');
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\SelectedEmployeesExport($employeeIds),
+            'employees_export_' . date('Y-m-d_His') . '.xlsx'
+        );
+    }
+
     public function profile()
     {
         $me = $this->me();

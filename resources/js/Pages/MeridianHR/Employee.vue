@@ -417,10 +417,65 @@ function toggleSelect(id) {
 
 function exportSelected() {
   const selectedIds = Array.from(selectedEmployees.value)
+  console.log('Exporting selected employees, IDs:', selectedIds)
+  
+  console.log('exportSelected called, selectedIds:', selectedIds)
+  
+  if (selectedIds.length === 0) {
+    toast.value = 'Please select employees to export'
+    setTimeout(() => { toast.value = null }, 3000)
+    return
+  }
+  
   toast.value = `Exporting ${selectedIds.length} employee(s)...`
-  setTimeout(() => { toast.value = null }, 3000)
-  // TODO: Implement actual export functionality
-  console.log('Exporting employees:', selectedIds)
+  
+  try {
+    // Create a form and submit it to trigger download
+    const form = document.createElement('form')
+    form.method = 'POST'
+    
+    const routeUrl = route('hr.employee.export.selected')
+    console.log('Route URL:', routeUrl)
+    
+    form.action = routeUrl
+    form.style.display = 'none'
+    
+    // Add CSRF token
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+    console.log('CSRF token found:', !!csrfToken)
+    
+    const csrfInput = document.createElement('input')
+    csrfInput.type = 'hidden'
+    csrfInput.name = '_token'
+    csrfInput.value = csrfToken || ''
+    form.appendChild(csrfInput)
+    
+    // Add employee IDs
+    selectedIds.forEach(id => {
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = 'employee_ids[]'
+      input.value = id
+      form.appendChild(input)
+    })
+    
+    console.log('Form created, appending to body and submitting')
+    document.body.appendChild(form)
+    form.submit()
+    console.log('Form submitted')
+    
+    // Remove form after a delay to ensure submission completes
+    setTimeout(() => {
+      if (document.body.contains(form)) {
+        document.body.removeChild(form)
+      }
+      toast.value = null
+    }, 3000)
+  } catch (error) {
+    console.error('Export error:', error)
+    toast.value = 'Export failed: ' + error.message
+    setTimeout(() => { toast.value = null }, 5000)
+  }
 }
 
 function assignToEvent() {
@@ -1201,13 +1256,13 @@ function updateEmployee() {
       <div class="mhr-page-head__actions">
         <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshEmployees" />
         <div v-if="selectedEmployees.size > 0" style="position:relative;">
-          <button class="mhr-btn mhr-btn--accent" @click.stop="showActionsMenu = !showActionsMenu">
+          <button class="mhr-btn mhr-btn--accent" @click.stop="() => { console.log('Toggle clicked, current state:', showActionsMenu); showActionsMenu = !showActionsMenu }">
             <AppIcon name="check" :size="14" />
             <span>{{ selectedEmployees.size }} Selected</span>
             <AppIcon name="chevdown" :size="12" />
           </button>
           <div v-if="showActionsMenu" @click.stop class="mhr-dropdown" style="position:absolute;left:0;top:100%;margin-top:4px;min-width:200px;background:white;border:1px solid var(--mhr-line);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:1000;padding:8px;">
-            <button @click="() => { exportSelected(); showActionsMenu = false }" class="mhr-dropdown-item">
+            <button @click.stop="() => { console.log('Export button clicked'); exportSelected(); showActionsMenu = false }" class="mhr-dropdown-item">
               <AppIcon name="download" :size="14" style="color:var(--mhr-ink-2);" />
               <span>Export Selected</span>
             </button>
@@ -1251,7 +1306,7 @@ function updateEmployee() {
       <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="selectedEmployees.clear()">
         Clear Selection
       </button>
-      <button class="mhr-btn mhr-btn--sm mhr-btn--primary">
+      <button class="mhr-btn mhr-btn--sm mhr-btn--primary" @click="exportSelected">
         <AppIcon name="download" :size="14" /> Export Selected
       </button>
     </div>
