@@ -171,16 +171,29 @@ function closeUploadModal() {
   uploadForm.value = { file: null, employee_id: null, category_id: null, event_id: null, description: '' }
 }
 
+const allowedTypes = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'text/plain',
+  'text/csv'
+]
+
 function handleFileSelect(event) {
   const file = event.target.files[0]
   if (file) {
-    if (file.type !== 'application/pdf') {
-      showToast('Only PDF files are allowed')
+    if (!allowedTypes.includes(file.type)) {
+      showToast('Allowed formats: PDF, Word, Excel, Images (JPG, PNG, GIF), Text, CSV')
       event.target.value = ''
       return
     }
-    if (file.size > 10 * 1024 * 1024) {
-      showToast('File size must not exceed 10MB')
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('File size must not exceed 2MB')
       event.target.value = ''
       return
     }
@@ -256,6 +269,12 @@ function formatFileSize(bytes) {
   if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB'
   if (bytes >= 1024) return Math.round(bytes / 1024) + ' KB'
   return bytes + ' B'
+}
+
+function getFileExtension(filename) {
+  if (!filename) return 'FILE'
+  const ext = filename.split('.').pop()
+  return ext ? ext.toUpperCase() : 'FILE'
 }
 </script>
 
@@ -350,7 +369,7 @@ function formatFileSize(bytes) {
             :class="{ active: activeDoc?.id === doc.id }"
             @click="activeDoc = doc"
           >
-            <div class="docs-pdf-badge">PDF</div>
+            <div class="docs-pdf-badge">{{ getFileExtension(doc.file_name) }}</div>
             <div class="docs-item-info">
               <div class="docs-item-name">{{ docTitle(doc) }}</div>
               <div class="docs-item-meta">
@@ -389,7 +408,7 @@ function formatFileSize(bytes) {
           <div class="docs-preview-hd">
             <div class="docs-preview-hd-text">
               <h3 class="docs-preview-title">{{ docTitle(activeDoc) }}</h3>
-              <p class="docs-preview-subtitle">PDF · {{ activeDoc.file_size_human }} · {{ activeDoc.uploaded_at }}</p>
+              <p class="docs-preview-subtitle">{{ getFileExtension(activeDoc.file_name) }} · {{ activeDoc.file_size_human }} · {{ activeDoc.uploaded_at }}</p>
             </div>
             <div class="docs-preview-actions">
               <button class="docs-icon-btn" @click="downloadDocument(activeDoc)" title="Download">
@@ -459,14 +478,17 @@ function formatFileSize(bytes) {
       <div class="mhr-modal" style="max-width:600px;">
         <div class="mhr-modal__hd">
           <h2 class="mhr-modal__title">Upload Document</h2>
-          <p class="mhr-modal__sub">Upload a PDF document (max 10 MB)</p>
+          <p class="mhr-modal__sub">Upload files up to 2 MB</p>
         </div>
         <div class="mhr-modal__body">
           <div class="mhr-field">
             <label class="mhr-field__label">File <span style="color:var(--mhr-danger);">*</span></label>
-            <input type="file" accept=".pdf,application/pdf" @change="handleFileSelect" class="mhr-input" style="padding:8px;" />
-            <p v-if="uploadForm.file" style="font-size:12px;color:var(--mhr-ink-3);margin-top:6px;">
-              Selected: {{ uploadForm.file.name }} ({{ formatFileSize(uploadForm.file.size) }})
+            <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.txt,.csv" @change="handleFileSelect" class="mhr-input" style="padding:8px;" />
+            <p style="font-size:11px;color:var(--mhr-ink-3);margin-top:4px;line-height:1.4;">
+              Allowed: PDF, Word (DOC, DOCX), Excel (XLS, XLSX), Images (JPG, PNG, GIF), Text (TXT, CSV)
+            </p>
+            <p v-if="uploadForm.file" style="font-size:12px;color:var(--mhr-accent);margin-top:6px;font-weight:500;">
+              ✓ Selected: {{ uploadForm.file.name }} ({{ formatFileSize(uploadForm.file.size) }})
             </p>
           </div>
 

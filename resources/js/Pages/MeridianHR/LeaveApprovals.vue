@@ -155,7 +155,7 @@ function fmtRange(a, b) {
                 :data-checked="selected.size === pending.length && pending.length > 0 ? '1' : selected.size > 0 ? 'indeterminate' : '0'"
                 @click="toggleAll" />
             </th>
-            <th>Employee</th>
+            <th>Staff</th>
             <th>Type</th>
             <th>Dates</th>
             <th>Days</th>

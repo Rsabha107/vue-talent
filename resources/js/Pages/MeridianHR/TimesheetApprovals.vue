@@ -270,7 +270,7 @@ function getFirstDayOffset() {
                 :data-checked="selectedManager.size === pending.length && pending.length > 0 ? '1' : selectedManager.size > 0 ? 'indeterminate' : '0'"
                 @click="toggleAllManager" />
             </th>
-            <th>Employee</th>
+            <th>Staff</th>
             <th>Period</th>
             <th>Days Worked</th>
             <th>Leave</th>
@@ -330,7 +330,7 @@ function getFirstDayOffset() {
                 :data-checked="selectedPayroll.size === payrollPending.length && payrollPending.length > 0 ? '1' : selectedPayroll.size > 0 ? 'indeterminate' : '0'"
                 @click="toggleAllPayroll" />
             </th>
-            <th>Employee</th>
+            <th>Staff</th>
             <th>Period</th>
             <th>Days Worked</th>
             <th>Leave</th>

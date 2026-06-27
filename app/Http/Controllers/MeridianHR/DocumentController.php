@@ -104,15 +104,15 @@ class DocumentController extends BaseHRController
         $user = Auth::user();
         
         $request->validate([
-            'file' => 'required|file|mimes:pdf|max:10240', // 10MB max
+            'file' => 'required|file|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,gif,txt,csv|max:2048', // 2MB max
             'employee_id' => 'required|exists:employees_all,id',
             'category_id' => 'required|exists:document_categories,id',
             'event_id' => 'nullable|exists:events,id',
             'description' => 'nullable|string|max:500',
         ], [
-            'file.required' => 'Please select a PDF file to upload',
-            'file.mimes' => 'Only PDF files are allowed',
-            'file.max' => 'File size must not exceed 10MB',
+            'file.required' => 'Please select a file to upload',
+            'file.mimes' => 'Allowed formats: PDF, Word, Excel, Images (JPG, PNG, GIF), Text, CSV',
+            'file.max' => 'File size must not exceed 2MB',
         ]);
         
         // Employees and managers can only upload documents for themselves
@@ -174,7 +174,7 @@ class DocumentController extends BaseHRController
         // Return inline (opens in browser instead of download)
         $filePath = Storage::disk('documents')->path($document->file_path);
         return response()->file($filePath, [
-            'Content-Type' => 'application/pdf',
+            'Content-Type' => $document->mime_type ?? 'application/octet-stream',
             'Content-Disposition' => 'inline; filename="' . $document->file_name . '"'
         ]);
     }

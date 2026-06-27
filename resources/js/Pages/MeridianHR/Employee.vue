@@ -1252,8 +1252,8 @@ function updateEmployee() {
   <div @click="openMenuId = null; showColumnMenu = false; showActionsMenu = false">
     <div class="mhr-page-head">
       <div>
-        <h1 class="mhr-page-head__title">{{ isAllEvents ? 'Employee Master List' : 'Employees' }}</h1>
-        <p class="mhr-page-head__sub">{{ isAllEvents ? 'Complete database of all employees' : `${filtered.length} of ${all.length} people` }}</p>
+        <h1 class="mhr-page-head__title">{{ isAllEvents ? 'Staff Master List' : 'Staff' }}</h1>
+        <p class="mhr-page-head__sub">{{ isAllEvents ? 'Complete database of all staff' : `${filtered.length} of ${all.length} people` }}</p>
       </div>
       <div class="mhr-page-head__actions">
         <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshEmployees" />
@@ -1287,7 +1287,7 @@ function updateEmployee() {
           <AppIcon name="upload" :size="14" /> Import
         </button>
         <button v-if="hrRole === 'admin'" class="mhr-btn mhr-btn--primary" @click="showAddModal = true">
-          <AppIcon name="plus" /> Add employee
+          <AppIcon name="plus" /> Add staff
         </button>
       </div>
     </div>
@@ -1302,7 +1302,7 @@ function updateEmployee() {
     <div v-if="selectedEmployees.size > 0" class="mhr-card" style="margin-bottom:14px;padding:12px 16px;display:flex;align-items:center;gap:12px;background:var(--mhr-accent-soft);border:1px solid var(--mhr-accent);">
       <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--mhr-ink);">
         <AppIcon name="check" :size="16" style="color:var(--mhr-accent);" />
-        <span>{{ selectedEmployees.size }} employee{{ selectedEmployees.size > 1 ? 's' : '' }} selected</span>
+        <span>{{ selectedEmployees.size }} staff member{{ selectedEmployees.size > 1 ? 's' : '' }} selected</span>
       </div>
       <div style="flex:1;"></div>
       <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="selectedEmployees.clear()">
@@ -1317,7 +1317,7 @@ function updateEmployee() {
     <div style="display:flex;gap:10px;margin-bottom:14px;">
       <div style="position:relative;flex:1;max-width:360px;">
         <AppIcon name="search" :size="14" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--mhr-ink-3);" />
-        <input class="mhr-input" style="padding-left:32px;" placeholder="Search employees by name, email, phone, ID…" v-model="q" />
+        <input class="mhr-input" style="padding-left:32px;" placeholder="Search staff members by name, email, phone, ID…" v-model="q" />
       </div>
       <div ref="columnMenuRef" style="position:relative;">
         <button class="mhr-btn mhr-btn--outline" @click.stop="showColumnMenu = !showColumnMenu" style="min-width:120px;">
@@ -1328,7 +1328,7 @@ function updateEmployee() {
           <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:13px;" @mouseenter="$event.currentTarget.style.background='var(--mhr-surface)'" @mouseleave="$event.currentTarget.style.background='transparent'">
             <input type="checkbox" v-model="visibleColumns.employeeNumber" style="cursor:pointer;" />
             <div style="flex:1;">
-              <span>Employee #</span>
+              <span>Staff #</span>
               <div v-if="visibleColumns.employeeNumber" style="font-size:11px;color:var(--mhr-ink-3);margin-top:2px;">{{ columnPreview.employeeNumber }}</div>
             </div>
           </label>
@@ -1582,8 +1582,8 @@ function updateEmployee() {
                   style="cursor: pointer;"
                 />
               </th>
-              <th>Employee</th>
-              <th>Employee #</th>
+              <th>Staff</th>
+              <th>Staff #</th>
               <th>Events Assigned</th>
               <th>Nationality</th>
               <th>Gender</th>
@@ -1605,8 +1605,8 @@ function updateEmployee() {
                   style="cursor: pointer;"
                 />
               </th>
-              <th>Employee</th>
-              <th v-if="visibleColumns.employeeNumber">Employee #</th>
+              <th>Staff</th>
+              <th v-if="visibleColumns.employeeNumber">Staff #</th>
               <th v-if="visibleColumns.role">Role</th>
               <th v-if="visibleColumns.department">Department</th>
               <th v-if="visibleColumns.eventName">Event</th>

@@ -725,7 +725,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <table class="mhr-table">
             <thead>
               <tr>
-                <th v-if="isAdminOrManager">Employee</th>
+                <th v-if="isAdminOrManager">Staff</th>
                 <th>Period</th>
                 <th>Status</th>
                 <th style="text-align:right;">Worked</th>
@@ -1076,33 +1076,33 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
       <div class="mhr-modal">
         <div class="mhr-modal__hd">
           <div>
-            <h2 class="mhr-modal__title">Add Employee Timesheet</h2>
-            <p class="mhr-modal__sub">Select employee, month and year to create a timesheet record.</p>
+            <h2 class="mhr-modal__title">Add Staff Timesheet</h2>
+            <p class="mhr-modal__sub">Select staff, month and year to create a timesheet record.</p>
           </div>
         </div>
         <div class="mhr-modal__body">
 
-          <!-- Employee selector — admin or manager in team view, read-only for others -->
+          <!-- Staff selector — admin or manager in team view, read-only for others -->
           <div v-if="hrRole === 'admin' || (hrRole === 'manager' && isTeamView)" class="mhr-field">
-            <label class="mhr-field__label">Select Employee *</label>
+            <label class="mhr-field__label">Select Staff *</label>
             <EmployeeSelector
               v-model="addForm.employeeId"
               :employees="employees"
-              placeholder="Select employee…"
+              placeholder="Select staff…"
               :required="true"
             />
             <p v-if="addErrors.employeeId" class="ts-field-error">{{ addErrors.employeeId }}</p>
           </div>
           <div v-else-if="currentEmployee" class="mhr-field">
-            <label class="mhr-field__label">Employee</label>
+            <label class="mhr-field__label">Staff</label>
             <div style="padding:10px 12px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
               {{ currentEmployee.full_name }} ({{ currentEmployee.employee_number }})
             </div>
           </div>
 
-          <!-- Employee display for employees (read-only) -->
+          <!-- Staff display for employees (read-only) -->
           <div v-else-if="isEmployee && currentEmployee" class="mhr-field">
-            <label class="mhr-field__label">Employee</label>
+            <label class="mhr-field__label">Staff</label>
             <div style="padding:10px 12px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
               {{ currentEmployee.full_name }} ({{ currentEmployee.employee_number }})
             </div>

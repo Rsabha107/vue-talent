@@ -469,7 +469,7 @@ function refreshLeaveRequests() {
         <table class="mhr-table">
           <thead>
             <tr>
-              <th>EMPLOYEE</th>
+              <th>STAFF</th>
               <th>LEAVE TYPE</th>
               <th>FROM</th>
               <th>TO</th>
@@ -569,14 +569,14 @@ function refreshLeaveRequests() {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <!-- Employee field: Always show selector for admin -->
+            <!-- Staff field: Always show selector for admin -->
             <div class="mhr-field" style="grid-column:1/-1;">
-              <label class="mhr-field__label">EMPLOYEE *</label>
+              <label class="mhr-field__label">STAFF *</label>
               <EmployeeSelector
                 v-model="form.employee_id"
                 :employees="employees"
                 :required="true"
-                placeholder="Search employee..."
+                placeholder="Search staff..."
               />
               <div v-if="form.errors.employee_id" style="color:var(--mhr-danger);font-size:12px;margin-top:4px;">
                 {{ form.errors.employee_id }}
@@ -761,7 +761,7 @@ function refreshLeaveRequests() {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
             <!-- Employee field: Always show selector for admin -->
             <div class="mhr-field" style="grid-column:1/-1;">
-              <label class="mhr-field__label">EMPLOYEE *</label>
+              <label class="mhr-field__label">STAFF *</label>
               <EmployeeSelector
                 v-model="editForm.employee_id"
                 :employees="employees"
@@ -927,7 +927,7 @@ function refreshLeaveRequests() {
         <div class="mhr-modal__body">
           <div style="display:grid;gap:20px;">
             <div>
-              <div style="font-size:11px;font-weight:600;color:var(--mhr-ink-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Employee</div>
+              <div style="font-size:11px;font-weight:600;color:var(--mhr-ink-3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Staff</div>
               <div style="font-weight:500;color:var(--mhr-ink);">{{ viewingRequest?.employeeName }}</div>
               <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:2px;">{{ viewingRequest?.employeeNumber }}</div>
             </div>

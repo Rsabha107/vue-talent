@@ -150,10 +150,10 @@ function openAddModal() {
 
 function validateAdd() {
   const e = {}
-  // Only validate employee selection for admin or manager in team view
-  // Always show employee selector for admin, read-only employee field for employees/managers
+  // Only validate staff selection for admin or manager in team view
+  // Always show staff selector for admin, read-only staff field for employees/managers
   if (!addForm.value.employeeId) {
-    e.employeeId = 'Employee is required.'
+    e.employeeId = 'Staff is required.'
   }
   if (!addForm.value.monthId) e.monthId = 'Month is required.'
   if (!addForm.value.year)    e.year    = 'Year is required.'
@@ -761,7 +761,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <table class="mhr-table">
             <thead>
               <tr>
-                <th v-if="isAdminOrManager">Employee</th>
+                <th v-if="isAdminOrManager">Staff</th>
                 <th>Period</th>
                 <th>Status</th>
                 <th style="text-align:right;">Worked</th>
@@ -1109,8 +1109,8 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
       <div class="mhr-modal">
         <div class="mhr-modal__hd">
           <div>
-            <h2 class="mhr-modal__title">Add Employee Timesheet</h2>
-            <p class="mhr-modal__sub">Select employee, month and year to create a timesheet record.</p>
+            <h2 class="mhr-modal__title">Add Staff Timesheet</h2>
+            <p class="mhr-modal__sub">Select staff, month and year to create a timesheet record.</p>
           </div>
         </div>
         <div class="mhr-modal__body">
@@ -1119,9 +1119,9 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
             {{ addErrorMessage }}
           </div>
 
-          <!-- Employee field: Always read-only for personal view -->
+          <!-- Staff field: Always read-only for personal view -->
           <div v-if="currentEmployee" class="mhr-field">
-            <label class="mhr-field__label">Employee</label>
+            <label class="mhr-field__label">Staff</label>
             <div style="padding:10px 12px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
               {{ currentEmployee.full_name }} ({{ currentEmployee.employee_number }})
             </div>
@@ -1213,7 +1213,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <div style="padding:16px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:8px;margin-bottom:16px;">
             <div style="display:grid;gap:12px;">
               <div>
-                <div style="font-size:12px;color:var(--mhr-ink-3);margin-bottom:4px;">Employee</div>
+                <div style="font-size:12px;color:var(--mhr-ink-3);margin-bottom:4px;">Staff</div>
                 <div style="font-size:14px;font-weight:500;color:var(--mhr-ink);">{{ activeTimesheet?.employeeName }}</div>
               </div>
               <div>

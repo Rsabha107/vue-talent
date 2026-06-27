@@ -201,7 +201,7 @@ function refreshAddresses() {
         <table class="mhr-table">
           <thead>
             <tr>
-              <th v-if="hrRole !== 'employee'">EMPLOYEE</th>
+              <th v-if="hrRole !== 'employee'">STAFF</th>
               <th>TYPE</th>
               <th>ADDRESS</th>
               <th>CITY</th>
@@ -281,20 +281,20 @@ function refreshAddresses() {
 
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-            <!-- Employee field for admin: searchable dropdown -->
+            <!-- Staff field for admin: searchable dropdown -->
             <div v-if="employees.length > 0" class="mhr-field" style="grid-column:1/-1;">
-              <label class="mhr-field__label">EMPLOYEE *</label>
+              <label class="mhr-field__label">STAFF *</label>
               <EmployeeSelector
                 v-model="form.employee_id"
                 :employees="employees"
-                placeholder="Select employee..."
+                placeholder="Select staff..."
                 :required="true"
               />
             </div>
 
-            <!-- Employee field for employee/manager role: fixed display -->
+            <!-- Staff field for employee/manager role: fixed display -->
             <div v-else class="mhr-field" style="grid-column:1/-1;">
-              <label class="mhr-field__label">EMPLOYEE</label>
+              <label class="mhr-field__label">STAFF</label>
               <div style="padding:12px 16px;background:var(--mhr-surface-2);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);color:var(--mhr-ink-2);">
                 <div style="font-weight:500;font-size:14px;">{{ currentEmployee?.full_name || 'N/A' }}</div>
                 <div style="font-size:13px;margin-top:2px;opacity:0.8;">{{ currentEmployee?.employee_number || '' }}</div>

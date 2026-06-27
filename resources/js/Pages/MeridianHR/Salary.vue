@@ -250,7 +250,7 @@ function refreshSalaries() {
         <table class="mhr-table">
           <thead>
             <tr>
-              <th v-if="hrRole !== 'employee'">EMPLOYEE</th>
+              <th v-if="hrRole !== 'employee'">STAFF</th>
               <th>NET SALARY</th>
               <th>EFFECTIVE FROM</th>
               <th>EFFECTIVE TO</th>
@@ -329,11 +329,11 @@ function refreshSalaries() {
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
             <div class="mhr-field" style="grid-column:1/-1;">
-              <label class="mhr-field__label">EMPLOYEE *</label>
+              <label class="mhr-field__label">STAFF *</label>
               <EmployeeSelector
                 v-model="form.employee_id"
                 :employees="employees"
-                placeholder="Search employee..."
+                placeholder="Search staff..."
                 required
               />
               <p v-if="form.errors.employee_id" class="mhr-field__error">{{ form.errors.employee_id }}</p>

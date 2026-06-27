@@ -142,9 +142,9 @@ function openAddModal() {
 
 function validateAdd() {
   const e = {}
-  // Only validate employee selection for admin or manager in team view
+  // Only validate staff selection for admin or manager in team view
   if ((props.hrRole === 'admin' || (props.hrRole === 'manager' && props.isTeamView)) && !addForm.value.employeeId) {
-    e.employeeId = 'Employee is required.'
+    e.employeeId = 'Staff is required.'
   }
   if (!addForm.value.monthId) e.monthId = 'Month is required.'
   if (!addForm.value.year)    e.year    = 'Year is required.'
@@ -721,7 +721,7 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
           <table class="mhr-table">
             <thead>
               <tr>
-                <th v-if="isAdminOrManager">Employee</th>
+                <th v-if="isAdminOrManager">Staff</th>
                 <th>Period</th>
                 <th>Status</th>
                 <th style="text-align:right;">Worked</th>
@@ -1062,19 +1062,19 @@ const isAdminOrManager = computed(() => props.hrRole === 'admin' || props.hrRole
       <div class="mhr-modal">
         <div class="mhr-modal__hd">
           <div>
-            <h2 class="mhr-modal__title">Add Employee Timesheet</h2>
-            <p class="mhr-modal__sub">Select employee, month and year to create a timesheet record.</p>
+            <h2 class="mhr-modal__title">Add Staff Timesheet</h2>
+            <p class="mhr-modal__sub">Select staff, month and year to create a timesheet record.</p>
           </div>
         </div>
         <div class="mhr-modal__body">
 
-          <!-- Employee field: Always show selector for admin -->
+          <!-- Staff field: Always show selector for admin -->
           <div class="mhr-field">
-            <label class="mhr-field__label">Select Employee *</label>
+            <label class="mhr-field__label">Select Staff *</label>
             <EmployeeSelector
               v-model="addForm.employeeId"
               :employees="employees"
-              placeholder="Select employee…"
+              placeholder="Select staff…"
               :required="true"
             />
             <p v-if="addErrors.employeeId" class="ts-field-error">{{ addErrors.employeeId }}</p>

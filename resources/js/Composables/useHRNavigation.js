@@ -161,7 +161,7 @@ export function useHRNavigation() {
       if (can.value.manageEmployees) {
         people.items.push({
           id: 'employee',
-          label: 'Employees',
+          label: 'Staff',
           icon: 'users',
           route: 'hr.employee'
         })
@@ -381,7 +381,7 @@ export function useHRNavigation() {
     'approve-time': 'Timesheet approvals',
     documents: 'Documents',
     payslips: 'My Payslip',
-    employee: 'Employees',
+    employee: 'Staff',
     profile: 'My profile',
     settings: 'Application Settings',
     'application-settings': 'Application Settings',

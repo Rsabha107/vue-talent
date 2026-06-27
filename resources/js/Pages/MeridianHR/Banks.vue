@@ -241,7 +241,7 @@ function refreshBanks() {
         <table class="mhr-table">
           <thead>
             <tr>
-              <th v-if="hrRole !== 'employee'">EMPLOYEE</th>
+              <th v-if="hrRole !== 'employee'">STAFF</th>
               <th>BANK BRANCH</th>
               <th>ACCOUNT NAME</th>
               <th>IBAN</th>
@@ -324,11 +324,11 @@ function refreshBanks() {
         <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
             <div v-if="hrRole !== 'employee'" class="mhr-field" style="grid-column:1/-1;">
-              <label class="mhr-field__label">EMPLOYEE *</label>
+              <label class="mhr-field__label">STAFF *</label>
               <EmployeeSelector
                 v-model="form.employee_id"
                 :employees="employees"
-                placeholder="Select employee…"
+                placeholder="Select staff…"
                 :required="true"
               />
             </div>
