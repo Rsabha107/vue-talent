@@ -1314,10 +1314,15 @@ function updateEmployee() {
     </div>
 
     <!-- Filters -->
-    <div style="display:flex;gap:10px;margin-bottom:14px;">
+    <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;">
       <div style="position:relative;flex:1;max-width:360px;">
         <AppIcon name="search" :size="14" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--mhr-ink-3);" />
         <input class="mhr-input" style="padding-left:32px;" placeholder="Search staff members by name, email, phone, ID…" v-model="q" />
+      </div>
+      <div class="employee-count-badge">
+        <AppIcon name="users" :size="14" />
+        <span class="fw-semibold">{{ filtered.length }}</span>
+        <span>{{ filtered.length === 1 ? 'staff member' : 'staff members' }}</span>
       </div>
       <div ref="columnMenuRef" style="position:relative;">
         <button class="mhr-btn mhr-btn--outline" @click.stop="showColumnMenu = !showColumnMenu" style="min-width:120px;">
@@ -3268,6 +3273,21 @@ function updateEmployee() {
 </template>
 
 <style scoped>
+.employee-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mhr-ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.employee-count-badge .fw-semibold {
+  font-weight: 600;
+  color: var(--mhr-ink);
+}
+
 @keyframes spin {
   from {
     transform: rotate(0deg);

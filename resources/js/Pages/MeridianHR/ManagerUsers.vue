@@ -186,10 +186,15 @@ function toggleRole(form, roleId) {
     </div>
 
     <!-- Search Filter -->
-    <div style="display:flex;gap:10px;margin-bottom:14px;">
+    <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;">
       <div style="position:relative;flex:1;max-width:360px;">
         <AppIcon name="search" :size="14" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--mhr-ink-3);" />
         <input class="mhr-input" style="padding-left:32px;" placeholder="Search users by name or email…" v-model="q" />
+      </div>
+      <div class="user-count-badge">
+        <AppIcon name="users" :size="14" />
+        <span class="fw-semibold">{{ filtered.length }}</span>
+        <span>{{ filtered.length === 1 ? 'user' : 'users' }}</span>
       </div>
     </div>
 
@@ -388,3 +393,19 @@ function toggleRole(form, roleId) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.user-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mhr-ink-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.user-count-badge .fw-semibold {
+  font-weight: 600;
+  color: var(--mhr-ink);
+}
+</style>

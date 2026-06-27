@@ -15,6 +15,7 @@ defineProps({
 
 // ── Table ref ────────────────────────────────────────────────────
 const tableRef = ref(null);
+const totalRecordsCount = ref(0);
 
 // ── Modal state ──────────────────────────────────────────────────
 const showModal = ref(false);
@@ -107,6 +108,9 @@ function initTable() {
         sort: params.sort,
         order: params.order,
       };
+    },
+    onLoadSuccess(data) {
+      totalRecordsCount.value = data.total || 0;
     },
     loadingTemplate() {
       return `<div class="text-center py-5">
@@ -287,6 +291,11 @@ onBeforeUnmount(() => {
       <button class="bt-pill-btn" @click="openCreateModal">
         <i class="fa fa-plus me-1"></i> Add User
       </button>
+      <div class="record-count-badge">
+        <i class="fa fa-users me-1"></i>
+        <span class="fw-semibold">{{ totalRecordsCount }}</span>
+        <span class="ms-1">{{ totalRecordsCount === 1 ? 'user' : 'users' }}</span>
+      </div>
     </div>
 
     <table ref="tableRef" class="table table-responsive"></table>
@@ -303,6 +312,28 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* ═══════════════════════════════════════════════════════════════
+   Record count badge
+═══════════════════════════════════════════════════════════════ */
+.record-count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 16px;
+  height: 38px;
+  background: #dcfce7;
+  border-radius: 50px;
+  color: #16a34a;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #bbf7d0;
+  margin-left: 8px;
+}
+
+.record-count-badge i {
+  opacity: 0.8;
+  font-size: 12px;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    Outer card
 ═══════════════════════════════════════════════════════════════ */
