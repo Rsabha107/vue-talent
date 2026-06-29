@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Mail\SendForgotPasswordMail;
+use App\Models\GeneralSettings\Setting;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Http\RedirectResponse;
@@ -98,14 +99,21 @@ class PasswordResetLinkController extends Controller
         ];
 
         Log::debug('Prepared email content for password reset: ' . json_encode($content));
-        Mail::to($request->email)->queue(new SendForgotPasswordMail($content));
+        
+        // Check if notifications are enabled before sending
+        if (Setting::shouldSendNotifications()) {
+            Mail::to($request->email)->queue(new SendForgotPasswordMail($content));
+            Log::info('Password reset email queued for: ' . $request->email);
+        } else {
+            Log::info('Password reset email NOT sent (notifications disabled) for: ' . $request->email);
+        }
 
         // Mail::send('emails.forgetPassword', ['token' => $token], function($message) use($request){
         //     $message->to($request->email);
         //     $message->subject('Reset Password');
         // });
 
-        return back()->with('message', 'We have e-mailed your password reset link!');
+        return redirect()->route('login')->with('status', 'We have sent you a password reset link! Please check your email.');
     } //submitForgetPasswordForm
 
 }

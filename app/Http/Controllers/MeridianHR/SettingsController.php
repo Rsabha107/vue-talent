@@ -5,6 +5,7 @@ namespace App\Http\Controllers\MeridianHR;
 use App\Models\GeneralSettings\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class SettingsController extends BaseHRController
@@ -45,6 +46,19 @@ class SettingsController extends BaseHRController
         Cache::forget('app_settings');
 
         return redirect()->back()->with('success', 'Setting created successfully');
+    }
+
+    /**
+     * Check if there are pending jobs in the queue
+     */
+    public function checkPendingJobs()
+    {
+        $pendingJobsCount = DB::table('jobs')->count();
+        
+        return response()->json([
+            'hasPendingJobs' => $pendingJobsCount > 0,
+            'count' => $pendingJobsCount,
+        ]);
     }
 
     /**

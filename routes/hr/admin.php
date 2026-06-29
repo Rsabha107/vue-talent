@@ -83,6 +83,7 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     
     // Application Settings Management
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
+    Route::get('/settings/check-pending-jobs', [SettingsController::class, 'checkPendingJobs'])->name('settings.check-pending-jobs');
     Route::post('/settings', [SettingsController::class, 'store'])->name('settings.store');
     Route::put('/settings/{id}', [SettingsController::class, 'update'])->name('settings.update');
     Route::delete('/settings/{id}', [SettingsController::class, 'destroy'])->name('settings.destroy');

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Models\GeneralSettings\Setting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -36,8 +37,19 @@ class AuthenticatedSessionController extends Controller
             $user = $request->authenticateAndGetUser();
 
             $request->session()->regenerate();
+            
+            // Check if OTP is enabled via Setting
+            if (!Setting::isOtpEnabled()) {
+                // OTP disabled - log user in directly
+                Auth::login($user);
+                $request->session()->regenerate();
+                Log::info('OTP bypassed (disabled) for user: ' . $user->email);
+                
+                return redirect()->intended(route('home', absolute: false));
+            }
+            
+            // OTP enabled - proceed with OTP verification flow
             $request->session()->put('otp_user_id', $user->id);
-
             $user->sendOneTimePassword();
 
             return redirect()->route('otp.show');

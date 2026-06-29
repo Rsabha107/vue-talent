@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Mail\SendOtpMail;
+use App\Models\GeneralSettings\Setting;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -58,12 +59,18 @@ class User extends Authenticatable
         $otpModel = $this->createOneTimePassword();
         $expiresInMinutes = config('one-time-passwords.default_expires_in_minutes', 2);
 
-        Mail::to($this->email)->send(
-            new SendOtpMail(
-                otpCode: $otpModel->password,
-                userName: $this->name,
-                expiresInMinutes: $expiresInMinutes
-            )
-        );
+        // Check if notifications are enabled before sending
+        if (Setting::shouldSendNotifications()) {
+            Mail::to($this->email)->send(
+                new SendOtpMail(
+                    otpCode: $otpModel->password,
+                    userName: $this->name,
+                    expiresInMinutes: $expiresInMinutes
+                )
+            );
+            \Log::info('OTP email sent to: ' . $this->email);
+        } else {
+            \Log::info('OTP email NOT sent (notifications disabled) for: ' . $this->email);
+        }
     }
 }

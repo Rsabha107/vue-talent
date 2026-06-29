@@ -4,6 +4,7 @@ import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
 import { router, useForm } from '@inertiajs/vue3'
+import axios from 'axios'
 
 defineOptions({ layout: MeridianLayout })
 
@@ -16,6 +17,8 @@ const q = ref('')
 const showAddModal = ref(false)
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
+const showPendingJobsConfirmModal = ref(false)
+const pendingJobsCount = ref(0)
 const editingSetting = ref(null)
 const settingToDelete = ref(null)
 const toast = ref(null)
@@ -78,7 +81,31 @@ function editSetting(setting) {
   openMenuId.value = null
 }
 
-function updateSetting() {
+async function updateSetting() {
+  // Check if enabling send_notifications (0 -> 1)
+  const isEnablingNotifications = editForm.key === 'send_notifications' && 
+                                   editForm.value === '1' && 
+                                   editingSetting.value.value !== '1'
+  
+  if (isEnablingNotifications) {
+    try {
+      // Check if there are pending jobs first
+      const response = await axios.get(route('hr.settings.check-pending-jobs'))
+      
+      if (response.data.hasPendingJobs) {
+        // Show confirmation modal
+        pendingJobsCount.value = response.data.count
+        showPendingJobsConfirmModal.value = true
+        return
+      }
+    } catch (error) {
+      console.error('Failed to check pending jobs:', error)
+      showToast('Failed to check job queue status', true)
+      return
+    }
+  }
+  
+  // Proceed with normal update (or after confirmation check passed)
   editForm.put(route('hr.settings.update', editingSetting.value.id), {
     onSuccess: () => {
       showEditModal.value = false
@@ -90,6 +117,29 @@ function updateSetting() {
       if (firstError) showToast(firstError, true)
     },
   })
+}
+
+function confirmEnableNotifications() {
+  // Proceed with update
+  editForm.put(route('hr.settings.update', editingSetting.value.id), {
+    onSuccess: () => {
+      showPendingJobsConfirmModal.value = false
+      showEditModal.value = false
+      showToast('Email notifications enabled successfully')
+      editForm.reset()
+    },
+    onError: () => {
+      showPendingJobsConfirmModal.value = false
+      const firstError = Object.values(editForm.errors)[0]
+      if (firstError) showToast(firstError, true)
+    },
+  })
+}
+
+function cancelEnableNotifications() {
+  showPendingJobsConfirmModal.value = false
+  // Reset the value back to original
+  editForm.value = editingSetting.value.value
 }
 
 function confirmDelete(setting) {
@@ -315,6 +365,54 @@ function closeDeleteModal() {
         <div class="mhr-modal__ft">
           <button type="button" class="mhr-btn mhr-btn--ghost" @click.stop="closeDeleteModal">Cancel</button>
           <button type="button" class="mhr-btn mhr-btn--danger" @click.stop="deleteSetting">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pending Jobs Confirmation Modal -->
+    <div v-if="showPendingJobsConfirmModal" class="mhr-modal__scrim" style="z-index:10000;">
+      <div class="mhr-modal" style="max-width:520px;">
+        <div class="mhr-modal__hd">
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div style="flex-shrink:0;width:32px;height:32px;background:var(--mhr-warn);border-radius:50%;display:flex;align-items:center;justify-content:center;">
+              <AppIcon name="alert" :size="18" style="color:#fff;" />
+            </div>
+            <div style="flex:1;">
+              <h2 class="mhr-modal__title" style="margin:0;">Enable Email Notifications?</h2>
+            </div>
+            <button type="button" class="mhr-icon-btn" @click.stop="cancelEnableNotifications" style="margin-top:-4px;">
+              <AppIcon name="x" :size="16" />
+            </button>
+          </div>
+        </div>
+        <div class="mhr-modal__body">
+          <div style="background:var(--mhr-warn-bg, #FEF3C7);border:1px solid var(--mhr-warn);border-radius:var(--mhr-r);padding:12px;margin-bottom:16px;">
+            <div style="font-weight:500;color:var(--mhr-warn-dark, #92400E);margin-bottom:4px;">
+              ⚠️ {{ pendingJobsCount }} Queued Email{{ pendingJobsCount !== 1 ? 's' : '' }} Detected
+            </div>
+            <div style="font-size:13px;color:var(--mhr-warn-dark, #92400E);">
+              These emails are currently queued and waiting to be processed.
+            </div>
+          </div>
+          
+          <p style="margin-bottom:12px;font-size:14px;">
+            Activating email notifications will allow the system to start sending queued emails immediately, including:
+          </p>
+          
+          <ul style="margin:0 0 16px 0;padding-left:24px;font-size:14px;color:var(--mhr-ink-2);">
+            <li>Password reset emails</li>
+            <li>Login verification (OTP) emails</li>
+          </ul>
+          
+          <p style="margin:0;font-size:13px;color:var(--mhr-ink-3);">
+            <strong>Tip:</strong> If you want to clear the queue without sending emails, you can truncate the <code style="background:var(--mhr-surface-2);padding:2px 6px;border-radius:3px;font-size:12px;">jobs</code> table first.
+          </p>
+        </div>
+        <div class="mhr-modal__ft">
+          <button type="button" class="mhr-btn mhr-btn--ghost" @click.stop="cancelEnableNotifications">Cancel</button>
+          <button type="button" class="mhr-btn mhr-btn--primary" @click.stop="confirmEnableNotifications">
+            Yes, Enable Notifications
+          </button>
         </div>
       </div>
     </div>
