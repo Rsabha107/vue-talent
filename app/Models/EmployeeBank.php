@@ -16,7 +16,6 @@ class EmployeeBank extends Model
         'employee_id',
         'user_id',
         'bank_branch_name',
-        'bank_account_name',
         'iban',
         'swift_code',
         'effective_start_date',

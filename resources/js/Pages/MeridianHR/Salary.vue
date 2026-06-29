@@ -5,6 +5,7 @@ import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
 import EmployeeSelector from '@/Components/MeridianHR/EmployeeSelector.vue'
+import ImportStatsModal from '@/Components/MeridianHR/ImportStatsModal.vue'
 import { DatePicker } from 'v-calendar'
 import 'v-calendar/style.css'
 
@@ -38,14 +39,26 @@ function applyFormat(d, fmt) {
 }
 
 const q = ref('')
+const activeFilter = ref('all')
 const showAddModal = ref(false)
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
+const showImportModal = ref(false)
+const showStatsModal = ref(false)
+const showDuplicateConfirmModal = ref(false)
 const editingSalary = ref(null)
 const salaryToDelete = ref(null)
+const importFile = ref(null)
+const fileInput = ref(null)
+const treatDuplicatesAsError = ref(true)
+const importStats = ref(null)
+const importErrors = ref([])
+const hasFailures = ref(false)
+const hasExportableFailures = ref(false)
 const toast = ref(null)
 const openMenuId = ref(null)
 const isRefreshing = ref(false)
+const isImporting = ref(false)
 
 const form = useForm({
   employee_id: null,
@@ -64,12 +77,25 @@ const editForm = useForm({
 })
 
 const filtered = computed(() => {
-  if (!q.value) return props.salaries
-  const query = q.value.toLowerCase()
-  return props.salaries.filter(salary =>
-    salary.employeeName?.toLowerCase().includes(query) ||
-    salary.employeeNumber?.toLowerCase().includes(query)
-  )
+  let results = props.salaries
+  
+  // Filter by search query
+  if (q.value) {
+    const query = q.value.toLowerCase()
+    results = results.filter(salary =>
+      salary.employeeName?.toLowerCase().includes(query) ||
+      salary.employeeNumber?.toLowerCase().includes(query)
+    )
+  }
+  
+  // Filter by active status
+  if (activeFilter.value === 'active') {
+    results = results.filter(salary => salary.isActive)
+  } else if (activeFilter.value === 'inactive') {
+    results = results.filter(salary => !salary.isActive)
+  }
+  
+  return results
 })
 
 
@@ -218,6 +244,123 @@ function refreshSalaries() {
   })
 }
 
+function downloadTemplate() {
+  window.location.href = route('hr.salary.template')
+}
+
+function openImportModal() {
+  showImportModal.value = true
+  importFile.value = null
+  treatDuplicatesAsError.value = true
+}
+
+function handleFileSelect(event) {
+  const file = event.target.files[0]
+  if (file) {
+    importFile.value = file
+  }
+}
+
+function triggerFileInput() {
+  fileInput.value?.click()
+}
+
+async function importSalaries() {
+  if (!importFile.value) {
+    alert('Please select a file to import')
+    return
+  }
+
+  isImporting.value = true
+  const formData = new FormData()
+  formData.append('file', importFile.value)
+  formData.append('treat_duplicates_as_error', treatDuplicatesAsError.value ? '1' : '0')
+
+  try {
+    const response = await fetch(route('hr.salary.import'), {
+      method: 'POST',
+      headers: {
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: formData,
+    })
+
+    const data = await response.json()
+
+    // Handle both success and failure cases
+    if (data.success || data.hasFailures || data.errors) {
+      // Success with possible failures OR validation failures
+      importStats.value = data.stats || {
+        total: 0,
+        success: 0,
+        updated: 0,
+        skipped: 0,
+        failed: data.errors ? data.errors.length : 0
+      }
+      importErrors.value = data.errors || []
+      hasFailures.value = data.hasFailures || (data.errors && data.errors.length > 0) || false
+      hasExportableFailures.value = data.hasExportableFailures || false
+      showImportModal.value = false
+      showStatsModal.value = true
+      importFile.value = null
+      
+      // Refresh salary list if any succeeded
+      if (data.success && importStats.value.success > 0) {
+        router.reload({ only: ['salaries'] })
+      }
+    } else {
+      // General error without structured data
+      importStats.value = {
+        total: 0,
+        success: 0,
+        updated: 0,
+        skipped: 0,
+        failed: 1
+      }
+      importErrors.value = [data.message || 'Import failed']
+      hasFailures.value = true
+      hasExportableFailures.value = false
+      showImportModal.value = false
+      showStatsModal.value = true
+      importFile.value = null
+    }
+  } catch (error) {
+    toast.value = 'Import failed: ' + error.message
+    setTimeout(() => { toast.value = null }, 5000)
+  } finally {
+    isImporting.value = false
+  }
+}
+
+function exportFailedRows() {
+  window.location.href = route('hr.salary.export.failed')
+}
+
+function handleDuplicateOptionChange(event) {
+  const isChecked = event.target.checked
+  
+  // If user is unchecking (enabling auto date-tracking), show confirmation
+  if (!isChecked) {
+    // Show confirmation modal instead of browser confirm
+    showDuplicateConfirmModal.value = true
+    // Keep checkbox checked until user confirms
+    event.target.checked = true
+  } else {
+    // User is checking (enabling duplicate errors) - no confirmation needed
+    treatDuplicatesAsError.value = true
+  }
+}
+
+function confirmEnableDateTracking() {
+  treatDuplicatesAsError.value = false
+  showDuplicateConfirmModal.value = false
+}
+
+function cancelEnableDateTracking() {
+  showDuplicateConfirmModal.value = false
+  // Keep treatDuplicatesAsError as true (checked)
+}
+
 
 </script>
 
@@ -230,17 +373,28 @@ function refreshSalaries() {
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
         <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshSalaries" />
+        <button v-if="canManage" class="mhr-btn mhr-btn--outline" @click="openImportModal">
+          <AppIcon name="upload" :size="14" /> Import
+        </button>
         <button v-if="canManage" class="mhr-btn mhr-btn--primary" @click="showAddModal = true">
           <AppIcon name="plus" /> Add Salary Record
         </button>
       </div>
     </div>
 
-    <!-- Search Filter -->
-    <div style="display:flex;gap:10px;margin-bottom:14px;">
-      <div style="position:relative;flex:1;max-width:360px;">
+    <!-- Search Filter & Status Toggle -->
+    <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center;justify-content:space-between;">
+      <div style="position:relative;max-width:360px;">
         <AppIcon name="search" :size="14" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--mhr-ink-3);" />
         <input class="mhr-input" style="padding-left:32px;" placeholder="Search salaries…" v-model="q" />
+      </div>
+      <div style="display:flex;gap:4px;padding:3px;background:var(--mhr-surface-2);border:1px solid var(--mhr-line);border-radius:9px;">
+        <button v-for="f in ['all','active','inactive']" :key="f"
+          class="mhr-btn mhr-btn--sm"
+          :style="activeFilter === f ? 'background:var(--green-700);color:#fff;' : 'background:transparent;color:var(--mhr-ink-2);'"
+          @click="activeFilter = f">
+          {{ f.charAt(0).toUpperCase() + f.slice(1) }}
+        </button>
       </div>
     </div>
 
@@ -456,5 +610,167 @@ function refreshSalaries() {
         </div>
       </div>
     </div>
+
+    <!-- Duplicate Handling Confirmation Modal -->
+    <div v-if="showDuplicateConfirmModal" class="mhr-modal__scrim" @click.self="cancelEnableDateTracking" style="z-index:10000;">
+      <div class="mhr-modal mhr-modal--md">
+        <div class="mhr-modal__hd">
+          <div style="display:flex;align-items:start;gap:12px;">
+            <div style="width:40px;height:40px;background:var(--mhr-warn-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <AppIcon name="alert" :size="20" style="color:var(--mhr-warn);" />
+            </div>
+            <div>
+              <h2 class="mhr-modal__title" style="color:var(--mhr-warn);">Enable Automatic Date-Tracking?</h2>
+              <p class="mhr-modal__sub" style="margin-top:4px;">This will modify existing salary records</p>
+            </div>
+          </div>
+        </div>
+        <div class="mhr-modal__body">
+          <div style="background:var(--mhr-surface-2);border-left:3px solid var(--mhr-warn);padding:14px 16px;border-radius:6px;margin-bottom:16px;">
+            <p style="color:var(--mhr-ink);font-size:14px;line-height:1.6;margin-bottom:12px;">
+              By unchecking this option, the system will <strong style="color:var(--mhr-warn);">automatically close (date-track)</strong> any existing active salary records when importing new ones.
+            </p>
+            <div style="font-size:13px;color:var(--mhr-ink-2);line-height:1.6;">
+              <strong style="color:var(--mhr-ink);">This means:</strong>
+              <ul style="margin:8px 0 0 20px;padding:0;">
+                <li style="margin-bottom:6px;">• Existing open-ended salary records will be closed</li>
+                <li style="margin-bottom:6px;">• New salary records will be created</li>
+                <li style="margin-bottom:6px;">• Salary history will be maintained automatically</li>
+              </ul>
+            </div>
+          </div>
+          <p style="color:var(--mhr-ink-2);font-size:13px;">
+            If you want to prevent automatic modifications and treat duplicates as validation errors instead, click <strong>Cancel</strong>.
+          </p>
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--ghost" @click="cancelEnableDateTracking">Cancel</button>
+          <button class="mhr-btn mhr-btn--primary" @click="confirmEnableDateTracking" style="background:var(--mhr-warn);border-color:var(--mhr-warn);">
+            <AppIcon name="check" :size="14" /> Enable Date-Tracking
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div v-if="showImportModal" class="mhr-modal__scrim" @click.self="!isImporting && (showImportModal = false)">
+      <div class="mhr-modal mhr-modal--md" style="position:relative;">
+        <!-- Processing Overlay -->
+        <div v-if="isImporting" style="position:absolute;inset:0;background:rgba(255,255,255,0.95);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;backdrop-filter:blur(2px);">
+          <div style="width:48px;height:48px;border:4px solid var(--mhr-line);border-top-color:var(--blue-600);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:16px;"></div>
+          <div style="font-size:16px;font-weight:600;color:var(--mhr-ink);margin-bottom:4px;">Processing Import</div>
+          <div style="font-size:13px;color:var(--mhr-ink-2);text-align:center;max-width:300px;">
+            <div>Validating and importing salary records...</div>
+            <div style="margin-top:4px;font-size:12px;color:var(--mhr-ink-3);">This may take a few moments</div>
+          </div>
+        </div>
+
+        <div class="mhr-modal__hd">
+          <h2 class="mhr-modal__title">Import Salary Records</h2>
+          <p class="mhr-modal__sub">Upload an Excel file to import multiple salary records at once</p>
+        </div>
+        <div class="mhr-modal__body">
+          <div style="margin-bottom:20px;padding:14px;background:var(--mhr-surface);border-radius:8px;border:1px solid var(--mhr-line);">
+            <div style="display:flex;align-items:start;gap:10px;margin-bottom:8px;">
+              <AppIcon name="info" :size="16" style="color:var(--blue-600);margin-top:2px;" />
+              <div style="flex:1;">
+                <p style="font-weight:500;font-size:13px;color:var(--mhr-ink);margin-bottom:4px;">Before importing:</p>
+                <ol style="font-size:13px;color:var(--mhr-ink-2);line-height:1.6;margin:0;padding-left:20px;">
+                  <li>Download the template file using the button below</li>
+                  <li>Fill in salary data (Employee Number and Net Salary are required)</li>
+                  <li>Save and upload the completed file</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom:20px;">
+            <button class="mhr-btn mhr-btn--outline" @click="downloadTemplate" style="width:100%;">
+              <AppIcon name="download" :size="14" /> 
+              Download Salary Template
+            </button>
+          </div>
+
+          <div class="mhr-field">
+            <label class="mhr-field__label">Upload Excel File</label>
+            <input 
+              ref="fileInput"
+              type="file" 
+              accept=".xlsx,.xls,.csv" 
+              @change="handleFileSelect"
+              style="display:none;"
+            />
+            <div 
+              @click="triggerFileInput"
+              style="border:2px dashed var(--mhr-line);border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:all 0.2s;"
+              @mouseenter="$event.target.style.borderColor='var(--blue-500)'"
+              @mouseleave="$event.target.style.borderColor='var(--mhr-line)'"
+            >
+              <AppIcon name="upload" :size="24" style="color:var(--mhr-ink-3);margin-bottom:8px;" />
+              <p style="font-size:14px;color:var(--mhr-ink-2);margin:0;">
+                <span v-if="!importFile">Click to select file or drag and drop</span>
+                <span v-else style="color:var(--green-600);font-weight:500;">✓ {{ importFile.name }}</span>
+              </p>
+              <p style="font-size:12px;color:var(--mhr-ink-3);margin:4px 0 0 0;">
+                Supports: .xlsx, .xls, .csv (Max 10MB)
+              </p>
+            </div>
+
+            <!-- Warning and Options -->
+            <div style="margin-top:20px;background:var(--mhr-surface-2);border-left:3px solid var(--blue-500);padding:14px 16px;border-radius:6px;">
+              <div style="display:flex;align-items:start;gap:10px;margin-bottom:12px;">
+                <AppIcon name="info" :size="16" style="color:var(--blue-500);flex-shrink:0;margin-top:2px;" />
+                <div style="flex:1;">
+                  <div style="font-size:13px;font-weight:700;color:var(--blue-600);margin-bottom:4px;">Date Tracking Behavior</div>
+                  <div style="font-size:12px;color:var(--mhr-ink);line-height:1.5;font-weight:500;">
+                    By default, if an employee already has an active salary record, the system will <strong style="color:var(--blue-700);">automatically close it 
+                    (date-track)</strong> and create the new record. This maintains a complete salary history.
+                  </div>
+                </div>
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 0;">
+                <input 
+                  type="checkbox" 
+                  :checked="treatDuplicatesAsError"
+                  @change="handleDuplicateOptionChange"
+                  style="width:16px;height:16px;cursor:pointer;"
+                />
+                <span style="font-size:13px;color:var(--mhr-ink);">
+                  Treat duplicates as errors instead of date-tracking
+                </span>
+              </label>
+              <div v-if="treatDuplicatesAsError" style="margin-left:24px;font-size:12px;color:var(--red-600);margin-top:4px;">
+                ⚠ Rows with existing active salaries will fail validation
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--ghost" @click="showImportModal = false" :disabled="isImporting">Cancel</button>
+          <button 
+            class="mhr-btn mhr-btn--primary" 
+            @click="importSalaries" 
+            :disabled="!importFile || isImporting"
+            :style="(!importFile || isImporting) ? 'opacity: 0.5; cursor: not-allowed;' : ''"
+          >
+            <AppIcon v-if="!isImporting" name="upload" :size="14" />
+            <span v-if="isImporting">Importing...</span>
+            <span v-else>Import Salary Records</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Stats Modal -->
+    <ImportStatsModal
+      :show="showStatsModal"
+      :stats="importStats"
+      :errors="importErrors"
+      :has-failures="hasFailures"
+      :has-exportable-failures="hasExportableFailures"
+      entity-name="salary record(s)"
+      @close="showStatsModal = false"
+      @export-failed="exportFailedRows"
+    />
   </div>
 </template>

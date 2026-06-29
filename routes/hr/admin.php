@@ -60,6 +60,11 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::put('/salary/{id}', [SalaryController::class, 'update'])->name('salary.update');
     Route::delete('/salary/{id}', [SalaryController::class, 'destroy'])->name('salary.destroy');
     
+    // Salary Import/Export
+    Route::get('/salary/template/download', [SalaryController::class, 'downloadTemplate'])->name('salary.template');
+    Route::post('/salary/import', [SalaryController::class, 'import'])->name('salary.import');
+    Route::get('/salary/export-failed', [SalaryController::class, 'exportFailedRows'])->name('salary.export.failed');
+    
     // Document Management (Admin can upload/delete)
     Route::post('/documents', [DocumentController::class, 'store'])->name('documents.store');
     Route::delete('/documents/{id}', [DocumentController::class, 'destroy'])->name('documents.destroy');

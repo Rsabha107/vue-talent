@@ -41,6 +41,13 @@ const uploadForm = ref({
   description: '',
 })
 
+const uploadErrors = ref({
+  file: '',
+  employee_id: '',
+  category_id: '',
+  event_id: '',
+})
+
 const documentsByCategory = computed(() => {
   const grouped = {}
   props.categories.forEach(cat => {
@@ -144,6 +151,11 @@ watch(
   }
 )
 
+// Clear errors when form values change
+watch(() => uploadForm.value.employee_id, () => { uploadErrors.value.employee_id = '' })
+watch(() => uploadForm.value.category_id, () => { uploadErrors.value.category_id = '' })
+watch(() => uploadForm.value.event_id, () => { uploadErrors.value.event_id = '' })
+
 function docTitle(doc) {
   return doc.file_name.replace(/\.[^/.]+$/, '').replace(/_/g, ' ')
 }
@@ -159,9 +171,15 @@ function openUploadModal() {
   uploadForm.value = {
     file: null,
     employee_id: props.hrRole === 'admin' ? null : (props.currentEmployee?.id || null),
-    category_id: activeCat.value || props.categories[0]?.id || null,
+    category_id: null,
     event_id: filterEventId.value || usePage().props.selectedEvent || null,
     description: '',
+  }
+  uploadErrors.value = {
+    file: '',
+    employee_id: '',
+    category_id: '',
+    event_id: '',
   }
   showUploadModal.value = true
 }
@@ -169,6 +187,7 @@ function openUploadModal() {
 function closeUploadModal() {
   showUploadModal.value = false
   uploadForm.value = { file: null, employee_id: null, category_id: null, event_id: null, description: '' }
+  uploadErrors.value = { file: '', employee_id: '', category_id: '', event_id: '' }
 }
 
 const allowedTypes = [
@@ -198,14 +217,48 @@ function handleFileSelect(event) {
       return
     }
     uploadForm.value.file = file
+    uploadErrors.value.file = '' // Clear error when file is selected
   }
 }
 
 function submitUpload() {
-  if (!uploadForm.value.file) return showToast('Please select a file')
-  if (!uploadForm.value.category_id) return showToast('Please select a category')
-  if (isAdmin.value && !uploadForm.value.employee_id) return showToast('Please select an employee')
-  if (!isAdmin.value && !uploadForm.value.employee_id) return showToast('Employee information is missing')
+  // Clear previous errors
+  uploadErrors.value = {
+    file: '',
+    employee_id: '',
+    category_id: '',
+    event_id: '',
+  }
+
+  // Validate fields
+  let hasErrors = false
+
+  if (!uploadForm.value.file) {
+    uploadErrors.value.file = 'Please select a file'
+    hasErrors = true
+  }
+
+  if (!uploadForm.value.category_id) {
+    uploadErrors.value.category_id = 'Please select a category'
+    hasErrors = true
+  }
+
+  if (isAdmin.value && !uploadForm.value.employee_id) {
+    uploadErrors.value.employee_id = 'Please select an employee'
+    hasErrors = true
+  }
+
+  if (!isAdmin.value && !uploadForm.value.employee_id) {
+    uploadErrors.value.employee_id = 'Employee information is missing'
+    hasErrors = true
+  }
+
+  if (isAdmin.value && props.events && !uploadForm.value.event_id) {
+    uploadErrors.value.event_id = 'Please select an event'
+    hasErrors = true
+  }
+
+  if (hasErrors) return
 
   const formData = new FormData()
   formData.append('file', uploadForm.value.file)
@@ -376,6 +429,10 @@ function getFileExtension(filename) {
                 {{ shortDate(doc.uploaded_at) }}
                 <span class="docs-item-dot">·</span>
                 {{ doc.file_size_human }}
+                <template v-if="doc.uploaded_by">
+                  <span class="docs-item-dot">·</span>
+                  <span style="color:var(--mhr-ink-3);">{{ doc.uploaded_by }}</span>
+                </template>
                 <template v-if="isAdmin && doc.employee_name">
                   <span class="docs-item-dot">·</span>
                   {{ doc.employee_name }}
@@ -408,7 +465,12 @@ function getFileExtension(filename) {
           <div class="docs-preview-hd">
             <div class="docs-preview-hd-text">
               <h3 class="docs-preview-title">{{ docTitle(activeDoc) }}</h3>
-              <p class="docs-preview-subtitle">{{ getFileExtension(activeDoc.file_name) }} · {{ activeDoc.file_size_human }} · {{ activeDoc.uploaded_at }}</p>
+              <p class="docs-preview-subtitle">
+                {{ getFileExtension(activeDoc.file_name) }} · {{ activeDoc.file_size_human }} · {{ activeDoc.uploaded_at }}
+                <template v-if="activeDoc.uploaded_by">
+                  · <span style="color:var(--mhr-ink-3);">by {{ activeDoc.uploaded_by }}</span>
+                </template>
+              </p>
             </div>
             <div class="docs-preview-actions">
               <button class="docs-icon-btn" @click="downloadDocument(activeDoc)" title="Download">
@@ -490,11 +552,17 @@ function getFileExtension(filename) {
             <p v-if="uploadForm.file" style="font-size:12px;color:var(--mhr-accent);margin-top:6px;font-weight:500;">
               ✓ Selected: {{ uploadForm.file.name }} ({{ formatFileSize(uploadForm.file.size) }})
             </p>
+            <p v-if="uploadErrors.file" style="font-size:12px;color:var(--mhr-danger);margin-top:6px;">
+              {{ uploadErrors.file }}
+            </p>
           </div>
 
           <div v-if="isAdmin" class="mhr-field">
             <label class="mhr-field__label">Employee <span style="color:var(--mhr-danger);">*</span></label>
             <EmployeeSelector v-model="uploadForm.employee_id" :employees="employees" :required="true" placeholder="Select employee..." />
+            <p v-if="uploadErrors.employee_id" style="font-size:12px;color:var(--mhr-danger);margin-top:6px;">
+              {{ uploadErrors.employee_id }}
+            </p>
           </div>
 
           <div v-else class="mhr-field">
@@ -510,14 +578,20 @@ function getFileExtension(filename) {
               <option :value="null">Select category...</option>
               <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.title }}</option>
             </select>
+            <p v-if="uploadErrors.category_id" style="font-size:12px;color:var(--mhr-danger);margin-top:6px;">
+              {{ uploadErrors.category_id }}
+            </p>
           </div>
 
           <div v-if="isAdmin && events" class="mhr-field">
-            <label class="mhr-field__label">Event (Optional)</label>
+            <label class="mhr-field__label">Event <span style="color:var(--mhr-danger);">*</span></label>
             <select v-model="uploadForm.event_id" class="mhr-select">
-              <option :value="null">None</option>
+              <option :value="null">Select event...</option>
               <option v-for="evt in events" :key="evt.id" :value="evt.id">{{ evt.name }}</option>
             </select>
+            <p v-if="uploadErrors.event_id" style="font-size:12px;color:var(--mhr-danger);margin-top:6px;">
+              {{ uploadErrors.event_id }}
+            </p>
           </div>
 
           <div class="mhr-field">

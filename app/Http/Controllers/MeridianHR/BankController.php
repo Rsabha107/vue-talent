@@ -53,7 +53,6 @@ class BankController extends BaseHRController
                 'employeeName' => $bank->employee->full_name ?? 'Unknown',
                 'employeeNumber' => $bank->employee->employee_number ?? 'N/A',
                 'bankBranchName' => $bank->bank_branch_name,
-                'bankAccountName' => $bank->bank_account_name,
                 'iban' => $bank->iban,
                 'swiftCode' => $bank->swift_code,
                 'effectiveStartDate' => $bank->effective_start_date?->format('Y-m-d'),
@@ -98,7 +97,6 @@ class BankController extends BaseHRController
         $validated = $request->validate([
             'employee_id' => 'required|integer|min:1|max:214748367|exists:employees_all,id',
             'bank_branch_name' => 'required',
-            'bank_account_name' => 'required',
             'iban' => [
                 'required',
                 'max:29',
@@ -192,7 +190,6 @@ class BankController extends BaseHRController
 
         $validated = $request->validate([
             'bank_branch_name' => 'required',
-            'bank_account_name' => 'required',
             'iban' => [
                 'required',
                 'max:29',

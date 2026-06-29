@@ -50,7 +50,6 @@ const isRefreshing = ref(false)
 const form = useForm({
   employee_id: props.hrRole === 'employee' ? currentEmployeeId.value : null,
   bank_branch_name: '',
-  bank_account_name: '',
   iban: '',
   swift_code: '',
   effective_start_date: new Date().toISOString().split('T')[0],
@@ -60,7 +59,6 @@ const form = useForm({
 const editForm = useForm({
   id: null,
   bank_branch_name: '',
-  bank_account_name: '',
   iban: '',
   swift_code: '',
   effective_start_date: '',
@@ -74,7 +72,6 @@ const filtered = computed(() => {
     bank.employeeName?.toLowerCase().includes(query) ||
     bank.employeeNumber?.toLowerCase().includes(query) ||
     bank.bankBranchName?.toLowerCase().includes(query) ||
-    bank.bankAccountName?.toLowerCase().includes(query) ||
     bank.iban?.toLowerCase().includes(query)
   )
 })
@@ -163,7 +160,6 @@ function editBank(bank) {
   editingBank.value = bank
   editForm.id = bank.id
   editForm.bank_branch_name = bank.bankBranchName || ''
-  editForm.bank_account_name = bank.bankAccountName || ''
   editForm.iban = bank.iban || ''
   editForm.swift_code = bank.swiftCode || ''
   editForm.effective_start_date = bank.effectiveStartDate || ''
@@ -243,7 +239,6 @@ function refreshBanks() {
             <tr>
               <th v-if="hrRole !== 'employee'">STAFF</th>
               <th>BANK BRANCH</th>
-              <th>ACCOUNT NAME</th>
               <th>IBAN</th>
               <th>SWIFT CODE</th>
               <th>EFFECTIVE FROM</th>
@@ -254,7 +249,7 @@ function refreshBanks() {
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td :colspan="hrRole !== 'employee' ? 9 : 8" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
+              <td :colspan="hrRole !== 'employee' ? 8 : 7" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
                 No bank accounts found
               </td>
             </tr>
@@ -264,7 +259,6 @@ function refreshBanks() {
                 <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:2px;">{{ bank.employeeNumber }}</div>
               </td>
               <td style="color:var(--mhr-ink-2);">{{ bank.bankBranchName }}</td>
-              <td style="color:var(--mhr-ink-2);font-weight:500;">{{ bank.bankAccountName }}</td>
               <td style="font-family:monospace;font-size:13px;color:var(--mhr-ink-2);">{{ bank.iban }}</td>
               <td style="font-family:monospace;font-size:13px;color:var(--mhr-ink-3);">{{ bank.swiftCode }}</td>
               <td style="color:var(--mhr-ink-3);font-size:13px;">{{ fmtDate(bank.effectiveStartDate) }}</td>
@@ -338,11 +332,6 @@ function refreshBanks() {
               <input class="mhr-input" v-model="form.bank_branch_name" placeholder="e.g., Kuwait National Bank - Salmiya Branch" />
             </div>
 
-            <div class="mhr-field" style="grid-column:1/-1;">
-              <label class="mhr-field__label">BANK ACCOUNT NAME *</label>
-              <input class="mhr-input" v-model="form.bank_account_name" placeholder="Account holder name" />
-            </div>
-
             <div class="mhr-field">
               <label class="mhr-field__label">IBAN *</label>
               <input class="mhr-input" v-model="form.iban" placeholder="KW74NBOK0000000000001000372151" style="font-family:monospace;" maxlength="29" />
@@ -402,11 +391,6 @@ function refreshBanks() {
             <div class="mhr-field" style="grid-column:1/-1;">
               <label class="mhr-field__label">BANK BRANCH NAME *</label>
               <input class="mhr-input" v-model="editForm.bank_branch_name" />
-            </div>
-
-            <div class="mhr-field" style="grid-column:1/-1;">
-              <label class="mhr-field__label">BANK ACCOUNT NAME *</label>
-              <input class="mhr-input" v-model="editForm.bank_account_name" />
             </div>
 
             <div class="mhr-field">

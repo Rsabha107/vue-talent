@@ -657,6 +657,24 @@
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
 }
 
+/* ─── Date Picker ────────────────────────────────────────────────── */
+.meridian-app .mhr-date-wrap {
+  position: relative;
+  display: block;
+}
+.meridian-app .mhr-date-trigger {
+  padding-right: 36px;
+  cursor: pointer;
+}
+.meridian-app .mhr-date-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--mhr-ink-3);
+}
+
 /* ─── Modal ──────────────────────────────────────────────────────── */
 .meridian-app .mhr-modal__scrim {
   position: fixed;

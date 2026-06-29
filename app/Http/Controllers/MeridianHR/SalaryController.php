@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class SalaryController extends BaseHRController
 {
@@ -230,4 +231,213 @@ class SalaryController extends BaseHRController
 
         return redirect()->back()->with('success', 'Salary record archived successfully.');
     }
+
+    /**
+     * Download salary import template
+     */
+    public function downloadTemplate()
+    {
+        return Excel::download(
+            new \App\Exports\SalaryTemplateExport(),
+            'salary_import_template.xlsx'
+        );
+    }
+
+    /**
+     * Import salaries from Excel file
+     */
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|mimes:xlsx,xls,csv|max:10240', // 10MB max
+        ]);
+
+        try {
+            $treatDuplicatesAsError = $request->input('treat_duplicates_as_error', '0') === '1';
+            $import = new \App\Imports\SalaryImport($treatDuplicatesAsError);
+            Excel::import($import, $request->file('file'));
+
+            $stats = [
+                'total' => 0, // Will be calculated at the end
+                'success' => $import->getProcessedCount(),
+                'updated' => $import->getUpdatedCount(),
+                'skipped' => $import->getSkippedCount(),
+                'failed' => 0, // Will be calculated below
+            ];
+
+            $failures = $import->failures();
+            $customErrors = $import->getCustomErrors();
+            
+            $errorMessages = [];
+            $failedRows = [];
+            
+            // Process custom errors (employee not found, duplicates)
+            foreach ($customErrors as $error) {
+                $errorMsg = implode(', ', $error['errors']);
+                $errorMessages[] = $errorMsg;
+                
+                // Store for export
+                $failedRows[] = [
+                    'row' => 'N/A',
+                    'errors' => $error['errors'],
+                    'values' => $error['row_data'],
+                ];
+            }
+            
+            // Group validation failures by row number
+            if (count($failures) > 0) {
+                $groupedFailures = [];
+                
+                foreach ($failures as $failure) {
+                    $rowNumber = $failure->row();
+                    
+                    if (!isset($groupedFailures[$rowNumber])) {
+                        $groupedFailures[$rowNumber] = [
+                            'row' => $rowNumber,
+                            'errors' => [],
+                            'values' => $failure->values(),
+                        ];
+                    }
+                    
+                    // Merge all errors for this row
+                    $groupedFailures[$rowNumber]['errors'] = array_merge(
+                        $groupedFailures[$rowNumber]['errors'],
+                        $failure->errors()
+                    );
+                }
+                
+                // Convert grouped failures to array and build error messages
+                $groupedFailedRows = array_values($groupedFailures);
+                
+                foreach ($groupedFailedRows as $failedRow) {
+                    $errorMsg = "Row {$failedRow['row']}: " . implode(', ', $failedRow['errors']);
+                    $errorMessages[] = $errorMsg;
+                    $failedRows[] = $failedRow;
+                }
+            }
+
+            $hasFailures = count($errorMessages) > 0;
+            $hasExportableFailures = count($failedRows) > 0;
+            
+            // Update failed count
+            $stats['failed'] = count($errorMessages);
+            $stats['total'] = $stats['success'] + $stats['skipped'] + $stats['failed'];
+
+            // Store failed rows in session for export
+            if ($hasExportableFailures) {
+                session(['failed_salary_import_rows' => $failedRows]);
+            }
+
+            $message = $stats['success'] > 0
+                ? "{$stats['success']} salary record(s) imported successfully"
+                : "No salary records were imported";
+
+            if ($hasFailures) {
+                $message .= " ({$stats['failed']} failed validation)";
+            }
+
+            return response()->json([
+                'success' => $stats['success'] > 0 || !$hasFailures,
+                'message' => $message,
+                'stats' => $stats,
+                'errors' => $errorMessages,
+                'hasFailures' => $hasFailures,
+                'hasExportableFailures' => $hasExportableFailures,
+            ]);
+        } catch (\Maatwebsite\Excel\Validators\ValidationException $e) {
+            $failures = $e->failures();
+            $errorMessages = [];
+            $failedRows = [];
+
+            // Group validation failures by row number
+            $groupedFailures = [];
+            
+            foreach ($failures as $failure) {
+                $rowNumber = $failure->row();
+                
+                if (!isset($groupedFailures[$rowNumber])) {
+                    $groupedFailures[$rowNumber] = [
+                        'row' => $rowNumber,
+                        'errors' => [],
+                        'values' => $failure->values(),
+                    ];
+                }
+                
+                // Merge all errors for this row
+                $groupedFailures[$rowNumber]['errors'] = array_merge(
+                    $groupedFailures[$rowNumber]['errors'],
+                    $failure->errors()
+                );
+            }
+            
+            // Convert grouped failures to array and build error messages
+            $failedRows = array_values($groupedFailures);
+            
+            foreach ($failedRows as $failedRow) {
+                $errorMsg = "Row {$failedRow['row']}: " . implode(', ', $failedRow['errors']);
+                $errorMessages[] = $errorMsg;
+            }
+
+            // Store failed rows in session for export
+            if (count($failedRows) > 0) {
+                session(['failed_salary_import_rows' => $failedRows]);
+            }
+
+            $stats = [
+                'total' => count($failures),
+                'success' => 0,
+                'updated' => 0,
+                'skipped' => 0,
+                'failed' => count($failures),
+            ];
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Import failed due to validation errors',
+                'stats' => $stats,
+                'errors' => $errorMessages,
+                'hasFailures' => true,
+                'hasExportableFailures' => count($failedRows) > 0,
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('SalaryController::import error: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Import failed: ' . $e->getMessage(),
+                'stats' => [
+                    'total' => 0,
+                    'success' => 0,
+                    'updated' => 0,
+                    'skipped' => 0,
+                    'failed' => 1,
+                ],
+                'errors' => [$e->getMessage()],
+                'hasFailures' => true,
+                'hasExportableFailures' => false,
+            ], 500);
+        }
+    }
+
+    /**
+     * Export failed salary import rows
+     */
+    public function exportFailedRows()
+    {
+        $failedRows = session('failed_salary_import_rows', []);
+        
+        if (empty($failedRows)) {
+            return back()->with('error', 'No failed rows to export.');
+        }
+
+        // Clear the session after export
+        session()->forget('failed_salary_import_rows');
+
+        return Excel::download(
+            new \App\Exports\FailedSalariesExport($failedRows),
+            'failed_salaries_' . date('Y-m-d_His') . '.xlsx'
+        );
+    }
 }
+

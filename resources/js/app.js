@@ -179,8 +179,8 @@ createInertiaApp({
     },
 });
 
-router.on("start", () => console.log("Inertia start"));
-router.on("success", () => console.log("Inertia success"));
+// router.on("start", () => console.log("Inertia start"));
+// router.on("success", () => console.log("Inertia success"));
 router.on("error", (event) => console.log("Inertia error", event));
 
 router.on("finish", async () => {

@@ -82,5 +82,5 @@ window.initThemePlugin = function () {
         Waves.attach('.waves-effect');
     }
 
-    console.log('Theme safely re-initialized');
+    // console.log('Theme safely re-initialized');
 };
