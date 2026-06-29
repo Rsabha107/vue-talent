@@ -372,4 +372,3 @@ const submit = () => {
   margin-top: 8px;
 }
 </style>
-</template>
