@@ -15,7 +15,8 @@ class Department extends Model
         'parent_id',
         'name',
         'active_flag',
-        'creator_id',
+        'created_by',
+        'updated_by',
     ];
 
     protected $casts = [

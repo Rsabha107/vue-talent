@@ -109,24 +109,14 @@ class EmployeeLeaveRequestController extends BaseHRController
                 : Employee::orderBy('full_name')->get(['id', 'full_name', 'employee_number']);
         }
 
-        // Get leave balances (filtered by employee in personal view)
+        // Get leave balances (global — not scoped to event)
         $leaveBalancesQuery = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
             ->where('active_flag', 1);
-        
-        // Handle event filtering - support single ID, array of IDs, or null
-        if ($eventId !== null) {
-            if (is_array($eventId)) {
-                $leaveBalancesQuery->whereIn('event_id', $eventId);
-            } else {
-                $leaveBalancesQuery->where('event_id', $eventId);
-            }
-        }
-        
-        // Filter by employee in personal view
+
         if ($showPersonalOnly && $currentEmployee) {
             $leaveBalancesQuery->where('employee_id', $currentEmployee->id);
         }
-        
+
         $leaveBalances = $leaveBalancesQuery
             ->with('leaveType')
             ->get()
@@ -211,29 +201,22 @@ class EmployeeLeaveRequestController extends BaseHRController
                 ];
             });
 
-        // Get leave balances for current employee
-        $leaveBalancesQuery = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
+        // Get leave balances for current employee (global — not scoped to event)
+        $leaveBalances = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
             ->where('active_flag', 1)
-            ->where('employee_id', $currentEmployee->id);
-
-        if ($eventId !== null) {
-            if (is_array($eventId)) {
-                $leaveBalancesQuery->whereIn('event_id', $eventId);
-            } else {
-                $leaveBalancesQuery->where('event_id', $eventId);
-            }
-        }
-
-        $leaveBalances = $leaveBalancesQuery->with('leaveType')->get()->map(function ($balance) {
-            return [
-                'employee_id'    => $balance->employee_id,
-                'leave_type_id'  => $balance->leave_type_id,
-                'allocated_days' => $balance->allocated_days,
-                'used_days'      => $balance->used_days,
-                'pending_days'   => $balance->pending_days,
-                'available_days' => $balance->available_days,
-            ];
-        });
+            ->where('employee_id', $currentEmployee->id)
+            ->with('leaveType')
+            ->get()
+            ->map(function ($balance) {
+                return [
+                    'employee_id'    => $balance->employee_id,
+                    'leave_type_id'  => $balance->leave_type_id,
+                    'allocated_days' => $balance->allocated_days,
+                    'used_days'      => $balance->used_days,
+                    'pending_days'   => $balance->pending_days,
+                    'available_days' => $balance->available_days,
+                ];
+            });
 
         // Show only current employee in dropdown (read-only)
         $employees = collect([[
@@ -314,28 +297,21 @@ class EmployeeLeaveRequestController extends BaseHRController
             ? $this->getEventEmployees()->orderBy('full_name')->get(['id', 'full_name', 'employee_number'])
             : Employee::orderBy('full_name')->get(['id', 'full_name', 'employee_number']);
 
-        // Get leave balances for team employees
-        $leaveBalancesQuery = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
-            ->where('active_flag', 1);
-
-        if ($eventId !== null) {
-            if (is_array($eventId)) {
-                $leaveBalancesQuery->whereIn('event_id', $eventId);
-            } else {
-                $leaveBalancesQuery->where('event_id', $eventId);
-            }
-        }
-
-        $leaveBalances = $leaveBalancesQuery->with('leaveType')->get()->map(function ($balance) {
-            return [
-                'employee_id'    => $balance->employee_id,
-                'leave_type_id'  => $balance->leave_type_id,
-                'allocated_days' => $balance->allocated_days,
-                'used_days'      => $balance->used_days,
-                'pending_days'   => $balance->pending_days,
-                'available_days' => $balance->available_days,
-            ];
-        });
+        // Get leave balances for team employees (global — not scoped to event)
+        $leaveBalances = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
+            ->where('active_flag', 1)
+            ->with('leaveType')
+            ->get()
+            ->map(function ($balance) {
+                return [
+                    'employee_id'    => $balance->employee_id,
+                    'leave_type_id'  => $balance->leave_type_id,
+                    'allocated_days' => $balance->allocated_days,
+                    'used_days'      => $balance->used_days,
+                    'pending_days'   => $balance->pending_days,
+                    'available_days' => $balance->available_days,
+                ];
+            });
 
         return Inertia::render('MeridianHR/TeamLeaves', array_merge($this->getCommonProps('team-leaves'), [
             'leaveRequests'   => $leaveRequests,
@@ -394,28 +370,21 @@ class EmployeeLeaveRequestController extends BaseHRController
             ? $this->getEventEmployees()->orderBy('full_name')->get(['id', 'full_name', 'employee_number'])
             : Employee::orderBy('full_name')->get(['id', 'full_name', 'employee_number']);
 
-        // Get all leave balances
-        $leaveBalancesQuery = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
-            ->where('active_flag', 1);
-
-        if ($eventId !== null) {
-            if (is_array($eventId)) {
-                $leaveBalancesQuery->whereIn('event_id', $eventId);
-            } else {
-                $leaveBalancesQuery->where('event_id', $eventId);
-            }
-        }
-
-        $leaveBalances = $leaveBalancesQuery->with('leaveType')->get()->map(function ($balance) {
-            return [
-                'employee_id'    => $balance->employee_id,
-                'leave_type_id'  => $balance->leave_type_id,
-                'allocated_days' => $balance->allocated_days,
-                'used_days'      => $balance->used_days,
-                'pending_days'   => $balance->pending_days,
-                'available_days' => $balance->available_days,
-            ];
-        });
+        // Get all leave balances (global — not scoped to event)
+        $leaveBalances = \App\Models\EmployeeLeaveBalance::where('year', now()->year)
+            ->where('active_flag', 1)
+            ->with('leaveType')
+            ->get()
+            ->map(function ($balance) {
+                return [
+                    'employee_id'    => $balance->employee_id,
+                    'leave_type_id'  => $balance->leave_type_id,
+                    'allocated_days' => $balance->allocated_days,
+                    'used_days'      => $balance->used_days,
+                    'pending_days'   => $balance->pending_days,
+                    'available_days' => $balance->available_days,
+                ];
+            });
 
         return Inertia::render('MeridianHR/AllLeaves', array_merge($this->getCommonProps('all-leaves'), [
             'leaveRequests'   => $leaveRequests,

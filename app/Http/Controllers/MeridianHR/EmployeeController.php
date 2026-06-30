@@ -12,11 +12,13 @@ use App\Models\EmployeeContractType;
 use App\Models\EmployeeEntity;
 use App\Models\EmployeeHiringStatus;
 use App\Models\EmployeeJobLevel;
+use App\Models\EmployeeLeaveBalance;
 use App\Models\EmployeeLeaveRequest;
 use App\Models\EmployeeLeaveStatus;
 use App\Models\EmployeeSponsorship;
 use App\Models\EmployeeTimesheet;
 use App\Models\EmployeeTimesheetEntry;
+use App\Models\EmployeeTimesheetStatus;
 use App\Models\EmployeeType;
 use App\Models\FunctionalArea;
 use App\Models\Gender;
@@ -95,7 +97,7 @@ class EmployeeController extends BaseHRController
         }
 
         $eventId = $this->getSelectedEventId();
-        $balances = LeaveBalanceService::getEmployeeBalanceSummary($employee->id, $eventId);
+        $balances = LeaveBalanceService::getEmployeeBalanceSummary($employee->id);
 
         foreach ($balances as $balance) {
             $title = strtolower($balance->leaveType->title ?? '');
@@ -1110,7 +1112,7 @@ class EmployeeController extends BaseHRController
             ]);
 
             // Initialize leave balances for the event
-            LeaveBalanceService::initializeLeaveBalance(null, $employee, $eventFields['event_id']);
+            LeaveBalanceService::initializeLeaveBalance(null, $employee);
         }
 
         $message = $request->input('assign_to_event') 
@@ -1267,7 +1269,7 @@ class EmployeeController extends BaseHRController
             }
 
             // Recalculate leave balances for the event
-            LeaveBalanceService::initializeLeaveBalance(null, $employee, $eventId);
+            LeaveBalanceService::initializeLeaveBalance(null, $employee);
         }
 
         return redirect()->route('hr.employee')->with('success', 'Employee updated successfully.');
@@ -1290,9 +1292,47 @@ class EmployeeController extends BaseHRController
             return redirect()->route('hr.employee')->with('success', 'Employee removed from event.');
         }
         
-        // If viewing master employee list, archive the employee
-        $employee->update(['archived' => 'Y']);
-        return redirect()->route('hr.master-employee')->with('success', 'Employee archived successfully.');
+        // If viewing master employee list, archive the employee and cascade offboarding effects
+        DB::transaction(function () use ($employee) {
+            $employee->update(['archived' => 'Y']);
+
+            // Block login on the linked user account
+            if ($employee->user_id) {
+                User::where('id', $employee->user_id)->update(['active_flag' => 0]);
+            }
+
+            // Auto-reject pending leave requests (nobody can action them for a departed employee)
+            EmployeeLeaveRequest::where('employee_id', $employee->id)
+                ->where('archived', 'N')
+                ->where('status_id', EmployeeLeaveStatus::pendingId())
+                ->update([
+                    'status_id'              => EmployeeLeaveStatus::rejectedId(),
+                    'performer_id'           => Auth::id(),
+                    'additional_information' => 'Auto-rejected: employee archived',
+                ]);
+
+            // Auto-reject timesheets awaiting manager or payroll review
+            EmployeeTimesheet::where('employee_id', $employee->id)
+                ->where('archived', 'N')
+                ->whereIn('status_id', [
+                    EmployeeTimesheetStatus::submittedId(),
+                    EmployeeTimesheetStatus::pendingPayrollId(),
+                ])
+                ->update([
+                    'status_id'              => EmployeeTimesheetStatus::rejectedId(),
+                    'performer_id'           => Auth::id(),
+                    'additional_information' => 'Auto-rejected: employee archived',
+                ]);
+
+            // Recalculate leave balances to reflect the now-rejected pending requests
+            LeaveBalanceService::initializeLeaveBalance(null, $employee);
+
+            // Hide leave balances from dashboards/reports (historical leave/timesheet records are left untouched)
+            EmployeeLeaveBalance::where('employee_id', $employee->id)
+                ->update(['active_flag' => 0, 'updated_by' => Auth::id()]);
+        });
+
+        return redirect()->route('hr.employee')->with('success', 'Employee archived successfully.');
     }
 
     public function downloadTemplate()

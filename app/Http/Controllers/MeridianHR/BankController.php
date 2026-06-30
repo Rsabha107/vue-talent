@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class BankController extends BaseHRController
 {
@@ -249,5 +250,202 @@ class BankController extends BaseHRController
         $bank->update(['archived' => 'Y']);
 
         return redirect()->back()->with('success', 'Bank account archived successfully.');
+    }
+
+    /**
+     * Download bank import template
+     */
+    public function downloadTemplate()
+    {
+        return Excel::download(
+            new \App\Exports\BankTemplateExport(),
+            'bank_import_template.xlsx'
+        );
+    }
+
+    /**
+     * Import bank accounts from Excel file
+     */
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|mimes:xlsx,xls,csv|max:10240', // 10MB max
+        ]);
+
+        try {
+            $treatDuplicatesAsError = $request->input('treat_duplicates_as_error', '0') === '1';
+            $import = new \App\Imports\BankImport($treatDuplicatesAsError);
+            Excel::import($import, $request->file('file'));
+
+            $stats = [
+                'total' => 0,
+                'success' => $import->getProcessedCount(),
+                'updated' => 0,
+                'skipped' => $import->getSkippedCount(),
+                'failed' => 0,
+            ];
+
+            $failures = $import->failures();
+            $customErrors = $import->getCustomErrors();
+
+            $errorMessages = [];
+            $failedRows = [];
+
+            // Process custom errors (employee not found, duplicate IBAN, duplicate active record)
+            foreach ($customErrors as $error) {
+                $errorMsg = implode(', ', $error['errors']);
+                $errorMessages[] = $errorMsg;
+
+                $failedRows[] = [
+                    'row' => 'N/A',
+                    'errors' => $error['errors'],
+                    'values' => $error['row_data'],
+                ];
+            }
+
+            // Group validation failures by row number
+            if (count($failures) > 0) {
+                $groupedFailures = [];
+
+                foreach ($failures as $failure) {
+                    $rowNumber = $failure->row();
+
+                    if (!isset($groupedFailures[$rowNumber])) {
+                        $groupedFailures[$rowNumber] = [
+                            'row' => $rowNumber,
+                            'errors' => [],
+                            'values' => $failure->values(),
+                        ];
+                    }
+
+                    $groupedFailures[$rowNumber]['errors'] = array_merge(
+                        $groupedFailures[$rowNumber]['errors'],
+                        $failure->errors()
+                    );
+                }
+
+                $groupedFailedRows = array_values($groupedFailures);
+
+                foreach ($groupedFailedRows as $failedRow) {
+                    $errorMsg = "Row {$failedRow['row']}: " . implode(', ', $failedRow['errors']);
+                    $errorMessages[] = $errorMsg;
+                    $failedRows[] = $failedRow;
+                }
+            }
+
+            $hasFailures = count($errorMessages) > 0;
+            $hasExportableFailures = count($failedRows) > 0;
+
+            $stats['failed'] = count($errorMessages);
+            $stats['total'] = $stats['success'] + $stats['skipped'] + $stats['failed'];
+
+            if ($hasExportableFailures) {
+                session(['failed_bank_import_rows' => $failedRows]);
+            }
+
+            $message = $stats['success'] > 0
+                ? "{$stats['success']} bank record(s) imported successfully"
+                : "No bank records were imported";
+
+            if ($hasFailures) {
+                $message .= " ({$stats['failed']} failed validation)";
+            }
+
+            return response()->json([
+                'success' => $stats['success'] > 0 || !$hasFailures,
+                'message' => $message,
+                'stats' => $stats,
+                'errors' => $errorMessages,
+                'hasFailures' => $hasFailures,
+                'hasExportableFailures' => $hasExportableFailures,
+            ]);
+        } catch (\Maatwebsite\Excel\Validators\ValidationException $e) {
+            $failures = $e->failures();
+            $errorMessages = [];
+
+            $groupedFailures = [];
+
+            foreach ($failures as $failure) {
+                $rowNumber = $failure->row();
+
+                if (!isset($groupedFailures[$rowNumber])) {
+                    $groupedFailures[$rowNumber] = [
+                        'row' => $rowNumber,
+                        'errors' => [],
+                        'values' => $failure->values(),
+                    ];
+                }
+
+                $groupedFailures[$rowNumber]['errors'] = array_merge(
+                    $groupedFailures[$rowNumber]['errors'],
+                    $failure->errors()
+                );
+            }
+
+            $failedRows = array_values($groupedFailures);
+
+            foreach ($failedRows as $failedRow) {
+                $errorMsg = "Row {$failedRow['row']}: " . implode(', ', $failedRow['errors']);
+                $errorMessages[] = $errorMsg;
+            }
+
+            if (count($failedRows) > 0) {
+                session(['failed_bank_import_rows' => $failedRows]);
+            }
+
+            $stats = [
+                'total' => count($failures),
+                'success' => 0,
+                'updated' => 0,
+                'skipped' => 0,
+                'failed' => count($failures),
+            ];
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Import failed due to validation errors',
+                'stats' => $stats,
+                'errors' => $errorMessages,
+                'hasFailures' => true,
+                'hasExportableFailures' => count($failedRows) > 0,
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('BankController::import error: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Import failed: ' . $e->getMessage(),
+                'stats' => [
+                    'total' => 0,
+                    'success' => 0,
+                    'updated' => 0,
+                    'skipped' => 0,
+                    'failed' => 1,
+                ],
+                'errors' => [$e->getMessage()],
+                'hasFailures' => true,
+                'hasExportableFailures' => false,
+            ], 500);
+        }
+    }
+
+    /**
+     * Export failed bank import rows
+     */
+    public function exportFailedRows()
+    {
+        $failedRows = session('failed_bank_import_rows', []);
+
+        if (empty($failedRows)) {
+            return back()->with('error', 'No failed rows to export.');
+        }
+
+        session()->forget('failed_bank_import_rows');
+
+        return Excel::download(
+            new \App\Exports\FailedBanksExport($failedRows),
+            'failed_banks_' . date('Y-m-d_His') . '.xlsx'
+        );
     }
 }

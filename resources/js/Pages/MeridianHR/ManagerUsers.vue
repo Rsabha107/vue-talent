@@ -31,6 +31,7 @@ const addForm = useForm({
   password: '',
   password_confirmation: '',
   role_ids: [],
+  active_flag: true,
 })
 
 const editForm = useForm({
@@ -40,6 +41,7 @@ const editForm = useForm({
   password: '',
   password_confirmation: '',
   role_ids: [],
+  active_flag: true,
 })
 
 const filtered = computed(() => {
@@ -112,6 +114,7 @@ function openEditModal(user) {
   editForm.password = ''
   editForm.password_confirmation = ''
   editForm.role_ids = user.role_ids || []
+  editForm.active_flag = user.active_flag === 1
   showEditModal.value = true
   openMenuId.value = null
 }
@@ -228,7 +231,9 @@ function toggleRole(form, roleId) {
                 <span class="mhr-badge mhr-badge--neutral">{{ user.roles || 'No roles' }}</span>
               </td>
               <td>
-                <span class="mhr-badge mhr-badge--success">Active</span>
+                <span class="mhr-badge" :class="user.active_flag === 1 ? 'mhr-badge--success' : 'mhr-badge--neutral'">
+                  {{ user.active_flag === 1 ? 'Active' : 'Inactive' }}
+                </span>
               </td>
               <td style="color:var(--mhr-ink-3);font-size:13px;">
                 {{ user.created_at || '—' }}
@@ -265,7 +270,7 @@ function toggleRole(form, roleId) {
         <div class="mhr-modal__hd">
           <h2 class="mhr-modal__title">Add User</h2>
         </div>
-        <div class="mhr-modal__body">
+        <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div class="mhr-field">
             <label class="mhr-field__label">Name *</label>
             <input class="mhr-input" v-model="addForm.name" placeholder="Full name" />
@@ -287,6 +292,15 @@ function toggleRole(form, roleId) {
           <div class="mhr-field">
             <label class="mhr-field__label">Confirm Password *</label>
             <input class="mhr-input" type="password" v-model="addForm.password_confirmation" placeholder="••••••••" />
+          </div>
+
+          <div class="mhr-field">
+            <label class="mhr-field__label">Status</label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;padding:12px;border:1px solid var(--mhr-line);border-radius:6px;background:var(--mhr-surface);">
+              <input type="checkbox" v-model="addForm.active_flag" style="width:16px;height:16px;cursor:pointer;" />
+              <span style="font-size:14px;color:var(--mhr-ink);">Active</span>
+              <span style="margin-left:auto;font-size:12px;color:var(--mhr-ink-3);">{{ addForm.active_flag ? 'User can log in' : 'User is disabled' }}</span>
+            </label>
           </div>
 
           <div class="mhr-field">
@@ -318,7 +332,7 @@ function toggleRole(form, roleId) {
         <div class="mhr-modal__hd">
           <h2 class="mhr-modal__title">Edit User</h2>
         </div>
-        <div class="mhr-modal__body">
+        <div class="mhr-modal__body" style="max-height:70vh;overflow-y:auto;">
           <div class="mhr-field">
             <label class="mhr-field__label">Name *</label>
             <input class="mhr-input" v-model="editForm.name" placeholder="Full name" />
@@ -340,6 +354,15 @@ function toggleRole(form, roleId) {
           <div class="mhr-field">
             <label class="mhr-field__label">Confirm New Password</label>
             <input class="mhr-input" type="password" v-model="editForm.password_confirmation" placeholder="••••••••" />
+          </div>
+
+          <div class="mhr-field">
+            <label class="mhr-field__label">Status</label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;padding:12px;border:1px solid var(--mhr-line);border-radius:6px;background:var(--mhr-surface);">
+              <input type="checkbox" v-model="editForm.active_flag" style="width:16px;height:16px;cursor:pointer;" />
+              <span style="font-size:14px;color:var(--mhr-ink);">Active</span>
+              <span style="margin-left:auto;font-size:12px;color:var(--mhr-ink-3);">{{ editForm.active_flag ? 'User can log in' : 'User is disabled' }}</span>
+            </label>
           </div>
 
           <div class="mhr-field">

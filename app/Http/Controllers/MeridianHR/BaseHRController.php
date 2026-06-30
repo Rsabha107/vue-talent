@@ -275,32 +275,46 @@ abstract class BaseHRController extends Controller
             $manager = null;
             $hasEventAssignment = false;
             
+            $eventAssignment = null;
+
             if ($selectedEventId && !is_array($selectedEventId)) {
+                $eventAssignment = $employee->getEventAssignment($selectedEventId);
                 $designation = $employee->getEventDesignation($selectedEventId);
                 $department = $employee->getEventDepartment($selectedEventId);
                 $manager = $employee->getEventManager($selectedEventId);
-                
-                // Check if user has an assignment to this event
-                $hasEventAssignment = $employee->events()
-                    ->wherePivot('event_id', $selectedEventId)
-                    ->wherePivot('is_active', 1)
-                    ->exists();
+
+                $hasEventAssignment = $eventAssignment !== null;
             }
-            
-            // Check if employee has any active event assignments
+
+            // When no specific event context resolved the org data, fall back to
+            // the first active event assignment (reporting_to_id is pivot-only since Phase 4).
+            if (!$manager || !$department || !$designation) {
+                $fallbackAssignment = $eventAssignment ?? $employee->events()
+                    ->wherePivot('is_active', 1)
+                    ->orderByPivot('assigned_at', 'desc')
+                    ->first();
+
+                if ($fallbackAssignment) {
+                    if (!$designation && $fallbackAssignment->pivot->designation_id) {
+                        $designation = \App\Models\Designation::find($fallbackAssignment->pivot->designation_id);
+                    }
+                    if (!$department && $fallbackAssignment->pivot->department_id) {
+                        $department = \App\Models\Department::find($fallbackAssignment->pivot->department_id);
+                    }
+                    if (!$manager && $fallbackAssignment->pivot->reporting_to_id) {
+                        $manager = Employee::find($fallbackAssignment->pivot->reporting_to_id);
+                    }
+                    if (!$eventAssignment) {
+                        $eventAssignment = $fallbackAssignment;
+                    }
+                }
+            }
+
+            // Check if employee has any active event assignments (kept for hasEventAssignment flag)
             $hasAnyEventAssignment = $employee->events()
                 ->wherePivot('is_active', 1)
                 ->exists();
-            
-            // Only fall back to legacy data if:
-            // - No event is selected
-            // - Employee has at least one active event assignment
-            if (!$selectedEventId && $hasAnyEventAssignment) {
-                $designation = $employee->designation;
-                $department = $employee->department;
-                $manager = $employee->reportingTo;
-            }
-            
+
             // Map HR role to friendly name
             $systemRoles = [];
             
@@ -329,7 +343,7 @@ abstract class BaseHRController extends Controller
                 'empNumber' => $employee->employee_number,
                 'avatarColor' => $employee->avatarColor,
                 'initials' => $employee->initials,
-                'joinDate' => $employee->join_date,
+                'joinDate' => $employee->join_date ?? $eventAssignment?->pivot->assigned_at,
                 'manager' => $manager?->full_name,
             ];
         }
@@ -434,6 +448,7 @@ abstract class BaseHRController extends Controller
             'viewOwnTimesheets' => true,
             'createOwnTimesheets' => true,
             'editOwnTimesheets' => true,
+            'viewDocuments' => $user->can('view-documents'),
             'viewPayslips' => $user->can('view-payslips'),
             
             // Manager permissions

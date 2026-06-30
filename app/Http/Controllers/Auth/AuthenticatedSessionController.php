@@ -38,6 +38,9 @@ class AuthenticatedSessionController extends Controller
 
             $request->session()->regenerate();
             
+            // Always clear any existing OTP session data first
+            $request->session()->forget('otp_user_id');
+            
             // Check if OTP is enabled via Setting
             if (!Setting::isOtpEnabled()) {
                 // OTP disabled - log user in directly

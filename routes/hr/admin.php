@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\MeridianHR\BankController;
+use App\Http\Controllers\MeridianHR\LeaveReportController;
 use App\Http\Controllers\MeridianHR\DocumentCategoryController;
 use App\Http\Controllers\MeridianHR\DocumentController;
 use App\Http\Controllers\MeridianHR\EmployeeController;
@@ -53,6 +54,11 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::post('/banks', [BankController::class, 'store'])->name('banks.store');
     Route::put('/banks/{id}', [BankController::class, 'update'])->name('banks.update');
     Route::delete('/banks/{id}', [BankController::class, 'destroy'])->name('banks.destroy');
+
+    // Bank Import/Export
+    Route::get('/banks/template/download', [BankController::class, 'downloadTemplate'])->name('banks.template');
+    Route::post('/banks/import', [BankController::class, 'import'])->name('banks.import');
+    Route::get('/banks/export-failed', [BankController::class, 'exportFailedRows'])->name('banks.export.failed');
     
     // Salary Management (Admin manages all employees' salaries)
     Route::get('/salary', [SalaryController::class, 'index'])->name('salary');
@@ -97,6 +103,10 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::put('/lookup/{type}/{id}', [LookupTablesController::class, 'update'])->name('lookup.update');
     Route::delete('/lookup/{type}/{id}', [LookupTablesController::class, 'destroy'])->name('lookup.destroy');
     
+    // Leave Balances Report (Admin View)
+    Route::get('/leave-balances', [LeaveReportController::class, 'leaveBalances'])->name('leave-balances');
+    Route::post('/leave-balances/recalculate', [LeaveReportController::class, 'recalculateAll'])->name('leave-balances.recalculate');
+
     // Leave Request Management (Admin View)
     Route::get('/leave-requests', [EmployeeLeaveRequestController::class, 'index'])->name('leave-requests'); // Legacy route
     Route::get('/all-leaves', [EmployeeLeaveRequestController::class, 'allLeaves'])->name('all-leaves'); // New route

@@ -24,6 +24,7 @@ class UserManagementController extends BaseHRController
                     'email' => $user->email,
                     'roles' => $user->roles->pluck('name')->join(', '),
                     'role_ids' => $user->roles->pluck('id')->toArray(),
+                    'active_flag' => $user->active_flag ?? 1,
                     'created_at' => $user->created_at?->format('d M Y'),
                 ];
             });
@@ -53,12 +54,14 @@ class UserManagementController extends BaseHRController
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
             'role_ids' => 'nullable|array',
             'role_ids.*' => 'exists:roles,id',
+            'active_flag' => 'nullable|boolean',
         ]);
 
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'active_flag' => $request->active_flag ?? 1,
         ]);
 
         // Assign roles
@@ -79,12 +82,20 @@ class UserManagementController extends BaseHRController
             'password' => ['nullable', 'confirmed', Rules\Password::defaults()],
             'role_ids' => 'nullable|array',
             'role_ids.*' => 'exists:roles,id',
+            'active_flag' => 'nullable|boolean',
         ]);
 
         $user->update([
             'name' => $request->name,
             'email' => $request->email,
         ]);
+
+        // Update active flag if provided
+        if ($request->has('active_flag')) {
+            $user->update([
+                'active_flag' => $request->active_flag ? 1 : 0,
+            ]);
+        }
 
         // Update password if provided
         if ($request->password) {

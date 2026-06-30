@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount } from 'vue'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
@@ -14,6 +14,53 @@ const emit = defineEmits(['update:modelValue'])
 
 const showDropdown = ref(false)
 const searchQuery = ref('')
+const triggerEl = ref(null)
+const dropdownStyle = ref({})
+
+function updateDropdownPosition() {
+  if (!triggerEl.value) return
+  const rect = triggerEl.value.getBoundingClientRect()
+  const margin = 4
+  const preferredHeight = 320
+  const spaceBelow = window.innerHeight - rect.bottom - margin
+  const spaceAbove = rect.top - margin
+
+  if (spaceBelow >= preferredHeight || spaceBelow >= spaceAbove) {
+    dropdownStyle.value = {
+      position: 'fixed',
+      top: `${rect.bottom + margin}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+      maxHeight: `${Math.max(160, Math.min(preferredHeight, spaceBelow))}px`,
+    }
+  } else {
+    dropdownStyle.value = {
+      position: 'fixed',
+      bottom: `${window.innerHeight - rect.top + margin}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+      maxHeight: `${Math.max(160, Math.min(preferredHeight, spaceAbove))}px`,
+    }
+  }
+}
+
+function openDropdown() {
+  showDropdown.value = true
+  nextTick(updateDropdownPosition)
+  window.addEventListener('scroll', updateDropdownPosition, true)
+  window.addEventListener('resize', updateDropdownPosition)
+}
+
+function closeDropdown() {
+  showDropdown.value = false
+  window.removeEventListener('scroll', updateDropdownPosition, true)
+  window.removeEventListener('resize', updateDropdownPosition)
+}
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', updateDropdownPosition, true)
+  window.removeEventListener('resize', updateDropdownPosition)
+})
 
 const selectedEmployee = computed(() => {
   if (!props.employees || !Array.isArray(props.employees)) return null
@@ -33,7 +80,7 @@ const filteredEmployees = computed(() => {
 
 function selectEmployee(empId) {
   emit('update:modelValue', empId)
-  showDropdown.value = false
+  closeDropdown()
   searchQuery.value = ''
 }
 
@@ -47,8 +94,9 @@ function clearSelection() {
   <div style="position:relative;">
     <!-- Selected value / trigger button -->
     <button
+      ref="triggerEl"
       type="button"
-      @click="!disabled && (showDropdown = !showDropdown)"
+      @click="!disabled && (showDropdown ? closeDropdown() : openDropdown())"
       class="mhr-select"
       :disabled="disabled"
       style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding-right:10px;"
@@ -82,54 +130,54 @@ function clearSelection() {
       </div>
     </button>
 
-    <!-- Dropdown -->
-    <div
-      v-if="showDropdown"
-      @click.stop
-      style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;max-height:320px;display:flex;flex-direction:column;"
-    >
-      <!-- Search input -->
-      <div style="padding:8px;border-bottom:1px solid var(--mhr-line-2);">
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="Search by name or number..."
-          class="mhr-input"
-          style="font-size:13px;padding:8px 10px;"
-          @click.stop
-          autofocus
-        />
-      </div>
-
-      <!-- Employee list -->
-      <div style="overflow-y:auto;max-height:260px;">
-        <div
-          v-if="filteredEmployees.length === 0"
-          style="padding:20px;text-align:center;color:var(--mhr-ink-3);font-size:13px;"
-        >
-          No employees found
+    <!-- Dropdown (teleported within .meridian-app so it escapes the modal's overflow/stacking context but keeps the --mhr-* CSS variable scope) -->
+    <Teleport to=".meridian-app">
+      <div
+        v-if="showDropdown"
+        @click="closeDropdown"
+        style="position:fixed;inset:0;z-index:299;"
+      />
+      <div
+        v-if="showDropdown"
+        @click.stop
+        :style="[dropdownStyle, 'background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:var(--mhr-r);box-shadow:0 4px 12px rgba(0,0,0,0.16);z-index:300;display:flex;flex-direction:column;overflow:hidden;']"
+      >
+        <!-- Search input -->
+        <div style="padding:8px;border-bottom:1px solid var(--mhr-line-2);flex-shrink:0;">
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Search by name or number..."
+            class="mhr-input"
+            style="font-size:13px;padding:8px 10px;"
+            @click.stop
+            autofocus
+          />
         </div>
-        <button
-          v-for="emp in filteredEmployees"
-          :key="emp.id"
-          type="button"
-          @click="selectEmployee(emp.id)"
-          style="width:100%;padding:10px 12px;border:none;background:transparent;text-align:left;cursor:pointer;font-size:13px;color:var(--mhr-ink);display:flex;flex-direction:column;gap:2px;transition:background 0.15s;"
-          :style="modelValue === emp.id ? 'background:var(--mhr-accent);color:white;' : ''"
-          @mouseenter="$event.currentTarget.style.background = modelValue === emp.id ? 'var(--mhr-accent)' : 'var(--mhr-surface-2)'"
-          @mouseleave="$event.currentTarget.style.background = modelValue === emp.id ? 'var(--mhr-accent)' : 'transparent'"
-        >
-          <span style="font-weight:500;">{{ emp.full_name }}</span>
-          <span style="font-size:12px;opacity:0.8;">{{ emp.employee_number }}</span>
-        </button>
-      </div>
-    </div>
 
-    <!-- Click outside to close -->
-    <div
-      v-if="showDropdown"
-      @click="showDropdown = false"
-      style="position:fixed;inset:0;z-index:99;"
-    />
+        <!-- Employee list -->
+        <div style="overflow-y:auto;flex:1;min-height:0;">
+          <div
+            v-if="filteredEmployees.length === 0"
+            style="padding:20px;text-align:center;color:var(--mhr-ink-3);font-size:13px;"
+          >
+            No employees found
+          </div>
+          <button
+            v-for="emp in filteredEmployees"
+            :key="emp.id"
+            type="button"
+            @click="selectEmployee(emp.id)"
+            style="width:100%;padding:10px 12px;border:none;background:transparent;text-align:left;cursor:pointer;font-size:13px;color:var(--mhr-ink);display:flex;flex-direction:column;gap:2px;transition:background 0.15s;"
+            :style="modelValue === emp.id ? 'background:var(--mhr-accent);color:white;' : ''"
+            @mouseenter="$event.currentTarget.style.background = modelValue === emp.id ? 'var(--mhr-accent)' : 'var(--mhr-surface-2)'"
+            @mouseleave="$event.currentTarget.style.background = modelValue === emp.id ? 'var(--mhr-accent)' : 'transparent'"
+          >
+            <span style="font-weight:500;">{{ emp.full_name }}</span>
+            <span style="font-size:12px;opacity:0.8;">{{ emp.employee_number }}</span>
+          </button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

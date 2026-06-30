@@ -16,7 +16,8 @@ return new class extends Migration
             $table->string('name', 100);
             $table->integer('department_id')->nullable();
             $table->integer('active_flag');
-            $table->integer('creator_id');
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamp('created_at')->nullable();
             $table->timestamp('updated_at')->nullable();
         });

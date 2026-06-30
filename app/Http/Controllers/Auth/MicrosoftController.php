@@ -28,6 +28,11 @@ class MicrosoftController extends Controller
                 return $this->microsoftLogout($request, 'Your Microsoft account is not authorised to access this system. Please contact the administrator.');
             }
 
+            if (!$user->active_flag) {
+                Log::warning('Microsoft login blocked — account deactivated: ' . $azureUser->email);
+                return $this->microsoftLogout($request, 'This account has been deactivated. Please contact your administrator.');
+            }
+
             $user->update([
                 'socialite_id'    => $azureUser->getId(),
                 'socialite_token' => $azureUser->token,

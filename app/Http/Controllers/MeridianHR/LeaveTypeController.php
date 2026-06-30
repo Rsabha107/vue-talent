@@ -5,6 +5,7 @@ namespace App\Http\Controllers\MeridianHR;
 use App\Models\Department;
 use App\Models\Designation;
 use App\Models\EmployeeContractType;
+use App\Models\EmployeeLeaveBalance;
 use App\Models\Gender;
 use App\Models\LeaveEligibility;
 use App\Models\LeaveType;
@@ -73,9 +74,9 @@ class LeaveTypeController extends BaseHRController
 
         $this->syncEligibilities($leaveType->id, $validated);
 
-        // Initialize leave balances for all employees for this new leave type
-        $eventId = $this->getSelectedEventId();
-        LeaveBalanceService::initializeLeaveBalance($leaveType, null, $eventId);
+        if ($leaveType->active_flag) {
+            LeaveBalanceService::initializeLeaveBalance($leaveType, null);
+        }
 
         return redirect()->route('hr.leave-types')->with('success', 'Leave type created successfully.');
     }
@@ -107,9 +108,14 @@ class LeaveTypeController extends BaseHRController
 
         $this->syncEligibilities($leaveType->id, $validated);
 
-        // Recalculate leave balances for all employees for this leave type
-        $eventId = $this->getSelectedEventId();
-        LeaveBalanceService::initializeLeaveBalance($leaveType, null, $eventId);
+        if ($leaveType->active_flag) {
+            // Active (or reactivated) — reinitialize balances for all employees
+            LeaveBalanceService::initializeLeaveBalance($leaveType, null);
+        } else {
+            // Deactivated — hide all related balance records
+            EmployeeLeaveBalance::where('leave_type_id', $leaveType->id)
+                ->update(['active_flag' => 0, 'updated_by' => Auth::id()]);
+        }
 
         return redirect()->route('hr.leave-types')->with('success', 'Leave type updated successfully.');
     }
@@ -118,6 +124,10 @@ class LeaveTypeController extends BaseHRController
     {
         $leaveType = LeaveType::findOrFail($id);
         $leaveType->update(['active_flag' => 0, 'updated_by' => Auth::id()]);
+
+        // Deactivate all employee balance records for this leave type
+        EmployeeLeaveBalance::where('leave_type_id', $leaveType->id)
+            ->update(['active_flag' => 0, 'updated_by' => Auth::id()]);
 
         return redirect()->route('hr.leave-types')->with('success', 'Leave type deactivated successfully.');
     }

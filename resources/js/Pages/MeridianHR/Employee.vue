@@ -6,6 +6,7 @@ import AppAvatar from '@/Components/MeridianHR/AppAvatar.vue'
 import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
 import EventBanner from '@/Components/MeridianHR/EventBanner.vue'
 import SubmitButton from '@/Components/MeridianHR/SubmitButton.vue'
+import EmployeeSelector from '@/Components/MeridianHR/EmployeeSelector.vue'
 import { router, usePage } from '@inertiajs/vue3'
 import { DatePicker } from 'v-calendar'
 import 'v-calendar/style.css'
@@ -281,6 +282,11 @@ const editForm = ref({
 
 const all  = computed(() => [...added.value, ...props.employees])
 const depts = computed(() => ['All', ...new Set(all.value.map(p => p.dept))])
+
+// Reporting-to managers reshaped for the searchable EmployeeSelector
+const reportingToSelectorOptions = computed(() =>
+  props.reportingToOptions.map(r => ({ id: r.id, full_name: r.name }))
+)
 
 // Get all unique events from employees (for All Events view filter)
 const allEvents = computed(() => {
@@ -1561,14 +1567,14 @@ function updateEmployee() {
       </div>
       
       <!-- Event filter (for All Events view) -->
-      <div v-if="all.length > 0 && isAllEvents && allEvents.length > 1" style="display:flex;gap:4px;padding:3px;background:var(--mhr-surface);border:1px solid var(--mhr-line);border-radius:9px;overflow:auto;">
-        <button v-for="e in allEvents" :key="e"
-          class="mhr-btn mhr-btn--sm"
-          :style="eventFilter === e ? 'background:var(--green-700);color:#fff;' : 'background:transparent;color:var(--mhr-ink-2);'"
-          @click="eventFilter = e">
-          {{ e }}
-        </button>
-      </div>
+      <select v-if="all.length > 0 && isAllEvents && allEvents.length > 1"
+        v-model="eventFilter"
+        class="mhr-select"
+        style="max-width:220px;">
+        <option v-for="e in allEvents" :key="e" :value="e">
+          {{ e === 'All' ? 'All events' : e }}
+        </option>
+      </select>
     </div>
 
     <div class="mhr-card">
@@ -2245,10 +2251,7 @@ function updateEmployee() {
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                 <div class="mhr-field">
                   <label class="mhr-field__label">Reporting To</label>
-                  <select class="mhr-select" v-model="form.reportingToId">
-                    <option :value="null">Select...</option>
-                    <option v-for="r in reportingToOptions" :key="r.id" :value="r.id">{{ r.name }}</option>
-                  </select>
+                  <EmployeeSelector v-model="form.reportingToId" :employees="reportingToSelectorOptions" placeholder="Select..." />
                 </div>
                 <div class="mhr-field">
                   <label class="mhr-field__label">Salary Basis</label>
@@ -2702,10 +2705,7 @@ function updateEmployee() {
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                 <div class="mhr-field">
                   <label class="mhr-field__label">Reporting To</label>
-                  <select class="mhr-select" v-model="editForm.reportingToId">
-                    <option :value="null">Select...</option>
-                    <option v-for="r in reportingToOptions" :key="r.id" :value="r.id">{{ r.name }}</option>
-                  </select>
+                  <EmployeeSelector v-model="editForm.reportingToId" :employees="reportingToSelectorOptions" placeholder="Select..." />
                 </div>
                 <div class="mhr-field">
                   <label class="mhr-field__label">Salary Basis</label>
@@ -3156,10 +3156,7 @@ function updateEmployee() {
               </div>
               <div class="mhr-field">
                 <label class="mhr-field__label">Reporting To</label>
-                <select class="mhr-select" v-model="assignEventForm.reportingToId">
-                  <option :value="null">Select...</option>
-                  <option v-for="r in reportingToOptions" :key="r.id" :value="r.id">{{ r.name }}</option>
-                </select>
+                <EmployeeSelector v-model="assignEventForm.reportingToId" :employees="reportingToSelectorOptions" placeholder="Select..." />
               </div>
             </div>
             

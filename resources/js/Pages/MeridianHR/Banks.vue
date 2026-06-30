@@ -5,6 +5,7 @@ import MeridianLayout from '@/Layouts/MeridianLayout.vue'
 import AppIcon from '@/Components/MeridianHR/AppIcon.vue'
 import RefreshButton from '@/Components/MeridianHR/RefreshButton.vue'
 import EmployeeSelector from '@/Components/MeridianHR/EmployeeSelector.vue'
+import ImportStatsModal from '@/Components/MeridianHR/ImportStatsModal.vue'
 import { DatePicker } from 'v-calendar'
 import 'v-calendar/style.css'
 
@@ -41,11 +42,24 @@ const q = ref('')
 const showAddModal = ref(false)
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
+const showImportModal = ref(false)
+const showStatsModal = ref(false)
+const showDuplicateConfirmModal = ref(false)
 const editingBank = ref(null)
 const bankToDelete = ref(null)
+const importFile = ref(null)
+const fileInput = ref(null)
+const treatDuplicatesAsError = ref(true)
+const importStats = ref(null)
+const importErrors = ref([])
+const hasFailures = ref(false)
+const hasExportableFailures = ref(false)
 const toast = ref(null)
 const openMenuId = ref(null)
 const isRefreshing = ref(false)
+const isImporting = ref(false)
+
+const canManage = computed(() => props.hrRole === 'admin' || props.hrRole === 'manager')
 
 const form = useForm({
   employee_id: props.hrRole === 'employee' ? currentEmployeeId.value : null,
@@ -206,6 +220,113 @@ function refreshBanks() {
     }
   })
 }
+
+function downloadTemplate() {
+  window.location.href = route('hr.banks.template')
+}
+
+function openImportModal() {
+  showImportModal.value = true
+  importFile.value = null
+  treatDuplicatesAsError.value = true
+}
+
+function handleFileSelect(event) {
+  const file = event.target.files[0]
+  if (file) {
+    importFile.value = file
+  }
+}
+
+function triggerFileInput() {
+  fileInput.value?.click()
+}
+
+async function importBanks() {
+  if (!importFile.value) {
+    alert('Please select a file to import')
+    return
+  }
+
+  isImporting.value = true
+  const formData = new FormData()
+  formData.append('file', importFile.value)
+  formData.append('treat_duplicates_as_error', treatDuplicatesAsError.value ? '1' : '0')
+
+  try {
+    const response = await fetch(route('hr.banks.import'), {
+      method: 'POST',
+      headers: {
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+      },
+      body: formData,
+    })
+
+    const data = await response.json()
+
+    if (data.success || data.hasFailures || data.errors) {
+      importStats.value = data.stats || {
+        total: 0,
+        success: 0,
+        updated: 0,
+        skipped: 0,
+        failed: data.errors ? data.errors.length : 0
+      }
+      importErrors.value = data.errors || []
+      hasFailures.value = data.hasFailures || (data.errors && data.errors.length > 0) || false
+      hasExportableFailures.value = data.hasExportableFailures || false
+      showImportModal.value = false
+      showStatsModal.value = true
+      importFile.value = null
+
+      if (data.success && importStats.value.success > 0) {
+        router.reload({ only: ['banks'] })
+      }
+    } else {
+      importStats.value = {
+        total: 0,
+        success: 0,
+        updated: 0,
+        skipped: 0,
+        failed: 1
+      }
+      importErrors.value = [data.message || 'Import failed']
+      hasFailures.value = true
+      hasExportableFailures.value = false
+      showImportModal.value = false
+      showStatsModal.value = true
+      importFile.value = null
+    }
+  } catch (error) {
+    showToast('Import failed: ' + error.message, true)
+  } finally {
+    isImporting.value = false
+  }
+}
+
+function exportFailedRows() {
+  window.location.href = route('hr.banks.export.failed')
+}
+
+function handleDuplicateOptionChange(event) {
+  const isChecked = event.target.checked
+
+  if (!isChecked) {
+    showDuplicateConfirmModal.value = true
+    event.target.checked = true
+  } else {
+    treatDuplicatesAsError.value = true
+  }
+}
+
+function confirmEnableDateTracking() {
+  treatDuplicatesAsError.value = false
+  showDuplicateConfirmModal.value = false
+}
+
+function cancelEnableDateTracking() {
+  showDuplicateConfirmModal.value = false
+}
 </script>
 
 <template>
@@ -217,6 +338,9 @@ function refreshBanks() {
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
         <RefreshButton variant="outline" :is-refreshing="isRefreshing" @refresh="refreshBanks" />
+        <button v-if="canManage" class="mhr-btn mhr-btn--outline" @click="openImportModal">
+          <AppIcon name="upload" :size="14" /> Import
+        </button>
         <button class="mhr-btn mhr-btn--primary" @click="showAddModal = true">
           <AppIcon name="plus" /> Add Bank Account
         </button>
@@ -461,5 +585,168 @@ function refreshBanks() {
         </div>
       </div>
     </div>
+
+    <!-- Duplicate Handling Confirmation Modal -->
+    <div v-if="showDuplicateConfirmModal" class="mhr-modal__scrim" @click.self="cancelEnableDateTracking" style="z-index:10000;">
+      <div class="mhr-modal mhr-modal--md">
+        <div class="mhr-modal__hd">
+          <div style="display:flex;align-items:start;gap:12px;">
+            <div style="width:40px;height:40px;background:var(--mhr-warn-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <AppIcon name="alert" :size="20" style="color:var(--mhr-warn);" />
+            </div>
+            <div>
+              <h2 class="mhr-modal__title" style="color:var(--mhr-warn);">Enable Automatic Date-Tracking?</h2>
+              <p class="mhr-modal__sub" style="margin-top:4px;">This will modify existing bank records</p>
+            </div>
+          </div>
+        </div>
+        <div class="mhr-modal__body">
+          <div style="background:var(--mhr-surface-2);border-left:3px solid var(--mhr-warn);padding:14px 16px;border-radius:6px;margin-bottom:16px;">
+            <p style="color:var(--mhr-ink);font-size:14px;line-height:1.6;margin-bottom:12px;">
+              By unchecking this option, the system will <strong style="color:var(--mhr-warn);">automatically close (date-track)</strong> any existing active bank records when importing new ones.
+            </p>
+            <div style="font-size:13px;color:var(--mhr-ink-2);line-height:1.6;">
+              <strong style="color:var(--mhr-ink);">This means:</strong>
+              <ul style="margin:8px 0 0 20px;padding:0;">
+                <li style="margin-bottom:6px;">• Existing open-ended bank records will be closed</li>
+                <li style="margin-bottom:6px;">• New bank records will be created</li>
+                <li style="margin-bottom:6px;">• Bank account history will be maintained automatically</li>
+              </ul>
+            </div>
+          </div>
+          <p style="color:var(--mhr-ink-2);font-size:13px;">
+            If you want to prevent automatic modifications and treat duplicates as validation errors instead, click <strong>Cancel</strong>.
+          </p>
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--ghost" @click="cancelEnableDateTracking">Cancel</button>
+          <button class="mhr-btn mhr-btn--primary" @click="confirmEnableDateTracking" style="background:var(--mhr-warn);border-color:var(--mhr-warn);">
+            <AppIcon name="check" :size="14" /> Enable Date-Tracking
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Modal -->
+    <div v-if="showImportModal" class="mhr-modal__scrim" @click.self="!isImporting && (showImportModal = false)">
+      <div class="mhr-modal mhr-modal--md" style="position:relative;">
+        <!-- Processing Overlay -->
+        <div v-if="isImporting" style="position:absolute;inset:0;background:rgba(255,255,255,0.95);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;backdrop-filter:blur(2px);">
+          <div style="width:48px;height:48px;border:4px solid var(--mhr-line);border-top-color:var(--blue-600);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:16px;"></div>
+          <div style="font-size:16px;font-weight:600;color:var(--mhr-ink);margin-bottom:4px;">Processing Import</div>
+          <div style="font-size:13px;color:var(--mhr-ink-2);text-align:center;max-width:300px;">
+            <div>Validating and importing bank records...</div>
+            <div style="margin-top:4px;font-size:12px;color:var(--mhr-ink-3);">This may take a few moments</div>
+          </div>
+        </div>
+
+        <div class="mhr-modal__hd">
+          <h2 class="mhr-modal__title">Import Bank Accounts</h2>
+          <p class="mhr-modal__sub">Upload an Excel file to import multiple bank accounts at once</p>
+        </div>
+        <div class="mhr-modal__body">
+          <div style="margin-bottom:20px;padding:14px;background:var(--mhr-surface);border-radius:8px;border:1px solid var(--mhr-line);">
+            <div style="display:flex;align-items:start;gap:10px;margin-bottom:8px;">
+              <AppIcon name="info" :size="16" style="color:var(--blue-600);margin-top:2px;" />
+              <div style="flex:1;">
+                <p style="font-weight:500;font-size:13px;color:var(--mhr-ink);margin-bottom:4px;">Before importing:</p>
+                <ol style="font-size:13px;color:var(--mhr-ink-2);line-height:1.6;margin:0;padding-left:20px;">
+                  <li>Download the template file using the button below</li>
+                  <li>Fill in bank data (Employee Number, IBAN, and Bank Branch Name are required)</li>
+                  <li>Effective Start Date defaults to 2026-01-01 if left blank</li>
+                  <li>Save and upload the completed file</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom:20px;">
+            <button class="mhr-btn mhr-btn--outline" @click="downloadTemplate" style="width:100%;">
+              <AppIcon name="download" :size="14" />
+              Download Bank Template
+            </button>
+          </div>
+
+          <div class="mhr-field">
+            <label class="mhr-field__label">Upload Excel File</label>
+            <input
+              ref="fileInput"
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              @change="handleFileSelect"
+              style="display:none;"
+            />
+            <div
+              @click="triggerFileInput"
+              style="border:2px dashed var(--mhr-line);border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:all 0.2s;"
+              @mouseenter="$event.target.style.borderColor='var(--blue-500)'"
+              @mouseleave="$event.target.style.borderColor='var(--mhr-line)'"
+            >
+              <AppIcon name="upload" :size="24" style="color:var(--mhr-ink-3);margin-bottom:8px;" />
+              <p style="font-size:14px;color:var(--mhr-ink-2);margin:0;">
+                <span v-if="!importFile">Click to select file or drag and drop</span>
+                <span v-else style="color:var(--green-600);font-weight:500;">✓ {{ importFile.name }}</span>
+              </p>
+              <p style="font-size:12px;color:var(--mhr-ink-3);margin:4px 0 0 0;">
+                Supports: .xlsx, .xls, .csv (Max 10MB)
+              </p>
+            </div>
+
+            <!-- Warning and Options -->
+            <div style="margin-top:20px;background:var(--mhr-surface-2);border-left:3px solid var(--blue-500);padding:14px 16px;border-radius:6px;">
+              <div style="display:flex;align-items:start;gap:10px;margin-bottom:12px;">
+                <AppIcon name="info" :size="16" style="color:var(--blue-500);flex-shrink:0;margin-top:2px;" />
+                <div style="flex:1;">
+                  <div style="font-size:13px;font-weight:700;color:var(--blue-600);margin-bottom:4px;">Date Tracking Behavior</div>
+                  <div style="font-size:12px;color:var(--mhr-ink);line-height:1.5;font-weight:500;">
+                    By default, if an employee already has an active bank record, the system will <strong style="color:var(--blue-700);">automatically close it
+                    (date-track)</strong> and create the new record. This maintains a complete bank account history.
+                  </div>
+                </div>
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 0;">
+                <input
+                  type="checkbox"
+                  :checked="treatDuplicatesAsError"
+                  @change="handleDuplicateOptionChange"
+                  style="width:16px;height:16px;cursor:pointer;"
+                />
+                <span style="font-size:13px;color:var(--mhr-ink);">
+                  Treat duplicates as errors instead of date-tracking
+                </span>
+              </label>
+              <div v-if="treatDuplicatesAsError" style="margin-left:24px;font-size:12px;color:var(--red-600);margin-top:4px;">
+                ⚠ Rows with existing active bank records will fail validation
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mhr-modal__ft">
+          <button class="mhr-btn mhr-btn--ghost" @click="showImportModal = false" :disabled="isImporting">Cancel</button>
+          <button
+            class="mhr-btn mhr-btn--primary"
+            @click="importBanks"
+            :disabled="!importFile || isImporting"
+            :style="(!importFile || isImporting) ? 'opacity: 0.5; cursor: not-allowed;' : ''"
+          >
+            <AppIcon v-if="!isImporting" name="upload" :size="14" />
+            <span v-if="isImporting">Importing...</span>
+            <span v-else>Import Bank Accounts</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Stats Modal -->
+    <ImportStatsModal
+      :show="showStatsModal"
+      :stats="importStats"
+      :errors="importErrors"
+      :has-failures="hasFailures"
+      :has-exportable-failures="hasExportableFailures"
+      entity-name="bank record(s)"
+      @close="showStatsModal = false"
+      @export-failed="exportFailedRows"
+    />
   </div>
 </template>

@@ -15,7 +15,8 @@ class Designation extends Model
         'name',
         'department_id',
         'active_flag',
-        'creator_id',
+        'created_by',
+        'updated_by',
     ];
 
     protected $casts = [

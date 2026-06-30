@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Mail;
 use Spatie\OneTimePasswords\Models\Concerns\HasOneTimePasswords;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password','status_id'])]
+#[Fillable(['name', 'email', 'password', 'status_id', 'active_flag'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {

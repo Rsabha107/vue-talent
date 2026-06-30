@@ -181,8 +181,15 @@ export function useHRNavigation() {
           icon: 'clock',
           route: 'hr.all-timesheets'
         })
+
+        people.items.push({
+          id: 'leave-balances',
+          label: 'Leave balances',
+          icon: 'calendar',
+          route: 'hr.leave-balances'
+        })
       }
-      
+
       nav.push(people)
     }
     
@@ -242,13 +249,15 @@ export function useHRNavigation() {
         items: []
       }
       
-      records.items.push({
-        id: 'documents',
-        label: isManager.value && !isAdmin.value ? 'My documents' : 'Documents',
-        icon: 'doc',
-        route: 'hr.documents'
-      })
-      
+      if (can.value.viewDocuments) {
+        records.items.push({
+          id: 'documents',
+          label: isManager.value && !isAdmin.value ? 'My documents' : 'Documents',
+          icon: 'doc',
+          route: 'hr.documents'
+        })
+      }
+
       // Show payslips if user has permission
       if (can.value.viewPayslips) {
         records.items.push({
@@ -271,13 +280,15 @@ export function useHRNavigation() {
       // Basic employees get documents, payslips (if permission), and profile in Personal section
       const personalSection = nav.find(section => section.group === 'Personal')
       if (personalSection) {
-        personalSection.items.push({
-          id: 'documents',
-          label: 'My documents',
-          icon: 'doc',
-          route: 'hr.documents'
-        })
-        
+        if (can.value.viewDocuments) {
+          personalSection.items.push({
+            id: 'documents',
+            label: 'My documents',
+            icon: 'doc',
+            route: 'hr.documents'
+          })
+        }
+
         // Show payslips if user has permission
         if (can.value.viewPayslips) {
           personalSection.items.push({
@@ -393,6 +404,7 @@ export function useHRNavigation() {
     'team-leaves': 'Team Leaves',
     'team-timesheets': 'Team Timesheets',
     'all-leaves': 'All Leaves',
+    'leave-balances': 'Leave Balances',
     'all-timesheets': 'All Timesheets',
     'timesheet-talent': 'Timesheet Talent',
     'team-leave-requests': 'Team Leaves',
