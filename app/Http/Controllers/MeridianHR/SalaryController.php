@@ -439,5 +439,21 @@ class SalaryController extends BaseHRController
             'failed_salaries_' . date('Y-m-d_His') . '.xlsx'
         );
     }
+
+    /**
+     * Export selected salary rows
+     */
+    public function exportSelected(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'salary_ids'   => 'required|array|min:1',
+            'salary_ids.*' => 'required|integer|exists:employee_salary,id',
+        ]);
+
+        return Excel::download(
+            new \App\Exports\SelectedSalariesExport($request->input('salary_ids')),
+            'salaries_export_' . date('Y-m-d_His') . '.xlsx'
+        );
+    }
 }
 

@@ -61,6 +61,45 @@ const isImporting = ref(false)
 
 const canManage = computed(() => props.hrRole === 'admin' || props.hrRole === 'manager')
 
+// ── Row selection ────────────────────────────────────────────────────
+const selectedBanks = ref(new Set())
+const allSelected = computed(() =>
+  filtered.value.length > 0 && filtered.value.every(b => selectedBanks.value.has(b.id))
+)
+const someSelected = computed(() =>
+  filtered.value.some(b => selectedBanks.value.has(b.id)) && !allSelected.value
+)
+function toggleSelectAll() {
+  if (allSelected.value) {
+    filtered.value.forEach(b => selectedBanks.value.delete(b.id))
+  } else {
+    filtered.value.forEach(b => selectedBanks.value.add(b.id))
+  }
+}
+function toggleSelect(id) {
+  selectedBanks.value.has(id) ? selectedBanks.value.delete(id) : selectedBanks.value.add(id)
+}
+function exportSelected() {
+  const ids = Array.from(selectedBanks.value)
+  if (!ids.length) return
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = route('hr.banks.export.selected')
+  form.style.display = 'none'
+  const csrf = document.createElement('input')
+  csrf.type = 'hidden'; csrf.name = '_token'
+  csrf.value = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+  form.appendChild(csrf)
+  ids.forEach(id => {
+    const input = document.createElement('input')
+    input.type = 'hidden'; input.name = 'bank_ids[]'; input.value = id
+    form.appendChild(input)
+  })
+  document.body.appendChild(form)
+  form.submit()
+  setTimeout(() => document.body.contains(form) && document.body.removeChild(form), 2000)
+}
+
 const form = useForm({
   employee_id: props.hrRole === 'employee' ? currentEmployeeId.value : null,
   bank_branch_name: '',
@@ -355,12 +394,25 @@ function cancelEnableDateTracking() {
       </div>
     </div>
 
+    <!-- Selection banner -->
+    <div v-if="selectedBanks.size > 0" class="mhr-card" style="margin-bottom:14px;padding:12px 16px;display:flex;align-items:center;gap:12px;background:var(--mhr-accent-soft);border:1px solid var(--mhr-accent);">
+      <AppIcon name="check" :size="16" style="color:var(--mhr-accent);" />
+      <span style="font-size:13px;font-weight:500;color:var(--mhr-accent);">{{ selectedBanks.size }} bank account{{ selectedBanks.size > 1 ? 's' : '' }} selected</span>
+      <button class="mhr-btn mhr-btn--sm mhr-btn--outline" @click="selectedBanks.clear()">Clear</button>
+      <button class="mhr-btn mhr-btn--sm mhr-btn--primary" @click="exportSelected">
+        <AppIcon name="download" :size="13" /> Export
+      </button>
+    </div>
+
     <!-- Banks Table -->
     <div class="mhr-card">
-      <div class="mhr-table-wrap">
+      <div class="mhr-table-container">
         <table class="mhr-table">
           <thead>
             <tr>
+              <th style="width:40px;">
+                <input type="checkbox" :checked="allSelected" :indeterminate="someSelected" @change="toggleSelectAll" class="mhr-checkbox" style="cursor:pointer;" />
+              </th>
               <th v-if="hrRole !== 'employee'">STAFF</th>
               <th>BANK BRANCH</th>
               <th>IBAN</th>
@@ -373,11 +425,14 @@ function cancelEnableDateTracking() {
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td :colspan="hrRole !== 'employee' ? 8 : 7" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
+              <td :colspan="hrRole !== 'employee' ? 9 : 8" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
                 No bank accounts found
               </td>
             </tr>
-            <tr v-for="bank in filtered" :key="bank.id">
+            <tr v-for="bank in filtered" :key="bank.id" :style="selectedBanks.has(bank.id) ? 'background:var(--mhr-accent-soft);' : ''">
+              <td>
+                <input type="checkbox" :checked="selectedBanks.has(bank.id)" @change="toggleSelect(bank.id)" class="mhr-checkbox" style="cursor:pointer;" />
+              </td>
               <td v-if="hrRole !== 'employee'">
                 <div style="font-weight:500;">{{ bank.employeeName }}</div>
                 <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:2px;">{{ bank.employeeNumber }}</div>

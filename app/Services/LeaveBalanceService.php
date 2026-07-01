@@ -42,11 +42,19 @@ class LeaveBalanceService
             ->each(fn($leaveType) => static::calculateAndSaveBalance($employee, $leaveType));
     }
 
-    private static function calculateAndSaveBalance(Employee $employee, LeaveType $leaveType): EmployeeLeaveBalance
+    private static function calculateAndSaveBalance(Employee $employee, LeaveType $leaveType): ?EmployeeLeaveBalance
     {
-        $year        = now()->year;
-        $periodStart = now()->startOfYear();
-        $periodEnd   = now()->endOfYear();
+        if (!$employee->contract_start_date || !$employee->contract_end_date) {
+            return null;
+        }
+
+        $year = now()->year;
+
+        $contractStart = now()->parse($employee->contract_start_date);
+        $contractEnd   = now()->parse($employee->contract_end_date);
+
+        $periodStart = $contractStart;
+        $periodEnd   = $contractEnd;
 
         $allocatedDays = static::calculateAllocatedDays($employee, $leaveType, $year);
 

@@ -23,6 +23,7 @@ use App\Models\InvoiceNote;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class LookupTablesController extends BaseHRController
 {
@@ -586,6 +587,57 @@ class LookupTablesController extends BaseHRController
         }
         
         return redirect()->route('hr.lookup', $type)->with('success', $entity['singular'] . ' deleted successfully.');
+    }
+
+    /**
+     * Export selected lookup table items
+     */
+    public function exportSelected(Request $request, $type)
+    {
+        $config = $this->getEntityConfig();
+
+        if (!isset($config[$type])) {
+            abort(404, 'Settings type not found');
+        }
+
+        $request->validate([
+            'ids'   => 'required|array|min:1',
+            'ids.*' => 'integer',
+        ]);
+
+        $entity      = $config[$type];
+        $modelClass  = $entity['model'];
+        $columns     = $entity['columns'];
+
+        $query = $modelClass::whereIn('id', $request->ids);
+
+        if ($type === 'departments') $query->with('parent');
+        elseif ($type === 'designations') $query->with('department');
+
+        $rows = $query->orderBy('id')->get()->map(function ($item) use ($type, $entity, $columns) {
+            $row = [];
+            foreach ($columns as $column) {
+                $key = $column['key'];
+                if ($key === 'status') {
+                    $row[] = ($entity['hasActiveFlag'] && !$item->active_flag) ? 'Inactive' : 'Active';
+                } elseif ($key === 'parent' && $type === 'departments') {
+                    $row[] = $item->parent?->name ?? '—';
+                } elseif ($key === 'department' && $type === 'designations') {
+                    $row[] = $item->department?->name ?? '—';
+                } else {
+                    $row[] = $item->$key ?? '—';
+                }
+            }
+            return $row;
+        });
+
+        $headings  = collect($columns)->pluck('label')->toArray();
+        $filename  = \Str::slug($entity['title']) . '_export_' . date('Y-m-d_His') . '.xlsx';
+
+        return Excel::download(
+            new \App\Exports\SelectedLookupExport($headings, $rows->toArray()),
+            $filename
+        );
     }
 
     /**

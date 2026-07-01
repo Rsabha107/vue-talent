@@ -104,6 +104,45 @@ const canManage = computed(() => {
   return props.hrRole === 'admin' || props.hrRole === 'manager'
 })
 
+const selectedSalaries = ref(new Set())
+const allSelected = computed(() => filtered.value.length > 0 && filtered.value.every(s => selectedSalaries.value.has(s.id)))
+const someSelected = computed(() => filtered.value.some(s => selectedSalaries.value.has(s.id)) && !allSelected.value)
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    filtered.value.forEach(s => selectedSalaries.value.delete(s.id))
+  } else {
+    filtered.value.forEach(s => selectedSalaries.value.add(s.id))
+  }
+  selectedSalaries.value = new Set(selectedSalaries.value)
+}
+
+function toggleSelect(id) {
+  selectedSalaries.value.has(id) ? selectedSalaries.value.delete(id) : selectedSalaries.value.add(id)
+  selectedSalaries.value = new Set(selectedSalaries.value)
+}
+
+function exportSelected() {
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = route('hr.salary.export.selected')
+  const csrf = document.createElement('input')
+  csrf.type = 'hidden'
+  csrf.name = '_token'
+  csrf.value = document.querySelector('meta[name="csrf-token"]').content
+  form.appendChild(csrf)
+  selectedSalaries.value.forEach(id => {
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = 'salary_ids[]'
+    input.value = id
+    form.appendChild(input)
+  })
+  document.body.appendChild(form)
+  form.submit()
+  document.body.removeChild(form)
+}
+
 function showToast(msg, isError = false) {
   toast.value = { msg, isError }
   setTimeout(() => { toast.value = null }, 3000)
@@ -398,12 +437,26 @@ function cancelEnableDateTracking() {
       </div>
     </div>
 
+    <!-- Selection Banner -->
+    <div v-if="selectedSalaries.size > 0" style="display:flex;align-items:center;gap:12px;background:var(--mhr-accent-soft);border:1px solid var(--mhr-accent);border-radius:8px;padding:10px 16px;margin-bottom:10px;">
+      <span style="font-size:13px;font-weight:600;color:var(--mhr-accent);">{{ selectedSalaries.size }} selected</span>
+      <button class="mhr-btn mhr-btn--primary mhr-btn--sm" @click="exportSelected">
+        <AppIcon name="download" :size="13" /> Export Selected
+      </button>
+      <button class="mhr-btn mhr-btn--ghost mhr-btn--sm" @click="selectedSalaries = new Set()" style="margin-left:auto;">
+        Clear selection
+      </button>
+    </div>
+
     <!-- Salaries Table -->
     <div class="mhr-card">
       <div class="mhr-table-wrap">
         <table class="mhr-table">
           <thead>
             <tr>
+              <th style="width:40px;">
+                <input type="checkbox" :checked="allSelected" :indeterminate="someSelected" @change="toggleSelectAll" class="mhr-checkbox" style="cursor:pointer;" />
+              </th>
               <th v-if="hrRole !== 'employee'">STAFF</th>
               <th>NET SALARY</th>
               <th>EFFECTIVE FROM</th>
@@ -414,11 +467,14 @@ function cancelEnableDateTracking() {
           </thead>
           <tbody>
             <tr v-if="filtered.length === 0">
-              <td :colspan="hrRole !== 'employee' ? (canManage ? 6 : 5) : (canManage ? 5 : 4)" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
+              <td :colspan="hrRole !== 'employee' ? (canManage ? 7 : 6) : (canManage ? 6 : 5)" style="text-align:center;padding:32px;color:var(--mhr-ink-3);">
                 No salary records found
               </td>
             </tr>
-            <tr v-for="salary in filtered" :key="salary.id">
+            <tr v-for="salary in filtered" :key="salary.id" :style="selectedSalaries.has(salary.id) ? 'background:var(--mhr-accent-soft);' : ''">
+              <td>
+                <input type="checkbox" :checked="selectedSalaries.has(salary.id)" @change="toggleSelect(salary.id)" class="mhr-checkbox" style="cursor:pointer;" />
+              </td>
               <td v-if="hrRole !== 'employee'">
                 <div style="font-weight:500;">{{ salary.employeeName }}</div>
                 <div style="font-size:12px;color:var(--mhr-ink-3);margin-top:2px;">{{ salary.employeeNumber }}</div>

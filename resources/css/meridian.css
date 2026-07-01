@@ -421,6 +421,8 @@
 .meridian-app .mhr-btn--outline:hover { border-color: var(--green-300); background: var(--mhr-accent-soft); }
 .meridian-app .mhr-btn--danger { color: var(--mhr-danger); }
 .meridian-app .mhr-btn--danger:hover { background: var(--mhr-danger-bg); }
+.meridian-app .mhr-btn--warn { color: var(--mhr-warn); border-color: var(--mhr-warn); }
+.meridian-app .mhr-btn--warn:hover { background: var(--mhr-warn-bg, #fff7e6); }
 .meridian-app .mhr-btn svg { width: 14px; height: 14px; }
 .meridian-app .mhr-btn--sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 7px; }
 .meridian-app .mhr-btn--accent { 

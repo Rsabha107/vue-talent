@@ -3,7 +3,6 @@
 namespace App\Exports;
 
 use App\Models\Employee;
-use App\Models\Department;
 use App\Models\Designation;
 use App\Models\Directorate;
 use App\Models\FunctionalArea;
@@ -42,7 +41,6 @@ class SelectedEmployeesExport implements FromCollection, WithHeadings, WithMappi
         ->each(function ($employee) {
             // Load pivot relationships after fetching
             $employee->activeEvents->loadMissing([
-                'pivot.department',
                 'pivot.designation',
                 'pivot.directorate',
                 'pivot.functionalArea',
@@ -62,7 +60,6 @@ class SelectedEmployeesExport implements FromCollection, WithHeadings, WithMappi
         $activeEvent = $employee->activeEvents->first();
         $agreementNumber = $employee->agreement_number;
         $designation = null;
-        $department = null;
         $directorate = null;
         $functionalArea = null;
         $entity = $employee->entity; // Fallback to employee's entity if no event
@@ -80,7 +77,6 @@ class SelectedEmployeesExport implements FromCollection, WithHeadings, WithMappi
             
             // Get organizational data from pivot relationships
             $designation = $activeEvent->pivot->designation;
-            $department = $activeEvent->pivot->department;
             $directorate = $activeEvent->pivot->directorate;
             $functionalArea = $activeEvent->pivot->functionalArea;
             $entity = $activeEvent->pivot->entity ?: $employee->entity;
@@ -103,7 +99,6 @@ class SelectedEmployeesExport implements FromCollection, WithHeadings, WithMappi
             $employee->gender->title ?? '',
             $employee->maritalStatus->title ?? '',
             $designation?->name ?? '',
-            $department?->name ?? '',
             $directorate?->title ?? '',
             $functionalArea?->title ?? '',
             $entity?->title ?? '',
@@ -140,7 +135,6 @@ class SelectedEmployeesExport implements FromCollection, WithHeadings, WithMappi
             'Gender',
             'Marital Status',
             'Designation',
-            'Department',
             'Directorate',
             'Functional Area',
             'Entity',
@@ -190,26 +184,25 @@ class SelectedEmployeesExport implements FromCollection, WithHeadings, WithMappi
             'I' => 12,  // Gender
             'J' => 15,  // Marital Status
             'K' => 25,  // Designation
-            'L' => 20,  // Department
-            'M' => 20,  // Directorate
-            'N' => 20,  // Functional Area
-            'O' => 20,  // Entity
-            'P' => 15,  // Contract Type
-            'Q' => 15,  // Salary Basis
-            'R' => 15,  // Job Level
-            'S' => 15,  // Employee Type
-            'T' => 25,  // Reporting To
-            'U' => 15,  // Contract Start
-            'V' => 15,  // Contract End
-            'W' => 15,  // Date of Birth
-            'X' => 15,  // Date of Hire
-            'Y' => 15,  // Join Date
-            'Z' => 15,  // Nationality
-            'AA' => 15, // Passport #
-            'AB' => 15, // Passport Expiry
-            'AC' => 15, // Civil ID Expiry
-            'AD' => 12, // Manager Flag
-            'AE' => 12, // Admin Flag
+            'L' => 20,  // Directorate
+            'M' => 20,  // Functional Area
+            'N' => 20,  // Entity
+            'O' => 15,  // Contract Type
+            'P' => 15,  // Salary Basis
+            'Q' => 15,  // Job Level
+            'R' => 15,  // Employee Type
+            'S' => 25,  // Reporting To
+            'T' => 15,  // Contract Start
+            'U' => 15,  // Contract End
+            'V' => 15,  // Date of Birth
+            'W' => 15,  // Date of Hire
+            'X' => 15,  // Join Date
+            'Y' => 15,  // Nationality
+            'Z' => 15,  // Passport #
+            'AA' => 15, // Passport Expiry
+            'AB' => 15, // Civil ID Expiry
+            'AC' => 12, // Manager Flag
+            'AD' => 12, // Admin Flag
         ];
     }
 }

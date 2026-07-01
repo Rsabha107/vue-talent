@@ -69,13 +69,27 @@ class LeaveReportController extends BaseHRController
         $employees  = Employee::where('archived', 'N')->get();
         $leaveTypes = LeaveType::active()->get();
 
-        foreach ($employees as $employee) {
+        // Remove balances for employees missing either contract date
+        $incompleteIds = $employees
+            ->filter(fn($e) => !$e->contract_start_date || !$e->contract_end_date)
+            ->pluck('id');
+
+        if ($incompleteIds->isNotEmpty()) {
+            EmployeeLeaveBalance::whereIn('employee_id', $incompleteIds)->delete();
+        }
+
+        // Recalculate for employees with both contract dates
+        $completeEmployees = $employees->filter(
+            fn($e) => $e->contract_start_date && $e->contract_end_date
+        );
+
+        foreach ($completeEmployees as $employee) {
             foreach ($leaveTypes as $leaveType) {
                 LeaveBalanceService::initializeLeaveBalance($leaveType, $employee);
             }
         }
 
         return redirect()->route('hr.leave-balances')
-            ->with('success', 'Leave balances recalculated for all employees.');
+            ->with('success', 'Leave balances recalculated. Removed balances for ' . $incompleteIds->count() . ' employee(s) with missing contract dates.');
     }
 }

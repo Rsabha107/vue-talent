@@ -437,28 +437,17 @@ class EmployeeLeaveRequestController extends BaseHRController
             }
         }
         
-        // Validate leave dates against event assignment period
-        if ($eventId) {
-            $employee = Employee::find($validated['employee_id']);
-            $eventPivot = $employee->events()->where('events.id', $eventId)->first();
-            
-            if ($eventPivot) {
-                $assignedAt = $eventPivot->pivot->assigned_at;
-                $releasedAt = $eventPivot->pivot->released_at;
-                
-                // Check if leave dates fall within assignment period
-                if ($assignedAt && $validated['date_from'] < $assignedAt) {
-                    return redirect()->back()
-                        ->withInput()
-                        ->withErrors(['date_from' => 'Leave request cannot start before the employee assignment date (' . \Carbon\Carbon::parse($assignedAt)->format('d M Y') . ').']);
-                }
-                
-                if ($releasedAt && $validated['date_to'] > $releasedAt) {
-                    return redirect()->back()
-                        ->withInput()
-                        ->withErrors(['date_to' => 'Leave request cannot extend beyond the employee release date (' . \Carbon\Carbon::parse($releasedAt)->format('d M Y') . ').']);
-                }
-            }
+        // Validate leave dates against employee's contract dates
+        $employee = Employee::find($validated['employee_id']);
+        if ($employee->contract_start_date && $validated['date_from'] < $employee->contract_start_date->format('Y-m-d')) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['date_from' => 'Leave request cannot start before the employee contract start date (' . $employee->contract_start_date->format('d M Y') . ').']);
+        }
+        if ($employee->contract_end_date && $validated['date_to'] > $employee->contract_end_date->format('Y-m-d')) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['date_to' => 'Leave request cannot extend beyond the employee contract end date (' . $employee->contract_end_date->format('d M Y') . ').']);
         }
 
         // Check for pending/submitted timesheets
@@ -525,28 +514,17 @@ class EmployeeLeaveRequestController extends BaseHRController
             'additional_information' => 'nullable|string|max:4000',
         ]);
         
-        // Validate leave dates against event assignment period
-        if ($leaveRequest->event_id) {
-            $employee = Employee::find($validated['employee_id']);
-            $eventPivot = $employee->events()->where('events.id', $leaveRequest->event_id)->first();
-            
-            if ($eventPivot) {
-                $assignedAt = $eventPivot->pivot->assigned_at;
-                $releasedAt = $eventPivot->pivot->released_at;
-                
-                // Check if leave dates fall within assignment period
-                if ($assignedAt && $validated['date_from'] < $assignedAt) {
-                    return redirect()->back()
-                        ->withInput()
-                        ->withErrors(['date_from' => 'Leave request cannot start before the employee assignment date (' . \Carbon\Carbon::parse($assignedAt)->format('d M Y') . ').']);
-                }
-                
-                if ($releasedAt && $validated['date_to'] > $releasedAt) {
-                    return redirect()->back()
-                        ->withInput()
-                        ->withErrors(['date_to' => 'Leave request cannot extend beyond the employee release date (' . \Carbon\Carbon::parse($releasedAt)->format('d M Y') . ').']);
-                }
-            }
+        // Validate leave dates against employee's contract dates
+        $employee = Employee::find($validated['employee_id']);
+        if ($employee->contract_start_date && $validated['date_from'] < $employee->contract_start_date->format('Y-m-d')) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['date_from' => 'Leave request cannot start before the employee contract start date (' . $employee->contract_start_date->format('d M Y') . ').']);
+        }
+        if ($employee->contract_end_date && $validated['date_to'] > $employee->contract_end_date->format('Y-m-d')) {
+            return redirect()->back()
+                ->withInput()
+                ->withErrors(['date_to' => 'Leave request cannot extend beyond the employee contract end date (' . $employee->contract_end_date->format('d M Y') . ').']);
         }
 
         // Check for pending/submitted timesheets

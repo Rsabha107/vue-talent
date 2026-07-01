@@ -83,6 +83,23 @@ class EmployeeController extends BaseHRController
         }
     }
 
+    protected function syncManagerRole(Employee $employee): void
+    {
+        $employee->refresh();
+        if (!$employee->user_id) {
+            return;
+        }
+        $user = User::find($employee->user_id);
+        if (!$user) {
+            return;
+        }
+        if ($employee->manager_flag === 'Y') {
+            $user->assignRole('manager');
+        } else {
+            $user->removeRole('manager');
+        }
+    }
+
     protected function leaveBalance(): array
     {
         $result = [
@@ -705,9 +722,10 @@ class EmployeeController extends BaseHRController
     {
         $eventId = $this->getSelectedEventId(); // Get selected event (null = "All Events")
         $isAllEvents = $eventId === null;
-        
-        // Base query for active employees
-        $query = Employee::active()
+        $showArchived = request()->boolean('show_archived');
+
+        // Base query — active or archived based on toggle
+        $query = ($showArchived ? Employee::archived() : Employee::active())
             ->with(['salutation', 'maritalStatus', 'hiringStatus', 'nationality', 'gender'])
             ->withCount(['documents as documents_count' => function ($query) use ($eventId) {
                 $query->where('active_flag', 1);
@@ -838,9 +856,9 @@ class EmployeeController extends BaseHRController
                     'employeeType'      => $employeeType,
                     'salaryBasisId'     => $salaryBasisId,
                     
-                    // Contract & Dates (from pivot when in event context)
-                    'contractStart'     => $pivotData?->assigned_at,
-                    'contractEnd'       => $pivotData?->released_at,
+                    // Contract & Dates (from employee record)
+                    'contractStart'     => $emp->contract_start_date?->format('Y-m-d'),
+                    'contractEnd'       => $emp->contract_end_date?->format('Y-m-d'),
                     'dateOfHire'        => $emp->date_of_hire?->format('Y-m-d'),
                     'joinDate'          => $emp->join_date?->format('Y-m-d'),
                     'contractStartDate' => $emp->contract_start_date?->format('Y-m-d'),
@@ -874,11 +892,18 @@ class EmployeeController extends BaseHRController
                     // Flags (from employees table)
                     'managerFlag'       => $emp->manager_flag,
                     'adminFlag'         => $emp->administrator_flag,
-                    
+                    'subordinateCount'  => \DB::table('employee_events')
+                        ->where('reporting_to_id', $emp->id)
+                        ->where('is_active', 1)
+                        ->count(),
+
                     // UI
                     'c'                 => $emp->avatar_color,
                     'initials'          => $emp->initials,
-                    
+
+                    // Archive status
+                    'archived'          => $emp->archived,
+
                     // Documents
                     'documentsCount'    => $emp->documents_count ?? 0,
                 ];
@@ -961,7 +986,8 @@ class EmployeeController extends BaseHRController
 
         return Inertia::render('MeridianHR/Employee', array_merge($this->getCommonProps('employee'), [
             'employees'         => $employees,
-            'isAllEvents'       => $isAllEvents, // Flag to show/hide import/export
+            'isAllEvents'       => $isAllEvents,
+            'showArchived'      => $showArchived,
             'salutations'       => $salutations,
             'designations'      => $designations,
             'departments'       => $departments,
@@ -1006,7 +1032,7 @@ class EmployeeController extends BaseHRController
             'salutation_id'             => 'nullable|integer',
             
             // Contact Information
-            'work_email_address'        => 'required|email|max:250|unique:employees_all,work_email_address',
+            'work_email_address'        => ['required', 'email', 'max:250', Rule::unique('employees_all', 'work_email_address')->where('archived', 'N')],
             'personal_email_address'    => 'nullable|email|max:240',
             'phone_number'              => 'nullable|string|max:50',
             'alt_phone_number'          => 'nullable|string|max:50',
@@ -1087,8 +1113,13 @@ class EmployeeController extends BaseHRController
         // Create employee (personal data only)
         $employee = Employee::create($personalFields);
 
-        // Create user account if one doesn't exist
-        $this->createUserForEmployee($employee);
+        // Only create user account if contract dates are set
+        if ($employee->contract_start_date && $employee->contract_end_date) {
+            $this->createUserForEmployee($employee);
+        }
+
+        // Sync manager role based on manager_flag
+        $this->syncManagerRole($employee);
 
         // Assign to event if requested
         if ($request->input('assign_to_event') && !empty($eventFields)) {
@@ -1146,7 +1177,7 @@ class EmployeeController extends BaseHRController
             'salutation_id'                 => 'nullable|integer',
             
             // Contact Information
-            'work_email_address'            => ['required', 'email', 'max:250', Rule::unique('employees_all', 'work_email_address')->ignore($employee->id)],
+            'work_email_address'            => ['required', 'email', 'max:250', Rule::unique('employees_all', 'work_email_address')->ignore($employee->id)->where('archived', 'N')],
             'personal_email_address'        => 'nullable|email|max:240',
             'phone_area_code'               => 'nullable|string|max:10',
             'phone_number'                  => 'nullable|string|max:50',
@@ -1219,6 +1250,15 @@ class EmployeeController extends BaseHRController
 
         // Update employee (personal data only)
         $employee->update($personalFields);
+
+        // Disable user account if contract dates are missing
+        $employee->refresh();
+        if ((!$employee->contract_start_date || !$employee->contract_end_date) && $employee->user_id) {
+            User::where('id', $employee->user_id)->update(['active_flag' => 0]);
+        }
+
+        // Sync manager role based on manager_flag
+        $this->syncManagerRole($employee);
 
         // Handle event assignment
         if ($request->input('assign_to_event') && !empty($eventFields)) {
@@ -1333,6 +1373,29 @@ class EmployeeController extends BaseHRController
         });
 
         return redirect()->route('hr.employee')->with('success', 'Employee archived successfully.');
+    }
+
+    /**
+     * Reinstate an archived employee (un-archive).
+     */
+    public function reinstate($id)
+    {
+        $employee = Employee::where('archived', 'Y')->findOrFail($id);
+
+        DB::transaction(function () use ($employee) {
+            $employee->update(['archived' => 'N']);
+
+            // Re-enable the linked user account
+            if ($employee->user_id) {
+                User::where('id', $employee->user_id)->update(['active_flag' => 1]);
+            }
+
+            // Re-activate leave balances
+            EmployeeLeaveBalance::where('employee_id', $employee->id)
+                ->update(['active_flag' => 1, 'updated_by' => Auth::id()]);
+        });
+
+        return redirect()->back()->with('success', "{$employee->full_name} has been reinstated.");
     }
 
     public function downloadTemplate()

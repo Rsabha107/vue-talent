@@ -34,6 +34,7 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::get('/employee/{id}/edit', [EmployeeController::class, 'edit'])->name('employee.edit');
     Route::put('/employee/{id}', [EmployeeController::class, 'update'])->name('employee.update');
     Route::delete('/employee/{id}', [EmployeeController::class, 'destroy'])->name('employee.destroy');
+    Route::post('/employee/{id}/reinstate', [EmployeeController::class, 'reinstate'])->name('employee.reinstate');
     
     // Employee Import/Export
     Route::get('/employee/template/download', [EmployeeController::class, 'downloadTemplate'])->name('employee.template');
@@ -59,6 +60,7 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::get('/banks/template/download', [BankController::class, 'downloadTemplate'])->name('banks.template');
     Route::post('/banks/import', [BankController::class, 'import'])->name('banks.import');
     Route::get('/banks/export-failed', [BankController::class, 'exportFailedRows'])->name('banks.export.failed');
+    Route::post('/banks/export-selected', [BankController::class, 'exportSelected'])->name('banks.export.selected');
     
     // Salary Management (Admin manages all employees' salaries)
     Route::get('/salary', [SalaryController::class, 'index'])->name('salary');
@@ -70,6 +72,7 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::get('/salary/template/download', [SalaryController::class, 'downloadTemplate'])->name('salary.template');
     Route::post('/salary/import', [SalaryController::class, 'import'])->name('salary.import');
     Route::get('/salary/export-failed', [SalaryController::class, 'exportFailedRows'])->name('salary.export.failed');
+    Route::post('/salary/export-selected', [SalaryController::class, 'exportSelected'])->name('salary.export.selected');
     
     // Document Management (Admin can upload/delete)
     Route::post('/documents', [DocumentController::class, 'store'])->name('documents.store');
@@ -102,6 +105,7 @@ Route::middleware(['auth'])->prefix('hr')->name('hr.')->group(function () {
     Route::post('/lookup/{type}', [LookupTablesController::class, 'store'])->name('lookup.store');
     Route::put('/lookup/{type}/{id}', [LookupTablesController::class, 'update'])->name('lookup.update');
     Route::delete('/lookup/{type}/{id}', [LookupTablesController::class, 'destroy'])->name('lookup.destroy');
+    Route::post('/lookup/{type}/export-selected', [LookupTablesController::class, 'exportSelected'])->name('lookup.export.selected');
     
     // Leave Balances Report (Admin View)
     Route::get('/leave-balances', [LeaveReportController::class, 'leaveBalances'])->name('leave-balances');

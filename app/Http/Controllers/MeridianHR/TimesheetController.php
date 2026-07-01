@@ -288,7 +288,7 @@ class TimesheetController extends BaseHRController
         
         $timesheet = EmployeeTimesheet::findOrFail($request->timesheet_id);
         
-        // Only allow submission if status is Saved
+        // Only allow submission if status is Saved (draft)
         if ($timesheet->status_id !== EmployeeTimesheetStatus::savedId()) {
             return back()->withErrors(['error' => 'Only saved timesheets can be submitted.']);
         }
@@ -1228,9 +1228,11 @@ class TimesheetController extends BaseHRController
             
         } catch (\Exception $e) {
             DB::rollBack();
-            \Illuminate\Support\Facades\Log::error('Timesheet creation error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error('Timesheet creation error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
             return back()->withErrors([
-                'error' => 'Error creating timesheet. Please try again.'
+                'error' => 'Error creating timesheet: ' . $e->getMessage()
             ]);
         }
     }
@@ -1333,7 +1335,7 @@ class TimesheetController extends BaseHRController
             $timesheet = EmployeeTimesheet::findOrFail($tsId);
             $this->calculateTimesheetPayment($timesheet);
             
-            // Mark entries as existing and ensure status is Saved
+            // Mark entries as existing; status stays Saved until employee submits
             $timesheet->update([
                 'entries_exists' => 'Y',
                 'status_id' => EmployeeTimesheetStatus::savedId(),

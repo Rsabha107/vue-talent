@@ -431,6 +431,22 @@ class BankController extends BaseHRController
     }
 
     /**
+     * Export selected bank rows
+     */
+    public function exportSelected(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'bank_ids'   => 'required|array|min:1',
+            'bank_ids.*' => 'required|integer|exists:employee_banks,id',
+        ]);
+
+        return Excel::download(
+            new \App\Exports\SelectedBanksExport($request->input('bank_ids')),
+            'banks_export_' . date('Y-m-d_His') . '.xlsx'
+        );
+    }
+
+    /**
      * Export failed bank import rows
      */
     public function exportFailedRows()

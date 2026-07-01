@@ -27,6 +27,46 @@ const menuPosition = ref({ top: 0, right: 0 })
 // Search state
 const searchQuery = ref('')
 
+// Selection state
+const selectedItems = ref(new Set())
+const allSelected = computed(() => filteredItems.value.length > 0 && filteredItems.value.every(i => selectedItems.value.has(i.id)))
+const someSelected = computed(() => filteredItems.value.some(i => selectedItems.value.has(i.id)) && !allSelected.value)
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    filteredItems.value.forEach(i => selectedItems.value.delete(i.id))
+  } else {
+    filteredItems.value.forEach(i => selectedItems.value.add(i.id))
+  }
+  selectedItems.value = new Set(selectedItems.value)
+}
+
+function toggleSelect(id) {
+  selectedItems.value.has(id) ? selectedItems.value.delete(id) : selectedItems.value.add(id)
+  selectedItems.value = new Set(selectedItems.value)
+}
+
+function exportSelected() {
+  const form = document.createElement('form')
+  form.method = 'POST'
+  form.action = route('hr.lookup.export.selected', props.entityType)
+  const csrf = document.createElement('input')
+  csrf.type = 'hidden'
+  csrf.name = '_token'
+  csrf.value = document.querySelector('meta[name="csrf-token"]').content
+  form.appendChild(csrf)
+  selectedItems.value.forEach(id => {
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = 'ids[]'
+    input.value = id
+    form.appendChild(input)
+  })
+  document.body.appendChild(form)
+  form.submit()
+  document.body.removeChild(form)
+}
+
 // Form data (dynamic based on entity fields)
 const form = ref({})
 
@@ -233,6 +273,17 @@ function isFormValid() {
       </div>
     </div>
 
+    <!-- Selection Banner -->
+    <div v-if="selectedItems.size > 0" style="display:flex;align-items:center;gap:12px;background:var(--mhr-accent-soft);border:1px solid var(--mhr-accent);border-radius:8px;padding:10px 16px;margin-bottom:10px;">
+      <span style="font-size:13px;font-weight:600;color:var(--mhr-accent);">{{ selectedItems.size }} selected</span>
+      <button class="mhr-btn mhr-btn--primary mhr-btn--sm" @click="exportSelected">
+        <AppIcon name="download" :size="13" /> Export Selected
+      </button>
+      <button class="mhr-btn mhr-btn--ghost mhr-btn--sm" @click="selectedItems = new Set()" style="margin-left:auto;">
+        Clear selection
+      </button>
+    </div>
+
     <!-- Table Card -->
     <div class="lookup-content-card">
       <div class="lookup-content-hd">
@@ -252,6 +303,9 @@ function isFormValid() {
           <table class="mhr-table">
             <thead>
               <tr>
+                <th style="width:40px;">
+                  <input type="checkbox" :checked="allSelected" :indeterminate="someSelected" @change="toggleSelectAll" class="mhr-checkbox" style="cursor:pointer;" />
+                </th>
                 <th v-for="column in columns" :key="column.key" :style="column.width ? `width:${column.width}` : ''">
                   {{ column.label }}
                 </th>
@@ -259,7 +313,10 @@ function isFormValid() {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in filteredItems" :key="item.id">
+              <tr v-for="item in filteredItems" :key="item.id" :style="selectedItems.has(item.id) ? 'background:var(--mhr-accent-soft);' : ''">
+                <td>
+                  <input type="checkbox" :checked="selectedItems.has(item.id)" @change="toggleSelect(item.id)" class="mhr-checkbox" style="cursor:pointer;" />
+                </td>
                 <td v-for="column in columns" :key="column.key" :style="column.key === 'id' ? 'color:var(--mhr-ink-3);font-size:13px;' : column.key !== 'status' && column.key === columns.find(c => c.key !== 'id' && c.key !== 'status')?.key ? 'font-weight:500;color:var(--mhr-ink);' : 'color:var(--mhr-ink-2);'">
                   <span v-if="column.key === 'status'">
                     <span v-if="item.status === 1" class="mhr-badge mhr-badge--success">Active</span>
